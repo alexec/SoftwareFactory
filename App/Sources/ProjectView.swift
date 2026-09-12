@@ -255,6 +255,8 @@ struct ProgressNumbers: View {
 struct TaskRow: View {
     @Environment(AppModel.self) private var model
     var task: FactoryTask
+    @State private var commenting = false
+    @State private var comment = ""
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -316,6 +318,7 @@ struct TaskRow: View {
                     Button("Move to the bottom") { model.move(task, to: .bottom) }
                 }
                 Divider()
+                Button("Add a comment…") { commenting = true }
                 Button("Delete", role: .destructive) { model.delete(task) }
             } label: {
                 Text(task.state.word)
@@ -325,8 +328,34 @@ struct TaskRow: View {
             .menuStyle(.button)
             .buttonStyle(.borderless)
             .fixedSize()
+            .popover(isPresented: $commenting, arrowEdge: .trailing) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("A comment goes on the task, signed and dated, for whoever picks it up.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    TextField("Comment", text: $comment, axis: .vertical)
+                        .lineLimit(2...8)
+                        .onSubmit(addComment)
+                    HStack {
+                        Spacer()
+                        Button("Cancel") { commenting = false }
+                        Button("Add", action: addComment)
+                            .buttonStyle(.glassProminent)
+                            .disabled(comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+                .padding(16)
+                .frame(width: 360)
+            }
         }
         .padding(.vertical, 2)
+    }
+
+    private func addComment() {
+        model.comment(on: task, comment)
+        comment = ""
+        commenting = false
     }
 
     private func word(for b: FactoryTask.Blocker) -> String {

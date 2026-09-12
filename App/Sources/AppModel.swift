@@ -211,6 +211,13 @@ final class AppModel {
         persist { try $0.save(moved) }
     }
 
+    /// A line from the person on a task, for the agent that picks it up next.
+    func comment(on task: FactoryTask, _ text: String) {
+        let noted = Backlog.comment(on: task, text, by: "Alex")
+        guard noted.note != task.note else { return }
+        persist { try $0.save(noted) }
+    }
+
     /// Nothing is deleted: the task is kept with the reason, out of every list.
     func delete(_ task: FactoryTask) {
         persist { try $0.save(Backlog.remove(task, why: "by Alex, in the app")) }

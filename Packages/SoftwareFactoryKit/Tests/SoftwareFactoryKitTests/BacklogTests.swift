@@ -95,6 +95,24 @@ import Testing
         #expect(Sweep.unblocked(in: Snapshot(tasks: swept, escalations: [e]), now: .now).isEmpty)
     }
 
+    @Test func aDecisionReplacesTheWaitOnThePersonItAsks() throws {
+        var e = Escalation(projectID: p, question: "Which container?", options: [.init(title: "A")])
+        // The lead's flow: block on the person, raise the question, block on the decision.
+        var row = Backlog.block(task("row", rank: 0), on: .init(kind: .person, why: "Needs Alex in the browser"))
+        row = Backlog.block(row, on: .init(kind: .decision, id: e.id, why: "which container"))
+        #expect(row.blockers.map(\.kind) == [.decision])
+
+        // A row blocked before the rule carries both; the answer clears both.
+        var old = task("old", rank: 1)
+        old.state = .blocked
+        old.blockers = [.init(kind: .person, why: "Needs Alex in the browser"), .init(kind: .decision, id: e.id, why: "which container")]
+        try e.decide(e.options[0])
+        let swept = Sweep.unblocked(in: Snapshot(tasks: [row, old], escalations: [e]), now: .now)
+        #expect(swept.map(\.title) == ["row", "old"])
+        #expect(swept.allSatisfy { $0.state == .backlog && $0.blockers.isEmpty })
+        #expect(swept[1].note.contains("and with it the wait on Needs Alex in the browser"))
+    }
+
     @Test func clearingOneBlockerByNumberOrWords() throws {
         var t = Backlog.block(task("t", rank: 0), on: .init(kind: .other, why: "the measurement finishes"))
         t = Backlog.block(t, on: .init(kind: .person, why: "the stand-down lifts"))
@@ -225,6 +243,44 @@ import Testing
         #expect(d.agents.map(\.agent.name) == ["one", "two"])
         #expect(d.agents[0].waitingOnYou)
         #expect(!d.agents[1].waitingOnYou)
+    }
+
+    @Test func aProjectOnHoldShowsItsNameAndNothingElse() {
+        var held = Project(path: "/held")
+        held.onHold = true
+        var agent = Agent(name: "one", projectID: held.id, registered: now)
+        agent.lastSeen = now
+        var task = FactoryTask(projectID: held.id, title: "still going", rank: 1)
+        task.state = .inProgress
+        task.agentID = agent.id
+        agent.taskID = task.id
+        agent.note = "on it"
+        let question = Escalation(projectID: held.id, question: "q", options: [.init(title: "a")], agentID: agent.id, raisedBy: "one", raised: now)
+        let live = Project(path: "/live")
+        var liveTask = FactoryTask(projectID: live.id, title: "live one", rank: 1)
+        liveTask.state = .inProgress
+        let d = Dashboard.make(snapshot: Snapshot(projects: [held, live], tasks: [task, liveTask], escalations: [question], agents: [agent]), now: now)
+        #expect(d.projects.map(\.project.id) == [live.id, held.id])
+        let h = d.projects[1]
+        #expect(h.activity == .idle)
+        #expect(h.doing == nil)
+        #expect(h.inProgressCount == 0 && h.blockedCount == 0 && h.backlogCount == 0 && h.doneCount == 0)
+        #expect(h.openEscalations == 1)
+        #expect(d.inProgress == 1)
+        // The agent is still on the floor; it is the project that is quiet.
+        #expect(d.agents.map(\.agent.name) == ["one"])
+    }
+
+    @Test func aCommentIsSignedDatedAndAppended() {
+        var task = FactoryTask(projectID: "/a", title: "t", rank: 1, note: "first line")
+        let day = Date(timeIntervalSince1970: 1_789_259_200)  // 12 Sep 2026
+        task = Backlog.comment(on: task, "  needs the phone  ", by: "Alex", at: day)
+        #expect(task.note.hasPrefix("first line\nAlex, 12 Sep") && task.note.hasSuffix("2026: needs the phone"))
+        #expect(task.updated == day)
+        let same = Backlog.comment(on: task, "   ", by: "Alex", at: day.addingTimeInterval(9))
+        #expect(same.note == task.note)
+        let fresh = Backlog.comment(on: FactoryTask(projectID: "/a", title: "t", rank: 1), "hi", by: "one", at: day)
+        #expect(fresh.note.hasPrefix("one, 12 Sep") && fresh.note.hasSuffix(": hi"))
     }
 
     @Test func idleProjectWithNothingOnShowsNothing() {

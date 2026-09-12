@@ -24,8 +24,9 @@ public struct Dashboard: Sendable, Equatable {
 
         public var id: String { project.id }
 
-        /// One line saying what the project is on.
+        /// One line saying what the project is on. Nothing while on hold.
         public var doing: String? {
+            if project.onHold { return nil }
             if let currentTask { return currentTask.title }
             if let note = agents.first?.note, !note.isEmpty { return note }
             return nil
@@ -81,8 +82,18 @@ public struct Dashboard: Sendable, Equatable {
         let onFloor = snapshot.agents.filter(\.isOnTheFloor).sorted { $0.lastSeen > $1.lastSeen }
         let open = snapshot.escalations.filter(\.isOpen)
 
+        let onHold = Set(projects.values.filter(\.onHold).map(\.id))
         let statuses = projects.values.map { project -> ProjectStatus in
             let agents = onFloor.filter { $0.projectID == project.id }
+            // A project on hold shows its name and nothing else: no activity, no counts, no
+            // current task. Its open questions still count, since a question still needs
+            // an answer. (Alex, 12 Sep 2026: hide info about projects on hold.)
+            let questions = open.filter { $0.projectID == project.id }.count
+            if project.onHold {
+                return ProjectStatus(
+                    project: project, activity: .idle, currentTask: nil, agents: agents, openEscalations: questions,
+                    backlogCount: 0, blockedCount: 0, inProgressCount: 0, doneCount: 0)
+            }
             let activity: ProjectActivity =
                 agents.contains { $0.isWorking(now: now) } ? .working : (agents.isEmpty ? .idle : .waiting)
             let tasks = snapshot.tasks.filter { $0.projectID == project.id }
@@ -91,7 +102,7 @@ public struct Dashboard: Sendable, Equatable {
                 activity: activity,
                 currentTask: Backlog.current(for: project.id, in: snapshot.tasks),
                 agents: agents,
-                openEscalations: open.filter { $0.projectID == project.id }.count,
+                openEscalations: questions,
                 backlogCount: tasks.filter { $0.state == .backlog }.count,
                 blockedCount: tasks.filter { $0.state == .blocked }.count,
                 inProgressCount: tasks.filter { $0.state == .inProgress }.count,
@@ -99,6 +110,8 @@ public struct Dashboard: Sendable, Equatable {
             )
         }
         .sorted { a, b in
+            // On hold sorts last, then by activity, then by name.
+            if a.project.onHold != b.project.onHold { return !a.project.onHold }
             if a.activity != b.activity { return rank(a.activity) < rank(b.activity) }
             return a.project.name.localizedCaseInsensitiveCompare(b.project.name) == .orderedAscending
         }
@@ -120,7 +133,7 @@ public struct Dashboard: Sendable, Equatable {
         }
 
         return Dashboard(
-            inProgress: snapshot.tasks.filter { $0.state == .inProgress }.count,
+            inProgress: snapshot.tasks.filter { $0.state == .inProgress && !onHold.contains($0.projectID) }.count,
             openEscalations: open.sorted { $0.raised < $1.raised },
             projects: statuses,
             agents: agentStatuses,

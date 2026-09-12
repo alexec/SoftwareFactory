@@ -89,8 +89,10 @@ struct PhoneRootView: View {
                                 .fill(status.activity == .working ? Color.green : (status.activity == .waiting ? Color.orange : Color.secondary.opacity(0.4)))
                                 .frame(width: 8, height: 8)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(status.project.name).font(.headline)
-                                if let doing = status.doing {
+                                Text(status.project.name).font(.headline).foregroundStyle(status.project.onHold ? .secondary : .primary)
+                                if status.project.onHold {
+                                    Text("On hold").font(.subheadline).foregroundStyle(.secondary)
+                                } else if let doing = status.doing {
                                     Text(doing).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                                 }
                             }

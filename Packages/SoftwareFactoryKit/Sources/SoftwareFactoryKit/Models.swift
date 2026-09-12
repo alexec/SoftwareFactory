@@ -231,11 +231,19 @@ public enum Sweep {
             guard task.state == .blocked, !task.blockers.isEmpty else { return nil }
             var remaining: [FactoryTask.Blocker] = []
             var cleared: [String] = []
-            for b in task.blockers {
+            for (index, b) in task.blockers.enumerated() {
                 switch b.kind {
                 case .decision:
                     if let id = b.id, let e = snapshot.escalations.first(where: { $0.id == id }), let chosen = e.chosen {
                         cleared.append("decided \(e.question) → \(chosen.title), by \(e.decision?.by ?? "someone")")
+                        // A wait on a person written before this question was the same
+                        // gate: the answer clears it too. Rows blocked before task_block
+                        // learnt to replace it still carry both.
+                        let asked = remaining.filter { $0.kind == .person && task.blockers.firstIndex(of: $0)! < index }
+                        if !asked.isEmpty {
+                            remaining.removeAll { asked.contains($0) }
+                            cleared.append("and with it the wait on \(asked.map(\.why).joined(separator: "; "))")
+                        }
                     } else { remaining.append(b) }
                 case .task:
                     if let id = b.id, let t = snapshot.tasks.first(where: { $0.id == id }), t.state == .done {

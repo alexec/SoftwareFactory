@@ -164,7 +164,10 @@ public struct MCPServer: Sendable {
                               "state": ["type": "string", "enum": ["backlog", "inProgress", "done", "parked"]],
                               "note": str("What happened")],
                  required: ["task_id", "state"]),
-            Tool(name: "task_block", description: "This task is blocked: say what it waits on, then move on to the next task. Call it once per thing it waits on; the task clears only when the last one does. A block on a decision or a task clears on its own when the decision lands or the task is done; a block on a person clears when they say so.",
+            Tool(name: "task_note", description: "Add a line to a task's note without changing its state: a finding, a question for the person, what you tried. The line is signed with your name and dated.",
+                 properties: ["task_id": str("The task"), "text": str("What to add"), "agent_id": str("From agent_register")],
+                 required: ["task_id", "text", "agent_id"]),
+            Tool(name: "task_block", description: "This task is blocked: say what it waits on, then move on to the next task. Call it once per thing it waits on; the task clears only when the last one does. A block on a decision or a task clears on its own when the decision lands or the task is done; a block on a person clears when they say so. If the row already waits on a person, a block on a decision replaces that wait: raise the question, then block on it.",
                  properties: ["task_id": str("The task"),
                               "on": ["type": "string", "enum": ["decision", "task", "person", "other"], "description": "What it waits on"],
                               "id": str("The escalation_id or task_id it waits on, for decision or task"),
@@ -324,6 +327,13 @@ public struct MCPServer: Sendable {
             try store.save(Backlog.set(task, to: state, at: now()))
             return "\(task.title): \(state.rawValue)"
 
+        case "task_note":
+            let task = try task(args, in: snap)
+            let who = try agent(args, in: snap).name
+            let noted = Backlog.comment(on: task, try string("text", args), by: who, at: now())
+            try store.save(noted)
+            return "Noted on \(task.title)."
+
         case "task_block":
             let task = try task(args, in: snap)
             guard let kind = FactoryTask.Blocker.Kind(rawValue: try string("on", args)) else {
@@ -335,7 +345,9 @@ public struct MCPServer: Sendable {
             try store.save(blocked)
             let next = Backlog.next(for: task.projectID, in: snap.tasks.filter { $0.id != task.id }).map { " Next on the backlog: \($0.title) (\($0.id.uuidString))." } ?? " Nothing else is waiting on this backlog."
             let count = blocked.blockers.count
-            return "\(task.title) is blocked on \(count) thing\(count == 1 ? "" : "s").\(next)"
+            let replaced = task.blockers.contains { $0.kind == .person } && !blocked.blockers.contains { $0.kind == .person }
+                ? " The decision replaces the wait on a person: same gate, and this one clears itself when the answer lands." : ""
+            return "\(task.title) is blocked on \(count) thing\(count == 1 ? "" : "s").\(replaced)\(next)"
 
         case "task_rank":
             let task = try task(args, in: snap)

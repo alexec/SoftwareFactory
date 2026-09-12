@@ -106,6 +106,9 @@ import Testing
         #expect(call(s, "task_claim", ["task_id": t1, "agent_id": agentID]).text == "You are on: First\nnote: the rooms run together\nsplit on pauses")
         let list = call(s, "task_list", ["project": "Where"]).text
         #expect(list.split(separator: "\n").first?.contains("inProgress  bug  First") == true)
+        #expect(call(s, "task_note", ["task_id": t1, "text": "the tap runs off the main actor", "agent_id": agentID]).text == "Noted on First.")
+        let shownNote = call(s, "task_show", ["task_id": t1]).text
+        #expect(shownNote.contains(": the tap runs off the main actor") && shownNote.contains("inProgress"))
 
         #expect(call(s, "task_status", ["task_id": t1, "state": "done", "note": "fixed by splitting on pauses"]).text == "First: done")
         let snap = try s.store.load()

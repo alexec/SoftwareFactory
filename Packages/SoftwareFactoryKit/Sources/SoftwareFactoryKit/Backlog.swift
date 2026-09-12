@@ -122,6 +122,19 @@ public enum Backlog {
         return task
     }
 
+    /// Adds a line to the task's note, signed and dated, so whoever reads it next knows
+    /// who said it. Anything else about the task stays as it is.
+    public static func comment(on task: FactoryTask, _ text: String, by who: String, at date: Date = .now) -> FactoryTask {
+        var task = task
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return task }
+        let day = date.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted).locale(Locale(identifier: "en_GB")))
+        let line = "\(who), \(day): \(text)"
+        task.note = task.note.isEmpty ? line : task.note + "\n" + line
+        task.updated = date
+        return task
+    }
+
     /// Takes a task off the backlog without losing it: the record stays, with the reason.
     public static func remove(_ task: FactoryTask, why: String, at date: Date = .now) -> FactoryTask {
         var task = task
@@ -174,6 +187,14 @@ public enum Backlog {
     public static func block(_ task: FactoryTask, on blocker: FactoryTask.Blocker, at date: Date = .now) -> FactoryTask {
         var task = task
         task.state = .blocked
+        // A block on a person followed by a block on a decision is the same gate said
+        // twice: the question is how the person is asked. The decision replaces the wait
+        // on the person, so the row clears itself when the answer lands. (Brushwise and
+        // Wall First leads, 12 Sep 2026.) A person block added after a decision is a
+        // second, different wait and stays.
+        if blocker.kind == .decision {
+            task.blockers.removeAll { $0.kind == .person }
+        }
         if !task.blockers.contains(where: { $0.kind == blocker.kind && $0.id == blocker.id && $0.why == blocker.why }) {
             task.blockers.append(blocker)
         }
