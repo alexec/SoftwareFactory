@@ -93,12 +93,15 @@ public enum Backlog {
         tasks(for: projectID, in: all).first { $0.state == .backlog }
     }
 
-    /// Moves the open tasks of one project the way a list's `onMove` describes it, and
-    /// returns every task whose rank changed so the caller can save just those.
+    /// Moves the tasks of one project in `states` the way a list's `onMove` describes it,
+    /// and returns every task whose rank changed so the caller can save just those. The
+    /// backlog (with in progress alongside it, so a claimed task keeps its place) by
+    /// default; pass `[.parked]` to reorder what is set aside instead.
     public static func move(
-        in tasks: [FactoryTask], from source: IndexSet, to destination: Int, at date: Date = .now
+        in tasks: [FactoryTask], from source: IndexSet, to destination: Int,
+        states: Set<FactoryTask.State> = [.backlog, .inProgress], at date: Date = .now
     ) -> [FactoryTask] {
-        let open = tasks.filter { $0.state == .backlog || $0.state == .inProgress }.sorted(by: order)
+        let open = tasks.filter { states.contains($0.state) }.sorted(by: order)
         // The same semantics as SwiftUI's onMove: the moved tasks land before the task
         // that was at `destination` in the unmoved list.
         let moving = source.map { open[$0] }
@@ -108,12 +111,15 @@ public enum Backlog {
         return renumber(rest, at: date)
     }
 
-    /// Puts one task directly above another and returns every task whose rank changed.
+    /// Puts one task directly above another, among `states`, and returns every task
+    /// whose rank changed. The backlog (with in progress alongside it) by default; pass
+    /// `[.parked]` to place within what is set aside instead.
     public static func place(
-        _ task: FactoryTask, above other: FactoryTask, in tasks: [FactoryTask], at date: Date = .now
+        _ task: FactoryTask, above other: FactoryTask, in tasks: [FactoryTask],
+        states: Set<FactoryTask.State> = [.backlog, .inProgress], at date: Date = .now
     ) -> [FactoryTask] {
         guard task.id != other.id else { return [] }
-        var open = tasks.filter { ($0.state == .backlog || $0.state == .inProgress) && $0.id != task.id }.sorted(by: order)
+        var open = tasks.filter { states.contains($0.state) && $0.id != task.id }.sorted(by: order)
         let at = open.firstIndex { $0.id == other.id } ?? open.count
         open.insert(task, at: at)
         return renumber(open, at: date)

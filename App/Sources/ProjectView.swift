@@ -35,31 +35,23 @@ struct ProjectView: View {
 
             // One section per state, in a fixed order, so the Backlog section (with the
             // add row under it, where a new task lands) is always in the same place.
+            // Backlog and Parked rows are draggable, onto each other (crossing the line
+            // moves the row) and onto their own section (reordering it); dragging past
+            // the last row of a section, or into an empty one, lands at its bottom.
             ForEach([FactoryTask.State.blocked, .inProgress, .backlog, .parked, .done], id: \.self) { state in
                 let group = tasks.filter { $0.state == state }
                 if state == .backlog {
                     Section("Backlog") {
-                        ForEach(group) { task in
-                            TaskRow(task: task)
-                                .draggable(task.id.uuidString)
-                        }
-                        .onMove { source, destination in
-                            model.move(in: project.id, from: source, to: destination)
-                        }
+                        ForEach(group) { task in row(task, reorderable: true) }
                         addRow
                     }
-                    // A parked task dropped here comes back to the backlog, same as its
-                    // row menu's "Back to the backlog".
-                    .dropDestination(for: String.self) { ids, _ in drop(ids, into: .backlog) }
+                    .dropDestination(for: String.self) { ids, _ in drop(ids, atEndOf: .backlog) }
                 } else if !group.isEmpty || state == .parked {
                     Section(state.word) {
-                        ForEach(group) { task in
-                            TaskRow(task: task)
-                                .draggable(task.id.uuidString)
-                        }
+                        ForEach(group) { task in row(task, reorderable: state == .parked) }
                     }
                     .dropDestination(for: String.self) { ids, _ in
-                        state == .parked ? drop(ids, into: .parked) : false
+                        state == .parked ? drop(ids, atEndOf: .parked) : false
                     }
                 }
             }
@@ -68,13 +60,38 @@ struct ProjectView: View {
         .scrollContentBackground(.hidden)
     }
 
-    /// A row dragged from the backlog to parked, or back, by its id.
+    @ViewBuilder
+    private func row(_ task: FactoryTask, reorderable: Bool) -> some View {
+        if reorderable {
+            TaskRow(task: task)
+                .draggable(task.id.uuidString)
+                .dropDestination(for: String.self) { ids, _ in drop(ids, above: task) }
+        } else {
+            TaskRow(task: task)
+        }
+    }
+
+    /// A row dragged onto another lands directly above it, in that row's section;
+    /// crossing from the backlog to parked, or back, moves it there too.
     @discardableResult
-    private func drop(_ ids: [String], into state: FactoryTask.State) -> Bool {
+    private func drop(_ ids: [String], above target: FactoryTask) -> Bool {
         var moved = false
         for id in ids {
-            guard let uuid = UUID(uuidString: id), let task = tasks.first(where: { $0.id == uuid }),
-                  task.state == (state == .parked ? .backlog : .parked)
+            guard let uuid = UUID(uuidString: id), let dragged = tasks.first(where: { $0.id == uuid }), dragged.id != target.id
+            else { continue }
+            model.place(dragged, above: target)
+            moved = true
+        }
+        return moved
+    }
+
+    /// A row dragged past the last one of a section, or into an empty one, lands at
+    /// its bottom, same as its row menu's Park or Back to the backlog.
+    @discardableResult
+    private func drop(_ ids: [String], atEndOf state: FactoryTask.State) -> Bool {
+        var moved = false
+        for id in ids {
+            guard let uuid = UUID(uuidString: id), let task = tasks.first(where: { $0.id == uuid }), task.state != state
             else { continue }
             model.set(task, to: state)
             moved = true

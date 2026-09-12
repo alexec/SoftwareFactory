@@ -186,10 +186,30 @@ import Testing
         #expect(changed.map(\.rank) == [0, 1, 2])
     }
 
+    @Test func parkedItemsReorderWithoutTouchingTheBacklog() {
+        let all = [
+            task("backlog-a", rank: 0), task("parked-a", rank: 10, state: .parked),
+            task("parked-b", rank: 11, state: .parked), task("parked-c", rank: 12, state: .parked),
+        ]
+        let changed = Backlog.move(in: all, from: IndexSet(integer: 2), to: 0, states: [.parked])
+        #expect(changed.map(\.title) == ["parked-c", "parked-a", "parked-b"])
+        #expect(changed.allSatisfy { $0.state == .parked })
+    }
+
     @Test func placeAboveMovesOneTask() {
         let all = [task("a", rank: 0), task("b", rank: 1), task("c", rank: 2)]
         let changed = Backlog.place(all[2], above: all[0], in: all)
         #expect(changed.map { "\($0.title)\($0.rank)" } == ["c0", "a1", "b2"])
+    }
+
+    @Test func placeAboveWithinParkedLeavesTheBacklogAlone() {
+        let all = [
+            task("backlog-a", rank: 0),
+            task("parked-a", rank: 10, state: .parked), task("parked-b", rank: 11, state: .parked),
+        ]
+        let changed = Backlog.place(all[2], above: all[1], in: all, states: [.parked])
+        #expect(changed.map(\.title) == ["parked-b", "parked-a"])
+        #expect(changed.allSatisfy { $0.state == .parked })
     }
 
     @Test func placingATaskAboveItselfChangesNothing() {

@@ -283,11 +283,23 @@ final class AppModel {
         persist { try $0.save(cleared) }
     }
 
-    /// `source` and `destination` are offsets within the backlog block alone.
-    func move(in projectID: String, from source: IndexSet, to destination: Int) {
-        let backlog = tasks(for: projectID).filter { $0.state == .backlog }
-        let changed = Backlog.move(in: backlog, from: source, to: destination)
-        persist { store in for task in changed { try store.save(task) } }
+    /// A row dragged onto another: above it, among its own state (backlog or parked),
+    /// crossing the line between them if that is where it landed.
+    func place(_ task: FactoryTask, above other: FactoryTask) {
+        guard task.id != other.id, Backlog.personMaySet.contains(other.state) else { return }
+        var moved = task
+        if moved.state != other.state {
+            moved.state = other.state
+            moved.agentID = nil
+        }
+        let siblings = tasks(for: task.projectID).filter { $0.state == other.state && $0.id != task.id }
+        let changed = Backlog.place(moved, above: other, in: siblings + [moved], states: [other.state])
+        persist { store in
+            for t in changed { try store.save(t) }
+            // place() only returns rows whose rank moved; a state change that landed on
+            // the same rank it already had would otherwise go unsaved.
+            if !changed.contains(where: { $0.id == moved.id }) { try store.save(moved) }
+        }
     }
 
     // MARK: Escalations
