@@ -39,12 +39,30 @@ public struct Dashboard: Sendable, Equatable {
         public var id: UUID { agent.id }
     }
 
+    public struct Holding: Identifiable, Sendable, Equatable {
+        public var lease: Lease
+        public var agentName: String
+
+        public var id: UUID { lease.id }
+    }
+
+    public struct ResourceStatus: Identifiable, Sendable, Equatable {
+        public var resource: Resource
+        public var held: [Holding]
+
+        public var id: UUID { resource.id }
+        public var free: Int { max(0, resource.slots - held.count) }
+    }
+
     public var inProgress: Int
     public var openEscalations: [Escalation]
     public var projects: [ProjectStatus]
     public var agents: [AgentStatus]
+    public var resources: [ResourceStatus]
 
-    public static let empty = Dashboard(inProgress: 0, openEscalations: [], projects: [], agents: [])
+    public static let empty = Dashboard(inProgress: 0, openEscalations: [], projects: [], agents: [], resources: [])
+
+    public var heldCount: Int { resources.reduce(0) { $0 + $1.held.count } }
 
     public var workingCount: Int { projects.filter { $0.activity == .working }.count }
 
@@ -86,11 +104,19 @@ public struct Dashboard: Sendable, Equatable {
                 waitingOnYou: open.contains { $0.agentID == agent.id })
         }
 
+        let names = Dictionary(uniqueKeysWithValues: snapshot.agents.map { ($0.id, $0.name) })
+        let resources = snapshot.resources.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }.map { r in
+            ResourceStatus(resource: r, held: Leases.active(for: r.id, in: snapshot.leases, now: now).map {
+                Holding(lease: $0, agentName: names[$0.agentID] ?? "someone")
+            })
+        }
+
         return Dashboard(
             inProgress: snapshot.tasks.filter { $0.state == .inProgress }.count,
             openEscalations: open.sorted { $0.raised < $1.raised },
             projects: statuses,
-            agents: agentStatuses
+            agents: agentStatuses,
+            resources: resources
         )
     }
 

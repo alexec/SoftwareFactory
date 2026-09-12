@@ -31,12 +31,18 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
   - `Models`: `Project` (id is the folder path), `FactoryTask` (a task; named so because
     `Task` is Swift's; feature/bug/chore; backlog/inProgress/done; rank), `Agent` (name,
     project, task, lastSeen, deregistered; working within 2 min of a check-in),
-    `Escalation` (options, one recommended; `decide(_:by:)` records a `Decision`).
+    `Escalation` (options, one recommended; `decide(_:by:)` records a `Decision`),
+    `Resource` (slots, maxLease), `Lease` (one slot, one agent, until; `isActive(now:)`).
   - `FileStore`: one JSON file per record under `projects/`, `tasks/`, `escalations/`,
-    `agents/`; atomic writes; unreadable files skipped. `defaultRoot()` is the app group
+    `agents/`, `resources/`, `leases/`; atomic writes; unreadable files skipped.
+    `Snapshot` decodes with missing collections as empty, for older clients. `defaultRoot()` is the app group
     container or `$SOFTWARE_FACTORY_STORE`.
   - `Backlog`: order, next rank, next task, move (onMove semantics), place above, state
-    changes, current task.
+    changes, current task, `visible` (open plus the newest five done).
+  - `Leases`: active leases, free slots, lease (renews if already held; full says when a
+    slot frees), renew, release, heldBy, stale.
+  - `CloudRecords`: each record as one CloudKit record (`json`, `updated`); diff for
+    pushes; `decisionsToAdopt` for decisions made on another device.
   - `Dashboard.make(snapshot:now:)`: counts, one `ProjectStatus` per project, one
     `AgentStatus` per agent on the floor.
   - `MCPServer`: JSON-RPC 2.0, `handle(_:)` is pure per request; `Tool.all` is the
@@ -44,20 +50,25 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
   - `HTTP`: `HTTPRequest.parse`, `HTTPResponse.serialized`, and `HTTPRouter` (`POST /mcp`,
     `GET /api/snapshot`, `POST /api/decide`, `POST /api/task`; browser origins refused).
   - `SampleData`: records for a Debug build to look at.
+  - `Shared/CloudSync.swift` (both apps, not the package): the CloudKit calls. Container
+    `iCloud.com.alexecollins.softwarefactory`, private database, query on `updated`.
   - `software-factory` executable: `mcp` (the server over stdio), `status`, `tools`, `decide`.
 - `App/Sources`:
   - `AppModel`: `@Observable @MainActor`; reloads the store every 2 s; every write goes
     through `persist`; starts `FactoryServer` on port 4747.
   - `FactoryServer`: `NWListener` on the port, one queue per connection (a request can
     block for minutes), Bonjour `_softwarefactory._tcp`.
-  - `RootView` (split view: Floor + projects), `FloorView` (stat tiles, Needs you as a
-    horizontal strip, On the floor), `EscalationCard`, `ProjectView` (backlog with add,
-    drag reorder, state menu), `IntroSheet`, `SettingsView` (How it works on top, the
-    register command, the store, Developer in DEBUG).
-- `Phone/Sources`: `PhoneModel` (NWBrowser finds the factory, resolves host and port with
-  one probe connection, polls `/api/snapshot` every 3 s, posts `/api/decide`),
-  `PhoneRootView` (network primer in place, Needs you, On the floor), `PhoneIntroSheet`,
-  `PhoneSettingsView`. Same bundle id as the Mac app.
+  - `RootView` (split view: Floor, Resources, projects), `FloorView` (stat tiles, Needs
+    you as a horizontal strip, On the floor), `EscalationCard`, `ProjectView` (backlog
+    with add, drag reorder, state menu, notes under rows), `ResourcesView` (add, slots,
+    holders, Take back), `IntroSheet`, `SettingsView` (How it works on top, the register
+    command, iCloud, the store, Developer in DEBUG).
+- `Phone/Sources`: `PhoneModel` (NWBrowser finds the factory; `FactoryClient` speaks the
+  package's HTTP over the Bonjour endpoint, polling `/api/snapshot` every 3 s and posting
+  `/api/decide`; when the factory is out of reach it reads and decides through
+  `CloudSync`), `PhoneRootView` (network primer in place, Needs you, On the floor),
+  `PhoneIntroSheet`, `PhoneSettingsView`. Same bundle id as the Mac app.
+- `Tools/make-icon.swift` draws both icon sets; `Tools/drive-mcp.py` drives the stdio server.
 
 ## Rules for changes
 

@@ -166,3 +166,49 @@ public struct Escalation: Codable, Identifiable, Hashable, Sendable {
 public enum EscalationError: Error, Equatable, Sendable {
     case unknownOption
 }
+
+/// Something only so many agents can use at once: a phone, a browser, the Mac itself,
+/// or a budget of compiles. Each has a number of slots and a longest lease.
+public struct Resource: Codable, Identifiable, Hashable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var slots: Int
+    /// The longest a single lease may run, in seconds. A renewal starts the clock again.
+    public var maxLease: TimeInterval
+    public var note: String
+    public var created: Date
+
+    public init(id: UUID = UUID(), name: String, slots: Int = 1, maxLease: TimeInterval = 3600, note: String = "", created: Date = .now) {
+        self.id = id
+        self.name = name
+        self.slots = max(1, slots)
+        self.maxLease = max(60, maxLease)
+        self.note = note
+        self.created = created
+    }
+}
+
+/// One slot of a resource, held by one agent, until a time. It expires on its own, so a
+/// dead agent never holds a phone all day.
+public struct Lease: Codable, Identifiable, Hashable, Sendable {
+    public var id: UUID
+    public var resourceID: UUID
+    public var agentID: UUID
+    public var why: String
+    public var since: Date
+    public var until: Date
+    public var released: Date?
+
+    public init(id: UUID = UUID(), resourceID: UUID, agentID: UUID, why: String, since: Date, until: Date) {
+        self.id = id
+        self.resourceID = resourceID
+        self.agentID = agentID
+        self.why = why
+        self.since = since
+        self.until = until
+    }
+
+    public func isActive(now: Date) -> Bool {
+        released == nil && until > now
+    }
+}

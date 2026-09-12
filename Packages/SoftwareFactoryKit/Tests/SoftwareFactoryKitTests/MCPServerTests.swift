@@ -104,6 +104,29 @@ import Testing
         #expect(call(s, "task_next", ["project": "Where"]).text == "Nothing waiting.")
     }
 
+    @Test func resourcesLeaseRenewReleaseAndDeregister() throws {
+        let s = try server()
+        let a = id(after: "", in: call(s, "agent_register", ["name": "a"]).text)
+        let b = id(after: "", in: call(s, "agent_register", ["name": "b"]).text)
+        #expect(call(s, "resource_list").text.hasPrefix("No resources"))
+        #expect(call(s, "resource_add", ["name": "iPhone", "max_minutes": 120]).text.hasPrefix("Defined iPhone: 1 slot"))
+        #expect(call(s, "resource_add", ["name": "iphone"]).text.hasPrefix("Already defined"))
+
+        #expect(call(s, "resource_lease", ["agent_id": a, "resource": "iPhone", "minutes": 30, "why": "capture"]).text.hasPrefix("Leased iPhone"))
+        let full = call(s, "resource_lease", ["agent_id": b, "resource": "iPhone"])
+        #expect(full.text.contains("is full (held by a)"))
+        #expect(call(s, "resource_list").text.contains("0 of 1 free"))
+
+        #expect(call(s, "resource_renew", ["agent_id": a, "resource": "iPhone", "minutes": 10]).text.hasPrefix("iPhone is yours until"))
+        #expect(call(s, "resource_renew", ["agent_id": b, "resource": "iPhone"]).isError)
+        #expect(call(s, "resource_release", ["agent_id": a, "resource": "iPhone"]).text == "Released iPhone.")
+        #expect(call(s, "resource_lease", ["agent_id": b, "resource": "iPhone"]).text.hasPrefix("Leased iPhone"))
+
+        #expect(call(s, "agent_deregister", ["agent_id": b]).text.contains("released 1 lease"))
+        #expect(call(s, "resource_list").text.contains("1 of 1 free"))
+        #expect(call(s, "resource_lease", ["agent_id": a, "resource": "Nothing"]).isError)
+    }
+
     @Test func errorsAreToolErrorsNotProtocolErrors() throws {
         let s = try server()
         let r = call(s, "agent_checkin", ["agent_id": "not-an-id"])

@@ -3,6 +3,7 @@ import SoftwareFactoryKit
 
 enum Destination: Hashable {
     case floor
+    case resources
     case project(String)
 }
 
@@ -15,6 +16,8 @@ struct RootView: View {
             List(selection: $selection) {
                 Label("Floor", systemImage: "square.grid.2x2")
                     .tag(Destination.floor)
+                Label("Resources", systemImage: "lock.rectangle.stack")
+                    .tag(Destination.resources)
 
                 Section("Projects") {
                     ForEach(model.dashboard.projects) { status in
@@ -37,6 +40,8 @@ struct RootView: View {
             .navigationSplitViewColumnWidth(min: 200, ideal: 220)
         } detail: {
             switch selection {
+            case .resources:
+                ResourcesView()
             case .project(let id):
                 if let project = model.project(for: id) {
                     ProjectView(project: project)
@@ -55,6 +60,7 @@ struct RootView: View {
 
     private var title: String {
         if case .project(let id) = selection, let p = model.project(for: id) { return p.name }
+        if case .resources = selection { return "Resources" }
         return "Software Factory"
     }
 }

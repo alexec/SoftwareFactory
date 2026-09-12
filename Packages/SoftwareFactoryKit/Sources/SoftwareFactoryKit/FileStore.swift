@@ -6,12 +6,28 @@ public struct Snapshot: Codable, Sendable, Equatable {
     public var tasks: [FactoryTask]
     public var escalations: [Escalation]
     public var agents: [Agent]
+    public var resources: [Resource]
+    public var leases: [Lease]
 
-    public init(projects: [Project] = [], tasks: [FactoryTask] = [], escalations: [Escalation] = [], agents: [Agent] = []) {
+    public init(projects: [Project] = [], tasks: [FactoryTask] = [], escalations: [Escalation] = [], agents: [Agent] = [],
+                resources: [Resource] = [], leases: [Lease] = []) {
         self.projects = projects
         self.tasks = tasks
         self.escalations = escalations
         self.agents = agents
+        self.resources = resources
+        self.leases = leases
+    }
+
+    // Older snapshots (an older phone reading a newer Mac, or the reverse) may lack a field.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        projects = try c.decodeIfPresent([Project].self, forKey: .projects) ?? []
+        tasks = try c.decodeIfPresent([FactoryTask].self, forKey: .tasks) ?? []
+        escalations = try c.decodeIfPresent([Escalation].self, forKey: .escalations) ?? []
+        agents = try c.decodeIfPresent([Agent].self, forKey: .agents) ?? []
+        resources = try c.decodeIfPresent([Resource].self, forKey: .resources) ?? []
+        leases = try c.decodeIfPresent([Lease].self, forKey: .leases) ?? []
     }
 }
 
@@ -25,6 +41,8 @@ public struct Snapshot: Codable, Sendable, Equatable {
 ///     <root>/tasks/<uuid>.json
 ///     <root>/escalations/<uuid>.json
 ///     <root>/agents/<uuid>.json
+///     <root>/resources/<uuid>.json
+///     <root>/leases/<uuid>.json
 public struct FileStore: Sendable {
     public static let appGroup = "6T4RVD5724.com.alexecollins.softwarefactory"
 
@@ -32,7 +50,7 @@ public struct FileStore: Sendable {
 
     public init(root: URL) throws {
         self.root = root
-        for folder in ["projects", "tasks", "escalations", "agents"] {
+        for folder in ["projects", "tasks", "escalations", "agents", "resources", "leases"] {
             try FileManager.default.createDirectory(
                 at: root.appending(path: folder), withIntermediateDirectories: true)
         }
@@ -69,7 +87,9 @@ public struct FileStore: Sendable {
             projects: try loadAll("projects"),
             tasks: try loadAll("tasks"),
             escalations: try loadAll("escalations"),
-            agents: try loadAll("agents")
+            agents: try loadAll("agents"),
+            resources: try loadAll("resources"),
+            leases: try loadAll("leases")
         )
     }
 
@@ -111,6 +131,22 @@ public struct FileStore: Sendable {
 
     public func save(_ agent: Agent) throws {
         try write(agent, to: "agents", name: agent.id.uuidString)
+    }
+
+    public func save(_ resource: Resource) throws {
+        try write(resource, to: "resources", name: resource.id.uuidString)
+    }
+
+    public func save(_ lease: Lease) throws {
+        try write(lease, to: "leases", name: lease.id.uuidString)
+    }
+
+    public func delete(_ resource: Resource) throws {
+        try remove("resources", name: resource.id.uuidString)
+    }
+
+    public func delete(_ lease: Lease) throws {
+        try remove("leases", name: lease.id.uuidString)
     }
 
     public func delete(_ task: FactoryTask) throws {

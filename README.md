@@ -16,6 +16,10 @@ something themselves. You see all of it in one window and answer the questions w
   when it last checked in.
 - **Backlogs.** Each project's tasks, features, bugs and chores, in rank order. Add,
   reorder by dragging, mark started and done. Agents can do the same over MCP.
+- **Resources.** Things only so many agents can use at once: a phone, a simulator, the
+  browser, the whole Mac. Each has slots and a longest lease. An agent leases a slot,
+  saying why and for how long, and gives it back; a lease that runs out is over on its
+  own. You can take one back.
 
 ## The rules
 
@@ -43,9 +47,11 @@ claude mcp add --transport http --scope user software-factory http://127.0.0.1:4
 
 The tools: `agent_register`, `agent_checkin`, `agent_deregister`, `project_list`,
 `project_add`, `task_list`, `task_next`, `task_add`, `task_claim`, `task_status`,
-`task_rank`, `task_remove`, `escalation_raise`, `escalation_await`, `escalation_list`.
-The server's instructions tell an agent to register first, check in as it goes, raise
-and await when stuck, and deregister when done.
+`task_rank`, `task_remove`, `escalation_raise`, `escalation_await`, `escalation_list`,
+`resource_list`, `resource_add`, `resource_lease`, `resource_renew`, `resource_release`.
+The server's instructions tell an agent to register first, check in as it goes, lease
+what it shares, raise and await when stuck, and deregister when done, which also
+releases whatever it held.
 
 `Packages/SoftwareFactoryKit` also builds `software-factory`, a shell tool: `status` prints the floor as
 text, `tools` lists the tools, `mcp` is the same server over stdio for scripts.
@@ -53,15 +59,18 @@ text, `tools` lists the tools, `mcp` is the same server over stdio for scripts.
 
 ## The iPhone
 
-The same questions, on the phone, on the same Wi‑Fi as the Mac. The phone finds the factory
-over Bonjour, reads the store through the factory's `/api`, and a tap records the decision.
-Away from the network it shows the last thing it saw. iCloud sync and notifications are next.
+The same questions, on the phone. On the Mac's Wi‑Fi the phone finds the factory over
+Bonjour and reads it live. Anywhere else it reads and answers through your own iCloud:
+the Mac pushes every change to the private database and pulls decisions back; the phone
+pulls and pushes decisions. That needs the iCloud container
+`iCloud.com.alexecollins.softwarefactory` registered in the developer account once.
+Notifications are next.
 
 ## Later, not now
 
-Resources with slots and time-bound leases. The factory's own capacity: memory, CPU,
-compile slots, a verdict agents ask before starting anything heavy, and a throttle.
-Notifications that find you at the Mac or on the iPhone, answerable from the notification.
-iCloud sync so the phone works away from home. Dictating a task. Each arrives on its own.
+The factory's own capacity: memory, CPU, compiles running, a verdict agents ask before
+starting anything heavy, and a throttle. Notifications that find you at the Mac or on the
+iPhone, answerable from the notification. Dictating a task. Each arrives on its own; the
+order is the backlog in the app.
 
 MIT licence. © 2026 Alex Collins.

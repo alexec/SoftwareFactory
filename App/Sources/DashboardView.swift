@@ -28,12 +28,14 @@ struct FloorView: View {
 
     private var summary: some View {
         let d = model.dashboard
+        // Tiles wrap onto a second row in a narrow window rather than squeezing their words.
         return GlassEffectContainer(spacing: 16) {
-            HStack(spacing: 16) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 16)], spacing: 16) {
                 StatTile(value: d.inProgress, label: d.inProgress == 1 ? "task in progress" : "tasks in progress", symbol: "hammer")
                 StatTile(value: d.openEscalations.count, label: d.openEscalations.count == 1 ? "needs you" : "need you",
                          symbol: "questionmark.bubble", tint: d.openEscalations.isEmpty ? nil : .orange)
                 StatTile(value: d.agents.count, label: d.agents.count == 1 ? "agent on the floor" : "agents on the floor", symbol: "person.2")
+                StatTile(value: d.heldCount, label: d.heldCount == 1 ? "resource held" : "resources held", symbol: "lock.rectangle.stack")
             }
         }
         .frame(maxWidth: 900)
@@ -128,6 +130,8 @@ struct StatTile: View {
                 Text(label)
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }

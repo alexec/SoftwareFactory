@@ -93,8 +93,9 @@ public struct MCPServer: Sendable {
         You are working in a software factory. Register first (agent_register) and keep the id it \
         returns; pass it to every other call. Check in (agent_checkin) every few minutes with what you \
         are on. When you cannot decide something yourself, raise it (escalation_raise) with two or more \
-        options and your recommendation, then wait for the answer (escalation_await). Deregister \
-        (agent_deregister) when you are finished.
+        options and your recommendation, then wait for the answer (escalation_await). Before using \
+        anything shared (a phone, a simulator, the browser, the whole Mac) lease it (resource_lease) and \
+        release it after. Deregister (agent_deregister) when you are finished.
         """
 
     // MARK: Tools
@@ -168,6 +169,24 @@ public struct MCPServer: Sendable {
                  required: ["escalation_id"]),
             Tool(name: "escalation_list", description: "Open questions, for one project or all.",
                  properties: ["project": str("Folder path or project name; omit for all")], required: []),
+
+            Tool(name: "resource_list", description: "Every shared resource: slots, who holds them and until when. Lease one before using a phone, a simulator, the browser or the whole Mac.",
+                 properties: [:], required: []),
+            Tool(name: "resource_add", description: "Define a shared resource with a number of slots and the longest lease allowed.",
+                 properties: ["name": str("e.g. iPhone, Compile, Chrome"), "slots": ["type": "integer", "description": "How many can hold it at once; default 1"],
+                              "max_minutes": ["type": "integer", "description": "Longest single lease, in minutes; default 60"], "note": str("What it is")],
+                 required: ["name"]),
+            Tool(name: "resource_lease", description: "Take one slot for up to some minutes, saying why. Returns the lease and when it runs out, or says the resource is full and when a slot frees. Leasing a resource you already hold renews it.",
+                 properties: ["agent_id": str("From agent_register"), "resource": str("Resource name or id"),
+                              "minutes": ["type": "integer", "description": "How long you need it; capped by the resource's longest lease"], "why": str("What for, in one line")],
+                 required: ["agent_id", "resource"]),
+            Tool(name: "resource_renew", description: "More time on a lease you hold.",
+                 properties: ["agent_id": str("From agent_register"), "resource": str("Resource name or id"),
+                              "minutes": ["type": "integer", "description": "How much longer"]],
+                 required: ["agent_id", "resource"]),
+            Tool(name: "resource_release", description: "Give a resource back early. Deregistering releases everything you hold.",
+                 properties: ["agent_id": str("From agent_register"), "resource": str("Resource name or id")],
+                 required: ["agent_id", "resource"]),
         ] }
 
         static func str(_ description: String) -> [String: Any] {
@@ -198,7 +217,12 @@ public struct MCPServer: Sendable {
             var agent = try agent(args, in: snap)
             agent.deregistered = now()
             try store.save(agent)
-            return "Deregistered. Thank you."
+            let held = Leases.heldBy(agent.id, in: snap.leases, now: now())
+            for var lease in held {
+                lease.released = now()
+                try store.save(lease)
+            }
+            return held.isEmpty ? "Deregistered. Thank you." : "Deregistered and released \(held.count) lease\(held.count == 1 ? "" : "s"). Thank you."
 
         case "project_list":
             let dash = Dashboard.make(snapshot: snap, now: now())
@@ -317,9 +341,76 @@ public struct MCPServer: Sendable {
                 return "\(e.id.uuidString)  [\(project)] \(e.question)  \(opts)"
             }.joined(separator: "\n")
 
+        case "resource_list":
+            if snap.resources.isEmpty { return "No resources defined. resource_add makes one." }
+            return snap.resources.sorted { $0.name < $1.name }.map { r in
+                let held = Leases.active(for: r.id, in: snap.leases, now: now())
+                let free = r.slots - held.count
+                let holders = held.map { l in
+                    let who = snap.agents.first { $0.id == l.agentID }?.name ?? "someone"
+                    return "\(who) until \(Self.clock(l.until))\(l.why.isEmpty ? "" : " (\(l.why))")"
+                }.joined(separator: ", ")
+                return "\(r.name)  \(free) of \(r.slots) free  max \(Int(r.maxLease / 60)) min\(holders.isEmpty ? "" : "  held by \(holders)")"
+            }.joined(separator: "\n")
+
+        case "resource_add":
+            let name = try string("name", args)
+            if let existing = snap.resources.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+                return "Already defined: \(existing.name), \(existing.slots) slot\(existing.slots == 1 ? "" : "s")."
+            }
+            let resource = Resource(name: name, slots: args["slots"] as? Int ?? 1,
+                                    maxLease: TimeInterval((args["max_minutes"] as? Int ?? 60) * 60),
+                                    note: args["note"] as? String ?? "", created: now())
+            try store.save(resource)
+            return "Defined \(resource.name): \(resource.slots) slot\(resource.slots == 1 ? "" : "s"), leases up to \(Int(resource.maxLease / 60)) min."
+
+        case "resource_lease":
+            let agent = try agent(args, in: snap)
+            let resource = try resource(args, in: snap)
+            let minutes = TimeInterval(args["minutes"] as? Int ?? Int(resource.maxLease / 60))
+            switch Leases.lease(resource, for: agent.id, wanting: minutes * 60, why: args["why"] as? String ?? "", in: snap.leases, now: now()) {
+            case .leased(let lease):
+                try store.save(lease)
+                return "Leased \(resource.name) until \(Self.clock(lease.until)). Release it when you are done."
+            case .full(let nextFree, let held):
+                let who = held.map { l in snap.agents.first { $0.id == l.agentID }?.name ?? "someone" }.joined(separator: ", ")
+                return "\(resource.name) is full (held by \(who)). A slot frees at \(Self.clock(nextFree)). Do something else and ask again."
+            }
+
+        case "resource_renew":
+            let agent = try agent(args, in: snap)
+            let resource = try resource(args, in: snap)
+            guard let mine = Leases.active(for: resource.id, in: snap.leases, now: now()).first(where: { $0.agentID == agent.id }) else {
+                throw ToolError(message: "You do not hold \(resource.name).")
+            }
+            let minutes = TimeInterval(args["minutes"] as? Int ?? Int(resource.maxLease / 60))
+            let renewed = try Leases.renew(mine, of: resource, for: agent.id, wanting: minutes * 60, now: now())
+            try store.save(renewed)
+            return "\(resource.name) is yours until \(Self.clock(renewed.until))."
+
+        case "resource_release":
+            let agent = try agent(args, in: snap)
+            let resource = try resource(args, in: snap)
+            guard let mine = Leases.active(for: resource.id, in: snap.leases, now: now()).first(where: { $0.agentID == agent.id }) else {
+                return "You were not holding \(resource.name)."
+            }
+            try store.save(try Leases.release(mine, for: agent.id, now: now()))
+            return "Released \(resource.name)."
+
         default:
             throw ToolError(message: "Unknown tool: \(name)")
         }
+    }
+
+    static func clock(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
+    }
+
+    func resource(_ args: [String: Any], in snap: Snapshot) throws -> Resource {
+        let ref = try string("resource", args)
+        if let id = UUID(uuidString: ref), let r = snap.resources.first(where: { $0.id == id }) { return r }
+        if let r = snap.resources.first(where: { $0.name.caseInsensitiveCompare(ref) == .orderedSame }) { return r }
+        throw ToolError(message: "No resource called \(ref). Known: \(snap.resources.map(\.name).joined(separator: ", "))")
     }
 
     // MARK: Helpers

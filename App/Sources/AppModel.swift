@@ -178,6 +178,28 @@ final class AppModel {
         persist { try $0.save(e) }
     }
 
+    // MARK: Resources
+
+    func addResource(name: String, slots: Int, maxMinutes: Int) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        persist { try $0.save(Resource(name: name, slots: slots, maxLease: TimeInterval(maxMinutes * 60))) }
+    }
+
+    func remove(_ resource: Resource) {
+        persist { store in
+            for lease in snapshot.leases where lease.resourceID == resource.id { try store.delete(lease) }
+            try store.delete(resource)
+        }
+    }
+
+    /// Takes a lease back from an agent. The next lease it asks for will tell it so.
+    func end(_ lease: Lease) {
+        var ended = lease
+        ended.released = .now
+        persist { try $0.save(ended) }
+    }
+
     // MARK: Developer
 
     func addSampleData() {
