@@ -25,6 +25,7 @@ final class PhoneModel {
     let cloud = CloudSync()
     let dictation = Dictation()
     let lockScreen = LockScreen()
+    let notifier = PhoneNotifier()
 
     /// One model for the app and for the Lock Screen's buttons, which run in the app.
     static let shared = PhoneModel()
@@ -59,6 +60,7 @@ final class PhoneModel {
         }
         _Concurrency.Task {
             await cloud.prepare()
+            await notifier.refreshStanding()
             if !hasPrimedNetwork { startPolling() }
         }
         if hasPrimedNetwork { startLooking() }
@@ -119,6 +121,7 @@ final class PhoneModel {
                 source = .factory
                 lastError = nil
                 if case .connected = link {} else { link = .connected(name: factoryName ?? "the Mac") }
+                notifier.notice(dashboard.openEscalations, projects: snapshot.projects)
                 await lockScreen.reflect(dashboard, factory: factoryName ?? "the Mac")
                 return
             } catch {
@@ -130,7 +133,18 @@ final class PhoneModel {
         snapshot = pulled
         dashboard = Dashboard.make(snapshot: snapshot)
         source = .cloud
+        notifier.notice(dashboard.openEscalations, projects: snapshot.projects)
         await lockScreen.reflect(dashboard, factory: factoryName ?? "the Mac")
+    }
+
+    /// A silent push from iCloud: something changed on the Mac. Read it all again; the
+    /// banner, the lists and the Lock Screen follow from the read.
+    func pushArrived() async {
+        await poll()
+    }
+
+    func askForNotifications() {
+        _Concurrency.Task { await notifier.ask() }
     }
 
     /// From a Lock Screen button. The question is in the last snapshot when the app has
@@ -143,6 +157,7 @@ final class PhoneModel {
         }
         guard let escalation = found, let option = escalation.options.first(where: { $0.id == optionID }) else { return }
         await decide(escalation, option)
+        notifier.withdraw(escalationID)
         await lockScreen.reflect(dashboard, factory: factoryName ?? "the Mac")
     }
 

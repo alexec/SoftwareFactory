@@ -13,6 +13,9 @@ struct PhoneRootView: View {
                         NetworkPrimer()
                     } else {
                         linkLine
+                        if model.notifier.standing == .notAsked {
+                            NotificationPrimer()
+                        }
                     }
                     needsYou
                     projects
@@ -144,6 +147,24 @@ struct PhoneRootView: View {
                 }
             }
         }
+    }
+}
+
+/// Shown once, in place, before the system's notification alert.
+struct NotificationPrimer: View {
+    @Environment(PhoneModel.self) private var model
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Software Factory can tell you when a question arrives, wherever you are. The banner carries the options, so you answer from it. Questions travel through your own iCloud.")
+                .fixedSize(horizontal: false, vertical: true)
+            Button { model.askForNotifications() } label: {
+                Text("Continue").frame(maxWidth: .infinity, minHeight: 32)
+            }
+            .buttonStyle(.glassProminent)
+        }
+        .padding(16)
+        .glassEffect(.regular, in: .rect(cornerRadius: 20))
     }
 }
 

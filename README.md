@@ -81,6 +81,13 @@ the Mac pushes every change to the private database and pulls decisions back; th
 pulls and pushes decisions. That needs the iCloud container
 `iCloud.com.alexecollins.softwarefactory` registered in the developer account once.
 
+**Away from the Mac.** The phone asks once, from a primer, whether it may notify you.
+Then iCloud sends the phone a silent push whenever the Mac writes a question, a task or
+a project; the app wakes, reads the store, refreshes the lists and the Lock Screen, and
+posts a banner for each new question with its options as the actions. Answer from the
+banner and the decision goes back through iCloud; the Mac adopts it within fifteen
+seconds and the agent waiting on it moves on.
+
 **On the Lock Screen.** While a question is open it sits on the Lock Screen and in the
 Dynamic Island as a Live Activity, with its options as buttons: answer without unlocking.
 It shows the newest question and how many more wait. Without a push server it is kept

@@ -102,7 +102,13 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
   `/api/decide`; when the factory is out of reach it reads and decides through
   `CloudSync`), `PhoneRootView` (network primer in place, Needs you, On the floor),
   `PhoneBacklogView` (a project's backlog; type or hold the mic to add, near the Mac only),
-  `PhoneIntroSheet`, `PhoneSettingsView`, `LockScreen` (one Live Activity while a
+  `PhoneIntroSheet`, `PhoneSettingsView`, `PhoneNotifier` (a banner per new question
+  with the options as actions; announced ids kept in UserDefaults so a cold launch by a
+  push still knows what is news; the primer on the floor asks), `PhoneAppDelegate`
+  (registers for remote notifications, saves the CloudKit query subscriptions through
+  `CloudSync.subscribe()`, and on a silent push calls `PhoneModel.pushArrived()`, which
+  is one `poll()`; `aps-environment` and `remote-notification` background mode are in
+  `project.yml`), `LockScreen` (one Live Activity while a
   question is open; newest question, options as buttons; ended when none is open). Same
   bundle id as the Mac app.
 - `Phone/Activity`: `FactoryActivityAttributes` and `DecideIntent`, compiled into both the

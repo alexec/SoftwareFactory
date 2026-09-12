@@ -38,6 +38,10 @@
 	<string>Software Factory listens while you dictate a task. The words are recognised on this phone and nothing is recorded.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

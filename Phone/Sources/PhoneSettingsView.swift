@@ -32,6 +32,28 @@ struct PhoneSettingsView: View {
                     }
                 }
 
+                Section("Notifications") {
+                    switch model.notifier.standing {
+                    case .allowed:
+                        Text("A banner arrives for each new question, with its options, wherever the phone is.")
+                            .foregroundStyle(.secondary)
+                    case .denied:
+                        Text("Notifications are off for Software Factory. They can be turned on in the iOS Settings app.")
+                            .foregroundStyle(.secondary)
+                        Button("Open iOS Settings") {
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                UIApplication.shared.open(url)
+                            }
+                        }
+                    default:
+                        Text("Not asked yet. The floor asks the first time.")
+                            .foregroundStyle(.secondary)
+                    }
+                    #if DEBUG
+                    Text(model.notifier.lastPost).font(.caption).foregroundStyle(.secondary)
+                    #endif
+                }
+
                 Section("Lock Screen") {
                     Text("While a question is open, it sits on the Lock Screen with its options, so you answer without unlocking. It is kept current while Software Factory is open.")
                         .foregroundStyle(.secondary)
@@ -39,6 +61,7 @@ struct PhoneSettingsView: View {
 
                 Section("iCloud") {
                     LabeledContent("Sync", value: model.cloud.summary)
+                    LabeledContent("Pushes", value: model.cloud.subscribed ? "On: iCloud wakes the app when the Mac writes" : "Not yet; they start once notifications are allowed")
                     Text("Away from the Mac's network, questions arrive and answers go back through your own iCloud.")
                         .foregroundStyle(.secondary)
                 }

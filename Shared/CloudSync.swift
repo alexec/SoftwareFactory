@@ -108,6 +108,36 @@ final class CloudSync {
         }
     }
 
+    // MARK: Subscriptions (the phone)
+
+    /// Asks iCloud for a silent push whenever a question, a task or a project changes,
+    /// so the phone learns of news away from the Mac. Saving the same subscriptions
+    /// again is harmless.
+    func subscribe() async {
+        guard isReady else { return }
+        let subscriptions = ["Escalation", "Task", "Project"].map { type -> CKSubscription in
+            let s = CKQuerySubscription(recordType: type, predicate: NSPredicate(value: true), subscriptionID: "\(type.lowercased())-changes",
+                                        options: [.firesOnRecordCreation, .firesOnRecordUpdate, .firesOnRecordDeletion])
+            let info = CKSubscription.NotificationInfo()
+            info.shouldSendContentAvailable = true
+            s.notificationInfo = info
+            return s
+        }
+        do {
+            _ = try await database.modifySubscriptions(saving: subscriptions, deleting: [])
+            subscribed = true
+            lastError = nil
+        } catch {
+            lastError = "Could not subscribe for pushes: \(error.localizedDescription)"
+        }
+    }
+
+    private(set) var subscribed = false
+
+    func noteRegistrationFailure(_ error: Error) {
+        lastError = "Pushes are not available: \(error.localizedDescription)"
+    }
+
     // MARK: Pulling
 
     /// Everything in iCloud, as a snapshot. Empty when iCloud is not reachable.
