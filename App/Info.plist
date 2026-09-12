@@ -28,5 +28,7 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Alex Collins</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Software Factory listens while you dictate a task. The words are recognised on this Mac and nothing is recorded.</string>
 </dict>
 </plist>

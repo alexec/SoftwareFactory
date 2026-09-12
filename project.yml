@@ -58,6 +58,8 @@ targets:
         com.apple.security.network.server: true
         # Outgoing, for iCloud.
         com.apple.security.network.client: true
+        # Dictating a task.
+        com.apple.security.device.audio-input: true
         com.apple.security.application-groups:
           - 6T4RVD5724.com.alexecollins.softwarefactory
         com.apple.developer.icloud-container-identifiers:
@@ -74,6 +76,7 @@ targets:
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         ITSAppUsesNonExemptEncryption: false
         NSHumanReadableCopyright: © 2026 Alex Collins
+        NSMicrophoneUsageDescription: Software Factory listens while you dictate a task. The words are recognised on this Mac and nothing is recorded.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.alexecollins.softwarefactory

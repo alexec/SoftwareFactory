@@ -19,6 +19,7 @@ final class AppModel {
     @ObservationIgnored private var server: FactoryServer?
     let cloud = CloudSync()
     let notifier = Notifier()
+    let dictation = Dictation()
     private(set) var isAtTheMac = true
     @ObservationIgnored private var lastCloudPull: Date?
     static let pullDecisionsEvery: TimeInterval = 15
