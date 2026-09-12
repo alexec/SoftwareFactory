@@ -31,35 +31,27 @@ struct ProjectView: View {
                 }
             }
 
-            if tasks.isEmpty {
-                Section("Backlog") {
-                    addRow
-                    EmptyLine(text: "Nothing on the backlog.", symbol: "list.bullet")
-                }
-            }
-
-            // One block per state. Only the backlog block reorders by drag; the three
-            // newest done and ten newest parked are shown, the store keeps the rest. The
-            // add row sits under the Backlog block, where a new task lands.
-            ForEach(Backlog.blocks(tasks), id: \.state) { block in
-                Section(block.state.word) {
-                    if block.state == .backlog {
-                        ForEach(block.tasks) { task in
+            // One section per state, in a fixed order, so the Backlog section (with the
+            // add row under it, where a new task lands) is always in the same place.
+            ForEach([FactoryTask.State.blocked, .inProgress, .backlog, .parked, .done], id: \.self) { state in
+                let group = tasks.filter { $0.state == state }
+                if state == .backlog {
+                    Section("Backlog") {
+                        ForEach(group) { task in
                             TaskRow(task: task)
                         }
                         .onMove { source, destination in
                             model.move(in: project.id, from: source, to: destination)
                         }
                         addRow
-                    } else {
-                        ForEach(block.tasks) { task in
+                    }
+                } else if !group.isEmpty {
+                    Section(state.word) {
+                        ForEach(group) { task in
                             TaskRow(task: task)
                         }
                     }
                 }
-            }
-            if !tasks.isEmpty, !tasks.contains(where: { $0.state == .backlog }) {
-                Section("Backlog") { addRow }
             }
         }
         .listStyle(.inset)
