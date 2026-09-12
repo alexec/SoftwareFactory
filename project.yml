@@ -39,28 +39,32 @@ packages:
 targets:
   Foreman:
     type: application
-    supportedDestinations: [macOS]
+    platform: macOS
     sources:
       - path: App/Sources
       - path: App/Resources
     dependencies:
       - package: ForemanKit
         product: ForemanKit
-    # Sandboxed from day one, because the sandbox decides where the shared store lives
-    # (the app group container) and how Claude Code's folder is reached (a folder the
-    # person chooses once, kept as a bookmark).
+      # The MCP server ships inside the app, at Contents/MacOS/foreman-mcp, so the register
+      # command in Settings points at something that moves with the app.
+      - target: ForemanServer
+        embed: true
+        codeSign: true
+        copy:
+          destination: executables
+    # Sandboxed from day one, because the sandbox decides where the shared store lives:
+    # the app group container, which the unsandboxed server reaches by plain path.
     entitlements:
       path: App/Foreman.entitlements
       properties:
         com.apple.security.app-sandbox: true
-        com.apple.security.files.user-selected.read-only: true
-        com.apple.security.files.bookmarks.app-scope: true
         com.apple.security.application-groups:
           - 6T4RVD5724.com.alexecollins.foreman
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: Foreman
+        CFBundleDisplayName: Software Factory
         CFBundleName: Foreman
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleShortVersionString: $(MARKETING_VERSION)
@@ -75,6 +79,20 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         ENABLE_HARDENED_RUNTIME: YES
         COMBINE_HIDPI_IMAGES: YES
+  ForemanServer:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Packages/ForemanKit/Sources/foreman
+    dependencies:
+      - package: ForemanKit
+        product: ForemanKit
+    settings:
+      base:
+        PRODUCT_NAME: foreman-mcp
+        PRODUCT_BUNDLE_IDENTIFIER: com.alexecollins.foreman.server
+        ENABLE_HARDENED_RUNTIME: YES
+        SKIP_INSTALL: YES
 schemes:
   Foreman:
     build:

@@ -8,9 +8,5 @@
 	<array>
 		<string>6T4RVD5724.com.alexecollins.foreman</string>
 	</array>
-	<key>com.apple.security.files.bookmarks.app-scope</key>
-	<true/>
-	<key>com.apple.security.files.user-selected.read-only</key>
-	<true/>
 </dict>
 </plist>

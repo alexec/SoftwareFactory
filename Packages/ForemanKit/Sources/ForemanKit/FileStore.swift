@@ -3,25 +3,28 @@ import Foundation
 /// Everything in the store, read in one go.
 public struct Snapshot: Sendable, Equatable {
     public var projects: [Project]
-    public var items: [WorkItem]
+    public var tasks: [FactoryTask]
     public var escalations: [Escalation]
+    public var agents: [Agent]
 
-    public init(projects: [Project] = [], items: [WorkItem] = [], escalations: [Escalation] = []) {
+    public init(projects: [Project] = [], tasks: [FactoryTask] = [], escalations: [Escalation] = [], agents: [Agent] = []) {
         self.projects = projects
-        self.items = items
+        self.tasks = tasks
         self.escalations = escalations
+        self.agents = agents
     }
 }
 
-/// The shared store: one JSON file per record, in a folder every app and every agent can
-/// reach. One file per record means two writers rarely touch the same file, and every
+/// The shared store: one JSON file per record, in a folder every app and the MCP server
+/// can reach. One file per record means two writers rarely touch the same file, and every
 /// write is atomic, so a half-written record is never read.
 ///
 /// Layout:
 ///
 ///     <root>/projects/<path-hash>.json
-///     <root>/items/<uuid>.json
+///     <root>/tasks/<uuid>.json
 ///     <root>/escalations/<uuid>.json
+///     <root>/agents/<uuid>.json
 public struct FileStore: Sendable {
     public static let appGroup = "6T4RVD5724.com.alexecollins.foreman"
 
@@ -29,14 +32,14 @@ public struct FileStore: Sendable {
 
     public init(root: URL) throws {
         self.root = root
-        for folder in ["projects", "items", "escalations"] {
+        for folder in ["projects", "tasks", "escalations", "agents"] {
             try FileManager.default.createDirectory(
                 at: root.appending(path: folder), withIntermediateDirectories: true)
         }
     }
 
     /// Where the store lives when nothing says otherwise: the app group container, which
-    /// the sandboxed app and the unsandboxed CLI both resolve to the same folder.
+    /// the sandboxed app and the unsandboxed server both resolve to the same folder.
     /// `FOREMAN_STORE` in the environment overrides it.
     public static func defaultRoot(home: URL? = nil) -> URL {
         if let override = ProcessInfo.processInfo.environment["FOREMAN_STORE"], !override.isEmpty {
@@ -62,9 +65,16 @@ public struct FileStore: Sendable {
     public func load() throws -> Snapshot {
         Snapshot(
             projects: try loadAll("projects"),
-            items: try loadAll("items"),
-            escalations: try loadAll("escalations")
+            tasks: try loadAll("tasks"),
+            escalations: try loadAll("escalations"),
+            agents: try loadAll("agents")
         )
+    }
+
+    public func escalation(_ id: UUID) -> Escalation? {
+        let url = root.appending(path: "escalations").appending(path: id.uuidString + ".json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? Self.decoder.decode(Escalation.self, from: data)
     }
 
     private func loadAll<T: Decodable>(_ folder: String) throws -> [T] {
@@ -89,16 +99,20 @@ public struct FileStore: Sendable {
         try write(project, to: "projects", name: Self.fileName(forProject: project.id))
     }
 
-    public func save(_ item: WorkItem) throws {
-        try write(item, to: "items", name: item.id.uuidString)
+    public func save(_ task: FactoryTask) throws {
+        try write(task, to: "tasks", name: task.id.uuidString)
     }
 
     public func save(_ escalation: Escalation) throws {
         try write(escalation, to: "escalations", name: escalation.id.uuidString)
     }
 
-    public func delete(_ item: WorkItem) throws {
-        try remove("items", name: item.id.uuidString)
+    public func save(_ agent: Agent) throws {
+        try write(agent, to: "agents", name: agent.id.uuidString)
+    }
+
+    public func delete(_ task: FactoryTask) throws {
+        try remove("tasks", name: task.id.uuidString)
     }
 
     public func delete(_ escalation: Escalation) throws {
@@ -107,6 +121,10 @@ public struct FileStore: Sendable {
 
     public func delete(_ project: Project) throws {
         try remove("projects", name: Self.fileName(forProject: project.id))
+    }
+
+    public func delete(_ agent: Agent) throws {
+        try remove("agents", name: agent.id.uuidString)
     }
 
     private func write<T: Encodable>(_ record: T, to folder: String, name: String) throws {

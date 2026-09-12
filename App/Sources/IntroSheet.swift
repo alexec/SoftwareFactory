@@ -11,31 +11,31 @@ struct IntroSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Foreman")
+                        Text("Software Factory")
                             .font(.system(.largeTitle, design: .rounded).weight(.bold))
-                        Text("Foreman shows what your coding agents are doing, and what they need from you.")
+                        Text("The floor of a factory where coding agents do the work and you make the calls.")
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("How you use it")
                             .font(.headline)
-                        step("Point it at your Claude Code folder, once.")
-                        step("Read the dashboard: which projects are being worked on, and on what.")
-                        step("Answer an escalation by picking one of the options the agent offered.")
+                        step("Register the factory's MCP server with your agent, once. Settings has the command.")
+                        step("Agents check in, pick up tasks, and ask when they cannot decide.")
+                        step("Answer a question by clicking one of the options the agent offered. The agent carries on.")
                         step("Keep each project's backlog in order: features, bugs and chores, top to bottom.")
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Why this one")
                             .font(.headline)
-                        Text("Agents ask; you decide. Everything an agent needs from you sits in one place, so you answer once and get back to your day. Private and free forever.")
+                        Text("Agents ask; you decide. The factory does not care what an agent runs on, and nothing leaves this Mac. Private and free forever.")
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(28)
             }
 
-            Button("Open the dashboard") {
+            Button("Open the floor") {
                 model.hasSeenIntro = true
                 dismiss()
             }
@@ -46,7 +46,7 @@ struct IntroSheet: View {
             .padding(.horizontal, 28)
             .padding(.bottom, 24)
         }
-        .frame(width: 440, height: 460)
+        .frame(width: 440, height: 480)
     }
 
     private func step(_ text: String) -> some View {

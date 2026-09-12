@@ -1,0 +1,161 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+body { margin: 0; font-family: -apple-system, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif; color: #1d1d1f; -webkit-font-smoothing: antialiased; }
+a { color: #0b63ce; } a:hover { color: #084a9b; }
+.desk { width: 1200px; height: 760px; box-sizing: border-box; padding: 40px; background: linear-gradient(135deg, #e9e4dc 0%, #d9dde6 45%, #e6dcd4 100%); }
+.win { width: 1120px; height: 680px; border-radius: 14px; overflow: hidden; display: flex; background: rgba(255,255,255,0.62); box-shadow: 0 30px 60px rgba(0,0,0,0.22), 0 0 0 0.5px rgba(0,0,0,0.18); backdrop-filter: blur(30px); }
+.side { width: 220px; box-sizing: border-box; padding: 18px 12px; display: flex; flex-direction: column; gap: 4px; background: rgba(245,243,240,0.55); border-right: 0.5px solid rgba(0,0,0,0.08); }
+.lights { display: flex; gap: 8px; margin: 0 0 22px 6px; }
+.lights div { width: 12px; height: 12px; border-radius: 6px; }
+.nav { display: flex; align-items: center; gap: 9px; padding: 6px 10px; border-radius: 7px; font-size: 13px; }
+.nav.on { background: rgba(0,0,0,0.08); font-weight: 600; }
+.nav svg { width: 15px; height: 15px; stroke: #4a4a4f; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.sect { font-size: 11px; font-weight: 600; color: #8a8a8e; margin: 14px 0 2px 10px; letter-spacing: 0.02em; }
+.dot { width: 8px; height: 8px; border-radius: 4px; flex: none; }
+.g { background: #34c759; } .o { background: #ff9f0a; } .q { background: rgba(0,0,0,0.18); } .r { background: #ff453a; }
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.bar { height: 52px; display: flex; align-items: center; padding: 0 20px; gap: 12px; border-bottom: 0.5px solid rgba(0,0,0,0.08); font-size: 15px; font-weight: 600; }
+.bar .sp { flex: 1; }
+.tb { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 15px; background: rgba(255,255,255,0.7); box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08); }
+.tb svg { width: 15px; height: 15px; stroke: #1d1d1f; fill: none; stroke-width: 1.8; stroke-linecap: round; }
+.body { flex: 1; padding: 22px 24px; display: flex; flex-direction: column; gap: 22px; overflow: hidden; }
+.h2 { font-size: 17px; font-weight: 600; margin: 0 0 10px 0; }
+.glass { background: rgba(255,255,255,0.55); border-radius: 16px; box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.9), 0 1px 2px rgba(0,0,0,0.05), 0 8px 24px rgba(0,0,0,0.06); }
+.tile { display: flex; align-items: center; gap: 14px; padding: 14px 18px; flex: 1; }
+.tile svg { width: 24px; height: 24px; stroke: #8a8a8e; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.tile .n { font-size: 30px; font-weight: 600; line-height: 1; }
+.tile .l { font-size: 13px; color: #6e6e73; margin-top: 3px; }
+.card { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #6e6e73; }
+.chip { padding: 2px 8px; border-radius: 99px; background: rgba(0,0,0,0.07); font-size: 11px; font-weight: 600; color: #1d1d1f; }
+.chip.o { background: rgba(255,159,10,0.2); color: #8a4b00; } .chip.b { background: rgba(11,99,206,0.14); color: #0b4f9f; } .chip.g { background: rgba(52,199,89,0.18); color: #1d6b33; }
+.q { font-size: 15px; font-weight: 600; }
+.ctx { font-size: 13px; color: #515154; line-height: 1.4; }
+.opts { display: flex; flex-direction: column; gap: 8px; }
+.opt { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,0.7); box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.08); font-size: 13px; }
+.opt .c { width: 16px; height: 16px; border-radius: 8px; box-shadow: inset 0 0 0 1.5px #a0a0a5; flex: none; margin-top: 1px; }
+.opt .t { font-weight: 600; display: flex; gap: 8px; align-items: center; }
+.opt .d { color: #6e6e73; margin-top: 2px; }
+.rows { display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+.row { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; font-size: 13px; background: rgba(255,255,255,0.35); }
+.row .dot { margin-top: 5px; }
+.row .name { font-weight: 600; display: flex; gap: 8px; align-items: baseline; }
+.row .name span { font-weight: 500; font-size: 11px; color: #8a8a8e; }
+.row .sub { color: #6e6e73; margin-top: 2px; }
+.row .sp { flex: 1; }
+.row .tail { display: flex; gap: 14px; color: #6e6e73; align-items: center; }
+.row .tail svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+.btn { display: inline-flex; align-items: center; justify-content: center; padding: 7px 14px; border-radius: 99px; font-size: 13px; font-weight: 600; background: rgba(255,255,255,0.75); box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08); }
+.btn.p { background: #0b63ce; color: #fff; box-shadow: 0 1px 3px rgba(11,99,206,0.35); }
+.hscroll { display: flex; gap: 14px; overflow: hidden; padding-bottom: 4px; }
+.hscroll .card { flex: none; width: 360px; }
+.gauge { display: flex; flex-direction: column; gap: 6px; }
+.gauge .t { display: flex; justify-content: space-between; font-size: 12px; color: #6e6e73; }
+.gauge .t b { color: #1d1d1f; font-variant-numeric: tabular-nums; }
+.bar2 { height: 8px; border-radius: 4px; background: rgba(0,0,0,0.08); overflow: hidden; }
+.bar2 div { height: 100%; border-radius: 4px; }
+.slots { display: flex; gap: 4px; }
+.slot { width: 14px; height: 14px; border-radius: 4px; background: rgba(0,0,0,0.08); box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12); }
+.slot.on { background: #ff9f0a; }
+.slot.me { background: #34c759; }
+.drag { transform: rotate(-0.6deg) translateX(6px); box-shadow: 0 10px 28px rgba(0,0,0,0.18), inset 0 0 0 0.5px rgba(0,0,0,0.1); border-radius: 10px; background: rgba(255,255,255,0.95) !important; position: relative; z-index: 2; }
+.gap { height: 44px; border-radius: 10px; border: 1.5px dashed rgba(11,99,206,0.5); background: rgba(11,99,206,0.06); margin: 2px 10px; }
+.grip { width: 10px; color: #b0b0b5; font-size: 14px; line-height: 1; margin-top: 2px; letter-spacing: -2px; }
+.mic { display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:15px; background:#ff453a; box-shadow: 0 0 0 6px rgba(255,69,58,0.18); }
+.mic svg { width: 14px; height: 14px; stroke:#fff; fill:none; stroke-width:1.8; stroke-linecap:round; }
+code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; background: rgba(0,0,0,0.05); padding: 1px 5px; border-radius: 4px; }
+.tools { display:grid; grid-template-columns: 170px 1fr; row-gap:6px; column-gap:12px; font-size:12.5px; line-height:1.35; }
+.tools .h { grid-column: 1 / -1; font-size:11px; font-weight:700; color:#8a8a8e; letter-spacing:0.04em; margin-top:6px; }
+
+  </style>
+</helmet>
+<div class="desk"><div class="win">
+<div class="side">
+  <div class="lights"><div style="background:#ff5f57"></div><div style="background:#febc2e"></div><div style="background:#28c840"></div></div>
+  <div class="nav on"><svg viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>Floor</div>
+  <div class="nav "><svg viewBox="0 0 16 16"><circle cx="6" cy="5" r="2.5"/><path d="M1.5 13c0-2.5 2-4 4.5-4s4.5 1.5 4.5 4"/><circle cx="11.5" cy="6" r="2"/><path d="M11 9.5c2 0 3.5 1.3 3.5 3.5"/></svg>Agents</div>
+  <div class="nav "><svg viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg>Resources</div>
+  <div class="nav "><svg viewBox="0 0 16 16"><path d="M2 14V7l4 2.5V7l4 2.5V4l4 2v8z"/><path d="M11 4V2"/></svg>Factory<span style="margin-left:auto" class="chip o">tight</span></div>
+  <div class="sect">PROJECTS</div>
+  <div class="nav "><div class="dot g"></div>Where</div>
+  <div class="nav"><div class="dot g"></div>Packed<span style="margin-left:auto" class="chip o">1</span></div>
+  <div class="nav"><div class="dot o"></div>Brushwise<span style="margin-left:auto" class="chip o">1</span></div>
+  <div class="nav"><div class="dot o"></div>Call Your Mom</div>
+  <div class="nav"><div class="dot q"></div>Developed</div>
+  <div class="nav"><div class="dot q"></div>Hard Stop</div>
+  <div class="nav"><div class="dot q"></div>Stormy Night</div>
+</div>
+<div class="main">
+  <div class="bar">Software Factory<div class="sp"></div><div class="tb"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg></div></div>
+  <div class="body">
+
+<div style="display:flex; gap:14px;">
+  <div class="glass tile"><svg viewBox="0 0 24 24"><path d="M14 4l6 6-9 9-6-6z"/><path d="M4 20l5-5"/></svg><div><div class="n">4</div><div class="l">tasks in progress</div></div></div>
+  <div class="glass tile" style="background: rgba(255,214,160,0.35);"><svg viewBox="0 0 24 24" style="stroke:#c76a00"><path d="M4 5h16v11H9l-5 4z"/><path d="M12 9v3M12 14h.01"/></svg><div><div class="n">3</div><div class="l">need you</div></div></div>
+  <div class="glass tile"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M16 15c3 0 5 2 5 5"/></svg><div><div class="n">4</div><div class="l">agents on the floor</div></div></div>
+  <div class="glass tile"><svg viewBox="0 0 24 24"><path d="M4 18a8 8 0 1 1 16 0"/><path d="M12 18l4-6"/></svg><div><div class="n">72%</div><div class="l">capacity · tight</div></div></div>
+</div>
+<div>
+  <div class="h2" style="display:flex; align-items:baseline; gap:10px;">Needs you <span style="font-size:12px; font-weight:500; color:#6e6e73;">click an option and the agent is told</span></div>
+  <div class="hscroll">
+    <div class="glass card" style="background: rgba(255,236,214,0.6);">
+  <div class="meta"><span class="chip">Packed</span>packed-lead · 18 min ago</div>
+  <div class="q">Which weather source should Packed use?</div>
+  <div class="ctx">WeatherKit needs the paid capability and a key. Open-Meteo is free with no key, but is not Apple’s.</div>
+  <div class="opts"><div class="opt"><div class="c"></div><div><div class="t">WeatherKit <span class="chip b">Recommended</span></div><div class="d">Apple’s own. Matches the Weather app.</div></div></div><div class="opt"><div class="c"></div><div><div class="t">Open-Meteo</div><div class="d">Free, one HTTP call, attribution line in Settings.</div></div></div><div class="opt"><div class="c"></div><div><div class="t">No weather</div><div class="d">Drop the feature for now.</div></div></div></div>
+</div>
+    <div class="glass card" style="background: rgba(255,236,214,0.6);">
+  <div class="meta"><span class="chip">Brushwise</span>brushwise-lead · 1 hr ago</div>
+  <div class="q">Submit 1.0.2 to App Review now, or wait for the icon?</div>
+  <div class="ctx">The listing is complete. The new icon is a day away and would mean a second submission.</div>
+  <div class="opts"><div class="opt"><div class="c"></div><div><div class="t">Submit now <span class="chip b">Recommended</span></div><div class="d">Review takes a day anyway; the icon follows in 1.0.3.</div></div></div><div class="opt"><div class="c"></div><div><div class="t">Wait for the icon</div><div class="d">One submission, one day later.</div></div></div></div>
+</div>
+    <div class="glass card" style="background: rgba(255,236,214,0.6);">
+  <div class="meta"><span class="chip">Where</span>where-lead · 2 hr ago</div>
+  <div class="q">The house name: main screen or Settings?</div>
+  <div class="ctx">It is asked once. On the main screen it is always visible; in Settings it is out of the way.</div>
+  <div class="opts"><div class="opt"><div class="c"></div><div><div class="t">Main screen <span class="chip b">Recommended</span></div><div class="d">Where its answer lives.</div></div></div><div class="opt"><div class="c"></div><div><div class="t">Settings</div><div class="d">Cleaner main screen.</div></div></div></div>
+</div>
+    <div class="glass card" style="background: rgba(255,236,214,0.6);">
+  <div class="meta"><span class="chip">Hard Stop</span>hardstop-lead · yesterday</div>
+  <div class="q">Keep the red flash on stop?</div>
+  <div class="ctx">Two testers said it was alarming.</div>
+  <div class="opts"><div class="opt"><div class="c"></div><div><div class="t">Keep it <span class="chip b">Recommended</span></div><div class="d">It is the point.</div></div></div><div class="opt"><div class="c"></div><div><div class="t">Soften it</div><div class="d">Amber, shorter.</div></div></div></div>
+</div>
+  </div>
+</div>
+<div style="display:flex; gap:14px; flex:1; min-height:0;">
+  <div style="flex:1.4; display:flex; flex-direction:column;">
+    <div class="h2">On the floor</div>
+    <div class="glass rows">
+      <div class="row"><div class="dot g"></div><div><div class="name">agent-1 <span>Where</span></div><div class="sub">Rooms run together when dictated · 42 min</div></div><div class="sp"></div><div class="tail"><span class="chip">compiling</span></div></div>
+      <div class="row"><div class="dot g"></div><div><div class="name">packed-lead <span>Packed</span></div><div class="sub">Weather for the trip’s first day · waiting on you</div></div></div>
+      <div class="row"><div class="dot o"></div><div><div class="name">brushwise-lead <span>Brushwise</span></div><div class="sub">Submit 1.0.2 · waiting on you</div></div></div>
+      <div class="row"><div class="dot o"></div><div><div class="name">cym-lead <span>Call Your Mom</span></div><div class="sub">Capture run · leases the iPhone, 48 min left</div></div><div class="sp"></div><div class="tail"><span class="chip">iPhone</span></div></div>
+    </div>
+  </div>
+  <div style="flex:1; display:flex; flex-direction:column;">
+    <div class="h2">Factory</div>
+    <div class="glass card" style="gap:12px;">
+      <div class="gauge"><div class="t"><span>Memory</span><b>36% free · swap 3.1 of 4 GB</b></div><div class="bar2"><div style="width:76%; background:#ff9f0a"></div></div></div>
+      <div class="gauge"><div class="t"><span>CPU</span><b>load 1.8 of 10</b></div><div class="bar2"><div style="width:18%; background:#34c759"></div></div></div>
+      <div class="gauge"><div class="t"><span>Compiles</span><b>1 of 5 slots</b></div><div class="slots"><div class="slot on"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div></div></div>
+      <div class="ctx" style="margin-top:2px;"><b style="color:#8a4b00">Tight.</b> A model run is holding most of the memory. Agents asking to compile are told to wait.</div>
+    </div>
+  </div>
+</div>
+
+  </div>
+</div>
+</div></div>
+</x-dc>
+</body>
+</html>

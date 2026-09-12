@@ -5,6 +5,7 @@ import ForemanKit
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var showingIntro = false
+    @State private var copied = false
 
     var body: some View {
         Form {
@@ -12,21 +13,26 @@ struct SettingsView: View {
                 Button("How it works") { showingIntro = true }
             }
 
-            Section("Claude Code") {
-                if let url = model.claudeFolder.url {
-                    LabeledContent("Folder", value: url.path)
-                    Button("Choose a different folder") { model.claudeFolder.choose() }
-                } else {
-                    Text("Foreman reads Claude Code's session files to see what each agent is doing. Nothing leaves this Mac.")
-                        .foregroundStyle(.secondary)
-                    Button("Choose the Claude folder") { model.claudeFolder.choose() }
+            Section("Agents") {
+                Text("Agents reach the factory through its MCP server, which ships inside this app. Register it with Claude Code once:")
+                    .foregroundStyle(.secondary)
+                HStack(alignment: .top) {
+                    Text(AppModel.registerCommand)
+                        .font(.callout.monospaced())
+                        .textSelection(.enabled)
+                    Spacer()
+                    Button(copied ? "Copied" : "Copy") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(AppModel.registerCommand, forType: .string)
+                        copied = true
+                    }
                 }
             }
 
             Section("Store") {
                 if let store = model.store {
                     LabeledContent("Folder", value: store.root.path)
-                    Text("Agents write here too. Every project, task and escalation is one JSON file.")
+                    Text("The server writes here too. Every project, task, agent and question is one JSON file.")
                         .foregroundStyle(.secondary)
                 } else if let error = model.storeError {
                     Text(error).foregroundStyle(.red)
@@ -37,7 +43,6 @@ struct SettingsView: View {
             Section("Developer") {
                 Button("Show the first-run sheet again") { model.hasSeenIntro = false }
                 Button("Add sample data") { model.addSampleData() }
-                Button("Forget the Claude folder") { model.claudeFolder.forget() }
                 if let store = model.store {
                     Button("Reveal the store in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([store.root])
@@ -47,7 +52,7 @@ struct SettingsView: View {
             #endif
         }
         .formStyle(.grouped)
-        .frame(width: 520)
+        .frame(width: 560)
         .sheet(isPresented: $showingIntro) { IntroSheet() }
     }
 }

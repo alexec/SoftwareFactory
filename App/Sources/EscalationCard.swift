@@ -1,7 +1,7 @@
 import SwiftUI
 import ForemanKit
 
-/// One question from an agent, its options, and the choice once it is made. Clicking
+/// One question from an agent, its options, and the decision once it is made. Clicking
 /// an option records it; clicking another changes the record.
 struct EscalationCard: View {
     @Environment(AppModel.self) private var model
@@ -21,11 +21,13 @@ struct EscalationCard: View {
                 Text("\(escalation.raisedBy) · \(escalation.raised, format: .relative(presentation: .named))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 Spacer()
-                if let chosen = escalation.chosen, let when = escalation.decided {
-                    Label("\(chosen.title) · \(when, format: .relative(presentation: .named))", systemImage: "checkmark.circle.fill")
+                if let chosen = escalation.chosen, let decision = escalation.decision {
+                    Label("\(chosen.title) · \(decision.at, format: .relative(presentation: .named))", systemImage: "checkmark.circle.fill")
                         .font(.caption)
                         .foregroundStyle(.green)
+                        .lineLimit(1)
                 }
             }
 
@@ -43,7 +45,7 @@ struct EscalationCard: View {
             GlassEffectContainer(spacing: 8) {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(escalation.options) { option in
-                        OptionButton(option: option, isChosen: option.id == escalation.chosenOptionID) {
+                        OptionButton(option: option, isChosen: option.id == escalation.decision?.optionID) {
                             model.decide(escalation, option)
                         }
                     }
@@ -55,7 +57,7 @@ struct EscalationCard: View {
         .glassEffect(
             escalation.isOpen ? .regular.tint(.orange.opacity(0.12)) : .regular,
             in: .rect(cornerRadius: 18))
-        .animation(.snappy, value: escalation.chosenOptionID)
+        .animation(.snappy, value: escalation.decision)
     }
 }
 

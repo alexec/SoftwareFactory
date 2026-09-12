@@ -1,70 +1,75 @@
 import Foundation
 
-/// What the dashboard shows, derived from the store and the sessions on disk.
+/// What the floor shows, derived from the store.
 public struct Dashboard: Sendable, Equatable {
     public enum ProjectActivity: String, Sendable {
-        /// An agent's transcript changed moments ago.
+        /// An agent on it checked in moments ago.
         case working
-        /// An agent is alive on it and quiet: waiting, most likely on you.
+        /// An agent is on it and quiet, or has a question open.
         case waiting
-        /// No live agent on it.
+        /// No agent on it.
         case idle
     }
 
     public struct ProjectStatus: Identifiable, Sendable, Equatable {
         public var project: Project
         public var activity: ProjectActivity
-        /// The backlog item marked in progress, when there is one.
-        public var currentItem: WorkItem?
-        /// The most recently active live session, when there is one.
-        public var session: AgentSession?
-        public var liveSessions: Int
+        public var currentTask: FactoryTask?
+        public var agents: [Agent]
         public var openEscalations: Int
         public var backlogCount: Int
 
         public var id: String { project.id }
 
-        /// One line saying what the project is on: the item first, the last prompt otherwise.
+        /// One line saying what the project is on.
         public var doing: String? {
-            if let currentItem { return currentItem.title }
-            if activity != .idle, let prompt = session?.lastPrompt, !prompt.isEmpty { return prompt }
+            if let currentTask { return currentTask.title }
+            if let note = agents.first?.note, !note.isEmpty { return note }
             return nil
         }
+    }
+
+    public struct AgentStatus: Identifiable, Sendable, Equatable {
+        public var agent: Agent
+        public var project: Project?
+        public var task: FactoryTask?
+        public var isWorking: Bool
+        public var waitingOnYou: Bool
+
+        public var id: UUID { agent.id }
     }
 
     public var inProgress: Int
     public var openEscalations: [Escalation]
     public var projects: [ProjectStatus]
+    public var agents: [AgentStatus]
 
-    public static let empty = Dashboard(inProgress: 0, openEscalations: [], projects: [])
+    public static let empty = Dashboard(inProgress: 0, openEscalations: [], projects: [], agents: [])
 
     public var workingCount: Int { projects.filter { $0.activity == .working }.count }
-    public var waitingCount: Int { projects.filter { $0.activity == .waiting }.count }
 
-    /// Builds the dashboard. Projects come from the store and from any folder a live
-    /// session is in; a session in a scratch workspace is nobody's project and is skipped.
-    public static func make(snapshot: Snapshot, sessions: [AgentSession], now: Date = .now) -> Dashboard {
+    /// Projects come from the store and from any project a registered agent names.
+    public static func make(snapshot: Snapshot, now: Date = .now) -> Dashboard {
         var projects: [String: Project] = [:]
         for p in snapshot.projects { projects[p.id] = p }
-        for s in sessions where s.isLive && !s.isScratch && projects[s.projectID] == nil {
-            projects[s.projectID] = Project(path: s.cwd, added: s.startedAt ?? now)
+        for a in snapshot.agents where a.isOnTheFloor {
+            if let pid = a.projectID, projects[pid] == nil { projects[pid] = Project(path: pid, added: a.registered) }
         }
+        let onFloor = snapshot.agents.filter(\.isOnTheFloor).sorted { $0.lastSeen > $1.lastSeen }
+        let open = snapshot.escalations.filter(\.isOpen)
 
         let statuses = projects.values.map { project -> ProjectStatus in
-            let live = sessions.filter { $0.projectID == project.id && $0.isLive }
-            let activities = live.map { $0.activity(now: now) }
+            let agents = onFloor.filter { $0.projectID == project.id }
             let activity: ProjectActivity =
-                activities.contains(.working) ? .working : (live.isEmpty ? .idle : .waiting)
-            let busiest = live.max { $0.lastActivity < $1.lastActivity }
-            let items = snapshot.items.filter { $0.projectID == project.id }
+                agents.contains { $0.isWorking(now: now) } ? .working : (agents.isEmpty ? .idle : .waiting)
+            let tasks = snapshot.tasks.filter { $0.projectID == project.id }
             return ProjectStatus(
                 project: project,
                 activity: activity,
-                currentItem: Backlog.current(for: project.id, in: snapshot.items),
-                session: busiest,
-                liveSessions: live.count,
-                openEscalations: snapshot.escalations.filter { $0.projectID == project.id && $0.isOpen }.count,
-                backlogCount: items.filter { $0.state == .backlog }.count
+                currentTask: Backlog.current(for: project.id, in: snapshot.tasks),
+                agents: agents,
+                openEscalations: open.filter { $0.projectID == project.id }.count,
+                backlogCount: tasks.filter { $0.state == .backlog }.count
             )
         }
         .sorted { a, b in
@@ -72,10 +77,20 @@ public struct Dashboard: Sendable, Equatable {
             return a.project.name.localizedCaseInsensitiveCompare(b.project.name) == .orderedAscending
         }
 
+        let agentStatuses = onFloor.map { agent in
+            AgentStatus(
+                agent: agent,
+                project: agent.projectID.flatMap { projects[$0] },
+                task: agent.taskID.flatMap { id in snapshot.tasks.first { $0.id == id } },
+                isWorking: agent.isWorking(now: now),
+                waitingOnYou: open.contains { $0.agentID == agent.id })
+        }
+
         return Dashboard(
-            inProgress: snapshot.items.filter { $0.state == .inProgress }.count,
-            openEscalations: snapshot.escalations.filter(\.isOpen).sorted { $0.raised < $1.raised },
-            projects: statuses
+            inProgress: snapshot.tasks.filter { $0.state == .inProgress }.count,
+            openEscalations: open.sorted { $0.raised < $1.raised },
+            projects: statuses,
+            agents: agentStatuses
         )
     }
 

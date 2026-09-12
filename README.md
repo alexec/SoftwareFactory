@@ -1,62 +1,60 @@
-# Foreman
+# Software Factory
 
-A Mac app that shows what your coding agents are doing and what they need from you.
-Working title; the name is not settled.
+Working title; code name Foreman. A Mac app that is the floor of a software factory:
+coding agents do the work, and you make the calls.
 
-Several Claude Code sessions run at once, each in its own project. Foreman is the one
-window across all of them:
+The factory is this Mac. Agents of any kind register with it over MCP, pick up tasks
+from a project's backlog, check in with what they are on, and ask when they cannot decide
+something themselves. You see all of it in one window and answer the questions with a click.
 
-- **How much is in flight.** How many tasks are in progress, how many questions are
-  waiting for you, how many projects have an agent on them right now.
-- **Each project's state.** Working, waiting or idle, and what it is on: the backlog item
-  an agent has picked up, or failing that the last thing the agent was asked.
-- **Escalations.** When an agent cannot decide something itself it raises a question with
-  two or more options and marks the one it recommends. You pick one. The choice is
-  recorded against the escalation, where the agent reads it back.
-- **Backlogs.** Every project has a prioritised list of features, bugs and chores. Add to
-  it, reorder it, mark things started and done.
+## This version, the narrowest slice
+
+- **Needs you.** An agent raises a question with two or more options and marks the one it
+  recommends. It sits at the top of the floor until you click an option. The agent, which
+  has been waiting on `escalation_await`, gets the answer and carries on.
+- **On the floor.** Every registered agent, which project it is in, what it is on, and
+  when it last checked in.
+- **Backlogs.** Each project's tasks, features, bugs and chores, in rank order. Add,
+  reorder by dragging, mark started and done. Agents can do the same over MCP.
 
 ## The rules
 
-1. **One store, many writers.** Every project, task and escalation is one JSON file in a
-   folder that the Mac app, the command line, and later the iPhone app and the agents' MCP
-   server all read and write. The folder is the app group container,
-   `~/Library/Group Containers/6T4RVD5724.com.alexecollins.foreman/Store`. Writes are
-   atomic, one file per record, so writers rarely collide and a half-written file is
-   never read.
-2. **Claude Code is read, never written.** The app finds sessions from Claude Code's own
-   files under `~/.claude`: the registry of running sessions and the transcripts. You
-   point it at that folder once. Nothing is sent anywhere.
-3. **A project is a folder.** Its path is its identity, in the store and in Claude Code.
-   Projects appear on their own when a live session is in them; they are written to the
-   store the first time something is filed against them, or when you add one.
-4. **Working means the transcript moved in the last ninety seconds.** Waiting means the
-   session is alive and quiet. Idle means nobody is on it.
-5. **An escalation is an agent's question with options.** At least two, one recommended.
-   Choosing records the option and the time; choosing again changes the record.
+1. **The app knows nothing about what an agent runs on.** Claude Code, another CLI, a
+   script: if it speaks MCP it is an agent. Nothing here reads another tool's files.
+2. **One store, many writers.** Every project, task, agent and question is one JSON file in
+   `~/Library/Group Containers/6T4RVD5724.com.alexecollins.foreman/Store`. The app and
+   the server both read and write it; writes are atomic and one file per record, so a
+   half-written file is never read.
+3. **A project is a folder.** Its path is its identity. Projects appear when an agent names
+   one or you add one.
+4. **Working means checked in within two minutes.** Quiet means registered and silent.
+   Gone means deregistered.
+5. **Agents ask; you decide.** The recommendation is marked, never pre-selected. Choosing
+   again changes the record.
 
-## The command line
+## Connecting an agent
 
-`Packages/ForemanKit` builds a `foreman` executable that reads and writes the same store,
-so an agent can file work and raise questions today, before there is an MCP server:
+The MCP server is the `foreman-mcp` executable inside the app (the same program as `foreman`, named so it cannot collide with the app binary on a case-insensitive disk). Settings shows the command,
+which is:
 
 ```bash
-cd Packages/ForemanKit && swift build -c release --product foreman
-.build/release/foreman status
-.build/release/foreman task add ~/Where "Rooms run together when dictated" --kind bug
-.build/release/foreman escalate ~/Packed "Which weather source?" \
-    --option "WeatherKit|Apple's own, needs the capability" \
-    --option "Open-Meteo|Free, no key" --recommend 1 --by "Packed lead"
-.build/release/foreman decide <id-prefix> 1
+claude mcp add --scope user foreman -- "/Applications/Software Factory.app/Contents/MacOS/foreman-mcp" mcp
 ```
 
-`FOREMAN_STORE=/some/folder` points both the app and the command line at another store.
+The tools: `agent_register`, `agent_checkin`, `agent_deregister`, `project_list`,
+`project_add`, `task_list`, `task_next`, `task_add`, `task_claim`, `task_status`,
+`task_rank`, `task_remove`, `escalation_raise`, `escalation_await`, `escalation_list`.
+The server's instructions tell an agent to register first, check in as it goes, raise
+and await when stuck, and deregister when done.
+
+`foreman status` prints the floor as text; `foreman tools` lists the tools;
+`FOREMAN_STORE=/some/folder` points both the app and the server at another store.
 
 ## Later, not now
 
-Locks on shared resources (a device, a browser) that agents take through MCP. An MCP
-server over the same store. An iPhone app that syncs the store so questions can be
-answered away from the Mac. Apple Intelligence for summaries and transcription for
-answering by voice. Each arrives on its own; none is in this version.
+Resources with slots and time-bound leases. The factory's own capacity: memory, CPU,
+compile slots, a verdict agents ask before starting anything heavy, and a throttle.
+Notifications that find you at the Mac or on the iPhone, answerable from the notification.
+The iPhone app. Dictating a task. Each arrives on its own.
 
 MIT licence. © 2026 Alex Collins.

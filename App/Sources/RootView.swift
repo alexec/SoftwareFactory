@@ -2,19 +2,19 @@ import SwiftUI
 import ForemanKit
 
 enum Destination: Hashable {
-    case dashboard
+    case floor
     case project(String)
 }
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
-    @State private var selection: Destination? = .dashboard
+    @State private var selection: Destination? = .floor
 
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
-                Label("Dashboard", systemImage: "square.grid.2x2")
-                    .tag(Destination.dashboard)
+                Label("Floor", systemImage: "square.grid.2x2")
+                    .tag(Destination.floor)
 
                 Section("Projects") {
                     ForEach(model.dashboard.projects) { status in
@@ -41,10 +41,10 @@ struct RootView: View {
                 if let project = model.project(for: id) {
                     ProjectView(project: project)
                 } else {
-                    DashboardView()
+                    FloorView()
                 }
             default:
-                DashboardView()
+                FloorView()
             }
         }
         .navigationTitle(title)
@@ -55,7 +55,7 @@ struct RootView: View {
 
     private var title: String {
         if case .project(let id) = selection, let p = model.project(for: id) { return p.name }
-        return "Foreman"
+        return "Software Factory"
     }
 }
 
@@ -80,7 +80,7 @@ struct ActivityDot: View {
     private var help: String {
         switch activity {
         case .working: "An agent is working on it"
-        case .waiting: "An agent is waiting on it"
+        case .waiting: "An agent is on it and waiting"
         case .idle: "Nobody is on it"
         }
     }

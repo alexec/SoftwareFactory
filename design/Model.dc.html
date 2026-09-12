@@ -1,0 +1,140 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+body { margin: 0; font-family: -apple-system, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif; color: #1d1d1f; -webkit-font-smoothing: antialiased; }
+a { color: #0b63ce; } a:hover { color: #084a9b; }
+.desk { width: 1200px; height: 760px; box-sizing: border-box; padding: 40px; background: linear-gradient(135deg, #e9e4dc 0%, #d9dde6 45%, #e6dcd4 100%); }
+.win { width: 1120px; height: 680px; border-radius: 14px; overflow: hidden; display: flex; background: rgba(255,255,255,0.62); box-shadow: 0 30px 60px rgba(0,0,0,0.22), 0 0 0 0.5px rgba(0,0,0,0.18); backdrop-filter: blur(30px); }
+.side { width: 220px; box-sizing: border-box; padding: 18px 12px; display: flex; flex-direction: column; gap: 4px; background: rgba(245,243,240,0.55); border-right: 0.5px solid rgba(0,0,0,0.08); }
+.lights { display: flex; gap: 8px; margin: 0 0 22px 6px; }
+.lights div { width: 12px; height: 12px; border-radius: 6px; }
+.nav { display: flex; align-items: center; gap: 9px; padding: 6px 10px; border-radius: 7px; font-size: 13px; }
+.nav.on { background: rgba(0,0,0,0.08); font-weight: 600; }
+.nav svg { width: 15px; height: 15px; stroke: #4a4a4f; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.sect { font-size: 11px; font-weight: 600; color: #8a8a8e; margin: 14px 0 2px 10px; letter-spacing: 0.02em; }
+.dot { width: 8px; height: 8px; border-radius: 4px; flex: none; }
+.g { background: #34c759; } .o { background: #ff9f0a; } .q { background: rgba(0,0,0,0.18); } .r { background: #ff453a; }
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.bar { height: 52px; display: flex; align-items: center; padding: 0 20px; gap: 12px; border-bottom: 0.5px solid rgba(0,0,0,0.08); font-size: 15px; font-weight: 600; }
+.bar .sp { flex: 1; }
+.tb { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 15px; background: rgba(255,255,255,0.7); box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08); }
+.tb svg { width: 15px; height: 15px; stroke: #1d1d1f; fill: none; stroke-width: 1.8; stroke-linecap: round; }
+.body { flex: 1; padding: 22px 24px; display: flex; flex-direction: column; gap: 22px; overflow: hidden; }
+.h2 { font-size: 17px; font-weight: 600; margin: 0 0 10px 0; }
+.glass { background: rgba(255,255,255,0.55); border-radius: 16px; box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.9), 0 1px 2px rgba(0,0,0,0.05), 0 8px 24px rgba(0,0,0,0.06); }
+.tile { display: flex; align-items: center; gap: 14px; padding: 14px 18px; flex: 1; }
+.tile svg { width: 24px; height: 24px; stroke: #8a8a8e; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.tile .n { font-size: 30px; font-weight: 600; line-height: 1; }
+.tile .l { font-size: 13px; color: #6e6e73; margin-top: 3px; }
+.card { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #6e6e73; }
+.chip { padding: 2px 8px; border-radius: 99px; background: rgba(0,0,0,0.07); font-size: 11px; font-weight: 600; color: #1d1d1f; }
+.chip.o { background: rgba(255,159,10,0.2); color: #8a4b00; } .chip.b { background: rgba(11,99,206,0.14); color: #0b4f9f; } .chip.g { background: rgba(52,199,89,0.18); color: #1d6b33; }
+.q { font-size: 15px; font-weight: 600; }
+.ctx { font-size: 13px; color: #515154; line-height: 1.4; }
+.opts { display: flex; flex-direction: column; gap: 8px; }
+.opt { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,0.7); box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.08); font-size: 13px; }
+.opt .c { width: 16px; height: 16px; border-radius: 8px; box-shadow: inset 0 0 0 1.5px #a0a0a5; flex: none; margin-top: 1px; }
+.opt .t { font-weight: 600; display: flex; gap: 8px; align-items: center; }
+.opt .d { color: #6e6e73; margin-top: 2px; }
+.rows { display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+.row { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; font-size: 13px; background: rgba(255,255,255,0.35); }
+.row .dot { margin-top: 5px; }
+.row .name { font-weight: 600; display: flex; gap: 8px; align-items: baseline; }
+.row .name span { font-weight: 500; font-size: 11px; color: #8a8a8e; }
+.row .sub { color: #6e6e73; margin-top: 2px; }
+.row .sp { flex: 1; }
+.row .tail { display: flex; gap: 14px; color: #6e6e73; align-items: center; }
+.row .tail svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+.btn { display: inline-flex; align-items: center; justify-content: center; padding: 7px 14px; border-radius: 99px; font-size: 13px; font-weight: 600; background: rgba(255,255,255,0.75); box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08); }
+.btn.p { background: #0b63ce; color: #fff; box-shadow: 0 1px 3px rgba(11,99,206,0.35); }
+.hscroll { display: flex; gap: 14px; overflow: hidden; padding-bottom: 4px; }
+.hscroll .card { flex: none; width: 360px; }
+.gauge { display: flex; flex-direction: column; gap: 6px; }
+.gauge .t { display: flex; justify-content: space-between; font-size: 12px; color: #6e6e73; }
+.gauge .t b { color: #1d1d1f; font-variant-numeric: tabular-nums; }
+.bar2 { height: 8px; border-radius: 4px; background: rgba(0,0,0,0.08); overflow: hidden; }
+.bar2 div { height: 100%; border-radius: 4px; }
+.slots { display: flex; gap: 4px; }
+.slot { width: 14px; height: 14px; border-radius: 4px; background: rgba(0,0,0,0.08); box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12); }
+.slot.on { background: #ff9f0a; }
+.slot.me { background: #34c759; }
+.drag { transform: rotate(-0.6deg) translateX(6px); box-shadow: 0 10px 28px rgba(0,0,0,0.18), inset 0 0 0 0.5px rgba(0,0,0,0.1); border-radius: 10px; background: rgba(255,255,255,0.95) !important; position: relative; z-index: 2; }
+.gap { height: 44px; border-radius: 10px; border: 1.5px dashed rgba(11,99,206,0.5); background: rgba(11,99,206,0.06); margin: 2px 10px; }
+.grip { width: 10px; color: #b0b0b5; font-size: 14px; line-height: 1; margin-top: 2px; letter-spacing: -2px; }
+.mic { display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:15px; background:#ff453a; box-shadow: 0 0 0 6px rgba(255,69,58,0.18); }
+.mic svg { width: 14px; height: 14px; stroke:#fff; fill:none; stroke-width:1.8; stroke-linecap:round; }
+code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; background: rgba(0,0,0,0.05); padding: 1px 5px; border-radius: 4px; }
+.tools { display:grid; grid-template-columns: 170px 1fr; row-gap:6px; column-gap:12px; font-size:12.5px; line-height:1.35; }
+.tools .h { grid-column: 1 / -1; font-size:11px; font-weight:700; color:#8a8a8e; letter-spacing:0.04em; margin-top:6px; }
+
+  </style>
+</helmet>
+<div style="width:1200px; height:760px; box-sizing:border-box; padding:32px 40px; background:#f6f4f0; display:flex; flex-direction:column; gap:14px;">
+  <div>
+    <div style="font-size:22px; font-weight:700;">The factory, and the tools agents get</div>
+    <div class="ctx" style="margin-top:4px;">A proposal. One MCP server owns the store; the Mac app and every agent are clients of it. The app never knows what an agent runs on.</div>
+  </div>
+  <div style="display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:12px;">
+    <div class="glass card" style="background:#fff; padding:12px 14px; gap:6px;"><div class="q" style="font-size:14px;">Factory</div><div class="ctx" style="font-size:12px;">This Mac. Memory, CPU, swap, load, the throttle, and the capacity verdict.</div><div class="meta" style="flex-wrap:wrap; gap:4px;"><span class=chip>memory</span><span class=chip>cpu</span><span class=chip>swap</span><span class=chip>verdict</span><span class=chip>throttle</span></div></div>
+    <div class="glass card" style="background:#fff; padding:12px 14px; gap:6px;"><div class="q" style="font-size:14px;">Project</div><div class="ctx" style="font-size:12px;">A product being built, identified by its folder. Phase, tier, backlog.</div><div class="meta" style="flex-wrap:wrap; gap:4px;"><span class=chip>id</span><span class=chip>name</span><span class=chip>path</span><span class=chip>phase</span><span class=chip>tier</span></div></div>
+    <div class="glass card" style="background:#fff; padding:12px 14px; gap:6px;"><div class="q" style="font-size:14px;">Task</div><div class="ctx" style="font-size:12px;">Feature, bug or chore on a backlog, in rank order. One agent on it at a time.</div><div class="meta" style="flex-wrap:wrap; gap:4px;"><span class=chip>kind</span><span class=chip>state</span><span class=chip>rank</span><span class=chip>agent</span><span class=chip>log[]</span></div></div>
+    <div class="glass card" style="background:#fff; padding:12px 14px; gap:6px;"><div class="q" style="font-size:14px;">Agent</div><div class="ctx" style="font-size:12px;">A registered worker: name, project, task, last check-in, leases.</div><div class="meta" style="flex-wrap:wrap; gap:4px;"><span class=chip>name</span><span class=chip>project</span><span class=chip>task</span><span class=chip>seen</span><span class=chip>leases[]</span></div></div>
+    <div class="glass card" style="background:#fff7ee; padding:12px 14px; gap:6px;"><div class="q" style="font-size:14px;">Escalation</div><div class="ctx" style="font-size:12px;">A question with options, one recommended. Answered by a Decision.</div><div class="meta" style="flex-wrap:wrap; gap:4px;"><span class=chip>question</span><span class=chip>options[]</span><span class=chip>recommended</span></div></div>
+    <div class="glass card" style="background:#fff7ee; padding:12px 14px; gap:6px;"><div class="q" style="font-size:14px;">Decision</div><div class="ctx" style="font-size:12px;">The chosen option, who chose it, when. Kept forever.</div><div class="meta" style="flex-wrap:wrap; gap:4px;"><span class=chip>option</span><span class=chip>by</span><span class=chip>at</span><span class=chip>note</span></div></div>
+    <div class="glass card" style="background:#fff; padding:12px 14px; gap:6px;"><div class="q" style="font-size:14px;">Resource</div><div class="ctx" style="font-size:12px;">Something shared, with N slots and a longest lease.</div><div class="meta" style="flex-wrap:wrap; gap:4px;"><span class=chip>name</span><span class=chip>slots</span><span class=chip>maxLease</span></div></div>
+    <div class="glass card" style="background:#fff; padding:12px 14px; gap:6px;"><div class="q" style="font-size:14px;">Lease</div><div class="ctx" style="font-size:12px;">One slot, one agent, until a time. Expires on its own.</div><div class="meta" style="flex-wrap:wrap; gap:4px;"><span class=chip>resource</span><span class=chip>agent</span><span class=chip>until</span><span class=chip>why</span></div></div>
+  </div>
+  <div class="glass card" style="background:#fff; flex:1; padding:14px 18px;">
+    <div style="display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 28px;">
+      <div class="tools">
+        <div class="h">PROJECTS</div>
+        <code>project.list</code><span>Every project, with phase and who is on it.</span>
+        <code>project.add</code><span>A folder becomes a project.</span>
+        <code>project.update</code><span>Name, phase, tier.</span>
+        <div class="h">TASKS</div>
+        <code>task.list</code><span>A project’s backlog in rank order.</span>
+        <code>task.next</code><span>The top task nobody is on.</span>
+        <code>task.add</code><span>Feature, bug or chore, ranked last.</span>
+        <code>task.claim</code><span>I am on this now.</span>
+        <code>task.status</code><span>backlog · in progress · done, with a note.</span>
+        <code>task.log</code><span>A line about what happened.</span>
+        <code>task.rank</code><span>Move a task above or below another.</span>
+        <code>task.remove</code><span>Gone, with a reason.</span>
+      </div>
+      <div class="tools">
+        <div class="h">AGENTS</div>
+        <code>agent.register</code><span>Who I am, which project. Returns my id.</span>
+        <code>agent.checkin</code><span>Heartbeat: what I am on. Every few minutes.</span>
+        <code>agent.deregister</code><span>I am finished. Releases my leases.</span>
+        <div class="h">ESCALATIONS</div>
+        <code>escalation.raise</code><span>Question, context, options, my recommendation.</span>
+        <code>escalation.await</code><span>Block until decided; returns the Decision.</span>
+        <code>escalation.list</code><span>Open questions, mine or everyone’s.</span>
+        <div class="h">RESOURCES</div>
+        <code>resource.list</code><span>Every resource, free slots, who holds what.</span>
+        <code>resource.lease</code><span>One slot for up to N minutes, why. Returns a lease or a queue position.</span>
+        <code>resource.renew</code><span>More time on a lease I hold.</span>
+        <code>resource.release</code><span>Give it back early.</span>
+      </div>
+      <div class="tools">
+        <div class="h">FACTORY</div>
+        <code>factory.status</code><span>Memory, swap, CPU, compiles, verdict.</span>
+        <code>factory.ask</code><span>"Can I start a compiler?" · "a simulator?" · "a model?" Yes, wait, or no, and why.</span>
+        <code>factory.throttle</code><span>Read the limits. Only the person sets them.</span>
+        <div class="h">RULES</div>
+        <span style="grid-column:1/-1; color:#515154;">Every call carries the agent id from <code>agent.register</code>. A registered agent that misses three check-ins is marked gone and its leases expire. Leases are time-bound; the server takes back what runs out. <code>escalation.await</code> is how the answer reaches the agent: nothing is pushed, the agent waits. Deleting a project or a decision is not a tool; the person does that in the app.</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

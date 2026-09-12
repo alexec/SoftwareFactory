@@ -1,39 +1,48 @@
 # Backlog
 
-What's planned, and what will never be built. The first version is the dashboard, the
-shared store and the Claude Code scan; everything below arrives on its own.
+What's planned, and what will never be built. The first version is the narrowest slice:
+agents register and ask over MCP, the floor shows it, a click answers. Everything below
+arrives on its own, roughly in this order.
 
-1. **Resource locks.** Define resources (his iPhone, the iPad, the Mac, Chrome) and let
-   agents take and release locks on them. The store grows a `locks/` folder; the
-   dashboard shows who holds what.
-2. **MCP server.** The same calls the `foreman` CLI makes, offered as tools: file a task,
-   start it, finish it, raise an escalation, read the decision, take a lock.
-3. **iPhone app.** The store synced through CloudKit so escalations can be answered away
-   from the Mac. Read-mostly: answer questions, read the dashboard, add to a backlog.
-4. **Apple Intelligence.** A one-line summary of what each agent has been doing, from the
-   transcript tail, on device.
-5. **Transcription.** Answer an escalation, or add a task, by voice. Words appear as they
-   are recognised, the house way.
-6. **Raise a bug or a feature from the app.** A field on the dashboard that files against
-   the right project. Alex asked for this to wait.
-7. **Read `~/Tracking` boards.** The existing markdown boards hold real work; an importer
-   or a reader would put them on the dashboard without re-filing.
-8. **Agent-side task pickup.** When an agent starts, mark the task it was briefed with as
-   in progress from the session itself (a hook that calls `foreman task start`).
-9. **Icon.** `Tools/make-icon.swift` drawing the icon with Core Graphics, a full macOS
-   icon set.
-10. **Notify when a question arrives.** A local notification, primed first, off by default.
-11. **Decided escalations age out of the project view.** Show the last few; keep the rest.
-12. **Store schema version.** A `version` field on every record and a reader that copes
-    with older shapes, before the iPhone app makes two writers of different ages.
+1. **Resources.** Each with a number of slots and a longest lease. `resource_list`,
+   `resource_lease` (time-bound; returns a lease or a queue position), `resource_renew`,
+   `resource_release`. An expired lease is taken back. A Resources tab.
+2. **The factory's capacity.** Memory, swap, CPU, compiles running. `factory_status`,
+   `factory_ask` ("can I start a compiler?": yes, wait, or no, and why), the throttle
+   (compile slots, simulators at once, the swap ceiling), set only in the app. A Factory
+   tab.
+3. **Notifications at the Mac.** A macOS notification per question, the options as its
+   actions, primed first. Presence is "screen unlocked and input in the last two minutes".
+4. **iPhone.** The store synced through the person's iCloud (CloudKit, private database).
+   CloudKit pushes a question to the phone when the Mac decides you are not at it, or 90 s
+   after an unanswered Mac notification; the options are the notification's actions. The
+   first version is the questions list and its notifications.
+5. **Dictate a task.** A mic on the add field; words appear as they are recognised
+   (`SFSpeechRecognizer` for feel, `SpeechTranscriber` for the words, the house way).
+6. **Gone agents.** Three missed check-ins and an agent is marked gone without
+   deregistering; its leases expire.
+7. **Agent log.** `agent_checkin` notes kept as a log per agent and per task, shown on the
+   project view.
+8. **Decided questions age out.** The project view shows the last few; the rest are kept.
+9. **Icon.** `Tools/make-icon.swift` drawing it with Core Graphics, a full macOS icon set.
+10. **Store schema version.** A `version` field on every record and a reader that copes
+    with older shapes, before the iPhone makes two writers of different ages.
+11. **Register the server from the app.** A button that writes the Claude Code entry
+    itself, if a supported way appears; today it is a command to copy.
+12. **Raise a bug or a feature from the floor.** A field that files against the right
+    project. Alex asked for this to wait.
 
 ## Won't build
 
-- **A "lock" the app takes itself.** The app is a window; it never holds a resource an agent
+- **Reading another tool's files.** The app knew how to read Claude Code's sessions once
+  and that was removed on 12 September 2026: the factory is ignorant of what an agent
+  runs on. Agents say what they are doing; the app never guesses.
+- **A lock the app takes itself.** The app is a window; it never holds a resource an agent
   wants.
 - **Making the choice for the person.** The recommendation is marked, never pre-selected
   and never auto-applied after a timeout.
-- **Writing to Claude Code's files.** Read only, always.
+- **A dot in a tool name.** MCP clients disagree on what a name may contain; underscores
+  work everywhere.
 
 ## Minor review findings
 

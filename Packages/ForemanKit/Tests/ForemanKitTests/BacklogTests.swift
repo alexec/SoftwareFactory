@@ -5,47 +5,55 @@ import Testing
 @Suite struct BacklogTests {
     let p = "/p"
 
-    func item(_ title: String, rank: Int, state: WorkItem.State = .backlog, updated: TimeInterval = 0) -> WorkItem {
-        var i = WorkItem(projectID: p, title: title, state: state, rank: rank, created: Date(timeIntervalSince1970: 0))
-        i.updated = Date(timeIntervalSince1970: updated)
-        return i
+    func task(_ title: String, rank: Int, state: FactoryTask.State = .backlog, updated: TimeInterval = 0) -> FactoryTask {
+        var t = FactoryTask(projectID: p, title: title, state: state, rank: rank, created: Date(timeIntervalSince1970: 0))
+        t.updated = Date(timeIntervalSince1970: updated)
+        return t
     }
 
     @Test func orderIsInProgressThenBacklogByRankThenDoneNewestFirst() {
         let all = [
-            item("done old", rank: 0, state: .done, updated: 10),
-            item("second", rank: 2),
-            item("done new", rank: 1, state: .done, updated: 20),
-            item("first", rank: 1),
-            item("now", rank: 5, state: .inProgress),
-            WorkItem(projectID: "/other", title: "elsewhere", rank: 0),
+            task("done old", rank: 0, state: .done, updated: 10),
+            task("second", rank: 2),
+            task("done new", rank: 1, state: .done, updated: 20),
+            task("first", rank: 1),
+            task("now", rank: 5, state: .inProgress),
+            FactoryTask(projectID: "/other", title: "elsewhere", rank: 0),
         ]
-        #expect(Backlog.items(for: p, in: all).map(\.title) == ["now", "first", "second", "done new", "done old"])
+        #expect(Backlog.tasks(for: p, in: all).map(\.title) == ["now", "first", "second", "done new", "done old"])
+        #expect(Backlog.next(for: p, in: all)?.title == "first")
     }
 
     @Test func nextRankFollowsTheProject() {
-        let all = [item("a", rank: 4), WorkItem(projectID: "/other", title: "b", rank: 99)]
+        let all = [task("a", rank: 4), FactoryTask(projectID: "/other", title: "b", rank: 99)]
         #expect(Backlog.nextRank(for: p, in: all) == 5)
         #expect(Backlog.nextRank(for: "/new", in: all) == 0)
     }
 
     @Test func moveRenumbersOnlyWhatChanged() {
-        let all = [item("a", rank: 0), item("b", rank: 1), item("c", rank: 2), item("done", rank: 3, state: .done)]
+        let all = [task("a", rank: 0), task("b", rank: 1), task("c", rank: 2), task("done", rank: 3, state: .done)]
         let changed = Backlog.move(in: all, from: IndexSet(integer: 2), to: 0)
         #expect(changed.map(\.title) == ["c", "a", "b"])
         #expect(changed.map(\.rank) == [0, 1, 2])
     }
 
-    @Test func startingRecordsTheAgentAndBacklogForgetsIt() {
-        let started = Backlog.set(item("a", rank: 0), to: .inProgress, agent: "agent-2")
-        #expect(started.state == .inProgress)
-        #expect(started.agent == "agent-2")
-        let back = Backlog.set(started, to: .backlog)
-        #expect(back.agent == nil)
+    @Test func placeAboveMovesOneTask() {
+        let all = [task("a", rank: 0), task("b", rank: 1), task("c", rank: 2)]
+        let changed = Backlog.place(all[2], above: all[0], in: all)
+        #expect(changed.map { "\($0.title)\($0.rank)" } == ["c0", "a1", "b2"])
     }
 
-    @Test func currentIsTheNewestInProgressItem() {
-        let all = [item("older", rank: 0, state: .inProgress, updated: 1), item("newer", rank: 1, state: .inProgress, updated: 2)]
+    @Test func startingRecordsTheAgentAndBacklogForgetsIt() {
+        let id = UUID()
+        let started = Backlog.set(task("a", rank: 0), to: .inProgress, agentID: id)
+        #expect(started.state == .inProgress)
+        #expect(started.agentID == id)
+        let back = Backlog.set(started, to: .backlog)
+        #expect(back.agentID == nil)
+    }
+
+    @Test func currentIsTheNewestInProgressTask() {
+        let all = [task("older", rank: 0, state: .inProgress, updated: 1), task("newer", rank: 1, state: .inProgress, updated: 2)]
         #expect(Backlog.current(for: p, in: all)?.title == "newer")
         #expect(Backlog.current(for: "/none", in: all) == nil)
     }
@@ -56,26 +64,27 @@ import Testing
 
     @Test func countsAndActivity() {
         let a = Project(path: "/a")
+        var fresh = Agent(name: "one", projectID: "/a", registered: now.addingTimeInterval(-500))
+        fresh.lastSeen = now.addingTimeInterval(-10)
+        var quiet = Agent(name: "two", projectID: "/b", registered: now.addingTimeInterval(-500))
+        quiet.lastSeen = now.addingTimeInterval(-600)
+        var gone = Agent(name: "three", projectID: "/c", registered: now.addingTimeInterval(-500))
+        gone.deregistered = now
         let snap = Snapshot(
             projects: [a],
-            items: [
-                WorkItem(projectID: a.id, title: "on it", state: .inProgress, rank: 0),
-                WorkItem(projectID: a.id, title: "later", rank: 1),
-                WorkItem(projectID: "/b", title: "also on it", state: .inProgress, rank: 0),
+            tasks: [
+                FactoryTask(projectID: a.id, title: "on it", state: .inProgress, rank: 0),
+                FactoryTask(projectID: a.id, title: "later", rank: 1),
+                FactoryTask(projectID: "/b", title: "also on it", state: .inProgress, rank: 0),
             ],
-            escalations: [Escalation(projectID: a.id, question: "?", options: [.init(title: "x"), .init(title: "y")])]
+            escalations: [Escalation(projectID: a.id, question: "?", options: [.init(title: "x"), .init(title: "y")], agentID: fresh.id)],
+            agents: [fresh, quiet, gone]
         )
-        let sessions = [
-            AgentSession(id: "1", cwd: "/a", lastActivity: now.addingTimeInterval(-10), lastPrompt: "fix", isLive: true),
-            AgentSession(id: "2", cwd: "/b", lastActivity: now.addingTimeInterval(-600), lastPrompt: "hello", isLive: true),
-            AgentSession(id: "3", cwd: "/c", lastActivity: now.addingTimeInterval(-5), isLive: false),
-            AgentSession(id: "4", cwd: "/x/scratch-workspaces/y", lastActivity: now, isLive: true),
-        ]
-        let d = Dashboard.make(snapshot: snap, sessions: sessions, now: now)
+        let d = Dashboard.make(snapshot: snap, now: now)
 
         #expect(d.inProgress == 2)
         #expect(d.openEscalations.count == 1)
-        #expect(d.projects.map(\.project.name) == ["a", "b"])   // /c ended, scratch skipped
+        #expect(d.projects.map(\.project.name) == ["a", "b"])   // /c's agent has left
         #expect(d.projects[0].activity == .working)
         #expect(d.projects[0].doing == "on it")
         #expect(d.projects[0].backlogCount == 1)
@@ -83,21 +92,14 @@ import Testing
         #expect(d.projects[1].activity == .waiting)
         #expect(d.projects[1].doing == "also on it")
         #expect(d.workingCount == 1)
-        #expect(d.waitingCount == 1)
+        #expect(d.agents.map(\.agent.name) == ["one", "two"])
+        #expect(d.agents[0].waitingOnYou)
+        #expect(!d.agents[1].waitingOnYou)
     }
 
-    @Test func idleProjectShowsNoPromptAsDoing() {
-        let snap = Snapshot(projects: [Project(path: "/a")])
-        let sessions = [AgentSession(id: "1", cwd: "/a", lastActivity: now, lastPrompt: "old", isLive: false)]
-        let d = Dashboard.make(snapshot: snap, sessions: sessions, now: now)
+    @Test func idleProjectWithNothingOnShowsNothing() {
+        let d = Dashboard.make(snapshot: Snapshot(projects: [Project(path: "/a")]), now: now)
         #expect(d.projects[0].activity == .idle)
         #expect(d.projects[0].doing == nil)
-    }
-
-    @Test func workingProjectFallsBackToTheLastPrompt() {
-        let snap = Snapshot(projects: [Project(path: "/a")])
-        let sessions = [AgentSession(id: "1", cwd: "/a", lastActivity: now, lastPrompt: "make it blue", isLive: true)]
-        let d = Dashboard.make(snapshot: snap, sessions: sessions, now: now)
-        #expect(d.projects[0].doing == "make it blue")
     }
 }
