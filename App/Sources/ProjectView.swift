@@ -138,6 +138,7 @@ struct ProjectView: View {
                 Text(doing)
                     .foregroundStyle(.secondary)
             }
+            if let status { ProgressNumbers(status: status) }
             Text(project.path)
                 .font(.caption)
                 .foregroundStyle(.tertiary)
@@ -211,6 +212,34 @@ struct DecidedRow: View {
     }
 }
 
+/// How a project stands, as numbers in the colours the states use everywhere.
+struct ProgressNumbers: View {
+    var status: Dashboard.ProjectStatus
+    var compact = false
+
+    var body: some View {
+        HStack(spacing: compact ? 6 : 12) {
+            number(status.blockedCount, "blocked", .orange)
+            number(status.inProgressCount, "in progress", .green)
+            number(status.backlogCount, "waiting", .secondary)
+            number(status.doneCount, "done", .secondary.opacity(0.6))
+        }
+        .font(compact ? .caption.weight(.semibold) : .callout.weight(.medium))
+        .monospacedDigit()
+    }
+
+    @ViewBuilder
+    private func number(_ n: Int, _ word: String, _ color: Color) -> some View {
+        if n > 0 || !compact {
+            HStack(spacing: 3) {
+                Text(n, format: .number).foregroundStyle(color)
+                if !compact { Text(word).foregroundStyle(.secondary).font(.callout) }
+            }
+            .help("\(n) \(word)")
+        }
+    }
+}
+
 struct TaskRow: View {
     @Environment(AppModel.self) private var model
     var task: FactoryTask
@@ -252,10 +281,22 @@ struct TaskRow: View {
             // The person's menu: park, unpark, move, delete. Whether a task is in
             // progress or done is the agent's to say, so those are not here.
             Menu {
-                if task.state == .parked || task.state == .blocked {
-                    Button(task.state == .blocked ? "Unblock, back to the backlog" : "Back to the backlog") { model.set(task, to: .backlog) }
+                if task.state == .blocked {
+                    ForEach(Array(task.blockers.enumerated()), id: \.offset) { _, b in
+                        Button("Clear: \(b.why)") { model.unblock(task, b) }
+                    }
+                    Button("Unblock, back to the backlog") { model.set(task, to: .backlog) }
+                } else if task.state == .parked {
+                    Button("Back to the backlog") { model.set(task, to: .backlog) }
                 } else if task.state != .done {
                     Button("Park") { model.set(task, to: .parked) }
+                }
+                if model.dashboard.projects.count > 1 {
+                    Menu("Move to") {
+                        ForEach(model.dashboard.projects.filter { $0.id != task.projectID }) { other in
+                            Button(other.project.name) { model.moveTask(task, to: other.project) }
+                        }
+                    }
                 }
                 if task.state == .backlog {
                     Divider()

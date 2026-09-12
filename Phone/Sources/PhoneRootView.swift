@@ -95,9 +95,13 @@ struct PhoneRootView: View {
                                 }
                             }
                             Spacer()
-                            Text(status.backlogCount, format: .number)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                            HStack(spacing: 6) {
+                                if status.blockedCount > 0 { Text(status.blockedCount, format: .number).foregroundStyle(.orange) }
+                                if status.inProgressCount > 0 { Text(status.inProgressCount, format: .number).foregroundStyle(.green) }
+                                Text(status.backlogCount, format: .number).foregroundStyle(.secondary)
+                            }
+                            .font(.subheadline.weight(.semibold))
+                            .monospacedDigit()
                             Image(systemName: "chevron.right")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.tertiary)

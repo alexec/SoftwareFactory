@@ -18,6 +18,9 @@ public struct Dashboard: Sendable, Equatable {
         public var agents: [Agent]
         public var openEscalations: Int
         public var backlogCount: Int
+        public var blockedCount: Int
+        public var inProgressCount: Int
+        public var doneCount: Int
 
         public var id: String { project.id }
 
@@ -89,7 +92,10 @@ public struct Dashboard: Sendable, Equatable {
                 currentTask: Backlog.current(for: project.id, in: snapshot.tasks),
                 agents: agents,
                 openEscalations: open.filter { $0.projectID == project.id }.count,
-                backlogCount: tasks.filter { $0.state == .backlog }.count
+                backlogCount: tasks.filter { $0.state == .backlog }.count,
+                blockedCount: tasks.filter { $0.state == .blocked }.count,
+                inProgressCount: tasks.filter { $0.state == .inProgress }.count,
+                doneCount: tasks.filter { $0.state == .done }.count
             )
         }
         .sorted { a, b in

@@ -87,6 +87,9 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
     /// Everything the task waits on while the state is `blocked`. It clears when the
     /// last one does; one on a person or "other" clears only by hand.
     public var blockers: [Blocker] = []
+    /// Set when the task was taken off the backlog. Nothing is ever deleted; a removed
+    /// task is kept out of every list and stays in the store with the reason.
+    public var removed: Date?
     public var created: Date
     public var updated: Date
 
@@ -96,7 +99,7 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
     public var blockedWhy: String { blockers.map(\.why).joined(separator: "; ") }
 
     enum CodingKeys: String, CodingKey {
-        case version, id, projectID, title, kind, state, rank, note, agentID, blockers, created, updated
+        case version, id, projectID, title, kind, state, rank, note, agentID, blockers, removed, created, updated
         case legacyBlocker = "blocker"
     }
 
@@ -112,6 +115,7 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         try c.encode(note, forKey: .note)
         try c.encodeIfPresent(agentID, forKey: .agentID)
         if !blockers.isEmpty { try c.encode(blockers, forKey: .blockers) }
+        try c.encodeIfPresent(removed, forKey: .removed)
         try c.encode(created, forKey: .created)
         try c.encode(updated, forKey: .updated)
     }
@@ -146,6 +150,7 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         // Version 1 wrote one `blocker`; it reads as a list of one.
         blockers = try c.decodeIfPresent([Blocker].self, forKey: .blockers)
             ?? (try c.decodeIfPresent(Blocker.self, forKey: .legacyBlocker)).map { [$0] } ?? []
+        removed = try c.decodeIfPresent(Date.self, forKey: .removed)
         created = try c.decode(Date.self, forKey: .created)
         updated = try c.decode(Date.self, forKey: .updated)
     }
@@ -225,7 +230,7 @@ public enum Sweep {
                 switch b.kind {
                 case .decision:
                     if let id = b.id, let e = snapshot.escalations.first(where: { $0.id == id }), let chosen = e.chosen {
-                        cleared.append("decided: \(chosen.title)")
+                        cleared.append("decided \(e.question) → \(chosen.title), by \(e.decision?.by ?? "someone")")
                     } else { remaining.append(b) }
                 case .task:
                     if let id = b.id, let t = snapshot.tasks.first(where: { $0.id == id }), t.state == .done {

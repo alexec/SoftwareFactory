@@ -90,13 +90,14 @@ import Testing
         #expect(call(s, "task_next", ["project": "Where"]).text.contains("First"))
         let t0 = id(after: "", in: call(s, "task_add", ["project": "Where", "title": "Urgent", "position": "top"]).text)
         #expect(call(s, "task_next", ["project": "Where"]).text.contains("Urgent"))
-        #expect(call(s, "task_remove", ["task_id": t0]).text == "Removed: Urgent")
+        #expect(call(s, "task_remove", ["task_id": t0, "reason": "a test"]).text.hasPrefix("Removed: Urgent"))
+        #expect(try s.store.loadRemovedTasks().first?.note.contains("removed: a test") == true)
         let mid = id(after: "", in: call(s, "task_add", ["project": "Where", "title": "Middle", "above_task_id": t2]).text)
-        let order = call(s, "task_list", ["project": "Where"]).text.split(separator: "\n").map { String($0.split(separator: "  ").last ?? "") }
+        let order = call(s, "task_list", ["project": "Where"]).text.split(separator: "\n").map { String($0.split(separator: "  ")[3]) }
         #expect(order == ["First", "Middle", "Second"])
         #expect(call(s, "task_status", ["task_id": mid, "state": "parked"]).text == "Middle: parked")
         #expect(call(s, "task_next", ["project": "Where"]).text.contains("First"))
-        #expect(call(s, "task_remove", ["task_id": mid]).text == "Removed: Middle")
+        #expect(call(s, "task_remove", ["task_id": mid]).text.hasPrefix("Removed: Middle"))
 
         #expect(call(s, "task_rank", ["task_id": t2, "above_task_id": t1]).text.contains("Second now sits above First"))
         #expect(call(s, "task_next", ["project": "Where"]).text.contains("Second"))
@@ -109,7 +110,7 @@ import Testing
         let snap = try s.store.load()
         #expect(snap.tasks.first { $0.title == "First" }?.note == "fixed by splitting on pauses")
 
-        #expect(call(s, "task_remove", ["task_id": t2]).text == "Removed: Second")
+        #expect(call(s, "task_remove", ["task_id": t2]).text.hasPrefix("Removed: Second"))
         #expect(call(s, "task_next", ["project": "Where"]).text == "Nothing waiting.")
     }
 
@@ -157,7 +158,28 @@ import Testing
         snap = try s.store.load()
         let cleared = Sweep.unblocked(in: snap, now: .now)
         #expect(cleared.map(\.title) == ["Name the app"])
-        #expect(cleared[0].note.contains("decided: A"))
+        #expect(cleared[0].note.contains("decided Which name? → A, by alex"))
+        try s.store.save(cleared[0])
+        // The decision is on the row where every reader sees it: the list's last line, and task_show.
+        #expect(call(s, "task_list", ["project": "P"]).text.contains("— unblocked, decided Which name? → A, by alex"))
+        let shown = call(s, "task_show", ["task_id": t]).text
+        #expect(shown.contains("question \(escID): Which name? → A, by alex"))
+        #expect(shown.contains("note: unblocked, decided"))
+    }
+
+    @Test func unblockOneAndMove() throws {
+        let s = try server()
+        _ = call(s, "agent_register", ["name": "a", "project": "/tmp/P"])
+        _ = call(s, "project_add", ["path": "/tmp/Q"])
+        let t = id(after: "", in: call(s, "task_add", ["project": "P", "title": "Stuck"]).text)
+        _ = call(s, "task_block", ["task_id": t, "on": "other", "why": "the measurement"])
+        _ = call(s, "task_block", ["task_id": t, "on": "person", "why": "the stand-down"])
+        #expect(call(s, "task_unblock", ["task_id": t, "which": "measurement"]).text.hasPrefix("Cleared one. Stuck still waits on 1: the stand-down"))
+        #expect(call(s, "task_unblock", ["task_id": t, "which": "nothing"]).isError)
+        #expect(call(s, "task_unblock", ["task_id": t, "which": "1"]).text.hasPrefix("Cleared the last one."))
+        #expect(call(s, "task_move", ["task_id": t, "project": "Q"]).text == "Moved Stuck to Q's backlog.")
+        #expect(call(s, "task_list", ["project": "Q"]).text.contains("moved here from P"))
+        #expect(call(s, "task_list", ["project": "P"]).text == "Nothing on the backlog.")
     }
 
     @Test func blockingATaskSaysWhatIsNext() throws {

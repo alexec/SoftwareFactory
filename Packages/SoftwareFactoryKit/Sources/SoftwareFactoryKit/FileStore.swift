@@ -82,10 +82,11 @@ public struct FileStore: Sendable {
 
     // MARK: Reading
 
+    /// Removed tasks stay on disk and out of the snapshot; `loadRemovedTasks` reads them.
     public func load() throws -> Snapshot {
         Snapshot(
             projects: try loadAll("projects"),
-            tasks: try loadAll("tasks"),
+            tasks: (try loadAll("tasks") as [FactoryTask]).filter { $0.removed == nil },
             escalations: try loadAll("escalations"),
             agents: try loadAll("agents"),
             resources: try loadAll("resources"),
@@ -102,6 +103,10 @@ public struct FileStore: Sendable {
 
     public func save(_ throttle: Throttle) throws {
         try Self.encoder.encode(throttle).write(to: root.appending(path: "throttle.json"), options: .atomic)
+    }
+
+    public func loadRemovedTasks() throws -> [FactoryTask] {
+        (try loadAll("tasks") as [FactoryTask]).filter { $0.removed != nil }
     }
 
     public func escalation(_ id: UUID) -> Escalation? {

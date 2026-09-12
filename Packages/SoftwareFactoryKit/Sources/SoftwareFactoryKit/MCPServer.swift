@@ -175,8 +175,14 @@ public struct MCPServer: Sendable {
             Tool(name: "task_rank", description: "Move a task directly above another on the same backlog.",
                  properties: ["task_id": str("The task to move"), "above_task_id": str("The task it should sit above")],
                  required: ["task_id", "above_task_id"]),
-            Tool(name: "task_remove", description: "Take a task off the backlog for good.",
+            Tool(name: "task_show", description: "Everything on one task: title, state, kind, the whole note (including what was decided for it), its blockers, and the questions it raised.",
+                 properties: ["task_id": str("The task")], required: ["task_id"]),
+            Tool(name: "task_remove", description: "Take a task off the backlog. Nothing is deleted: the record stays with your reason, out of every list.",
                  properties: ["task_id": str("The task"), "reason": str("Why")], required: ["task_id"]),
+            Tool(name: "task_unblock", description: "Clear one of a blocked task's blockers, by its number (1, 2, …) or a few words from its reason. The task goes back to the backlog when none is left.",
+                 properties: ["task_id": str("The task"), "which": str("The blocker's number, or words from its reason")], required: ["task_id", "which"]),
+            Tool(name: "task_move", description: "Move a task to another project's backlog, at the bottom, with a note saying where it came from. For a task that landed on the wrong project.",
+                 properties: ["task_id": str("The task"), "project": str("Folder path or project name to move it to")], required: ["task_id", "project"]),
 
             Tool(name: "escalation_raise", description: "Ask the person to decide something. Give two or more options and say which you recommend. Returns the escalation_id; then call escalation_await. Give task_id when the question stops a task: the task is marked blocked on the decision and unblocks itself when the answer lands.",
                  properties: ["agent_id": str("From agent_register"), "project": str("Folder path or project name"),
@@ -342,8 +348,41 @@ public struct MCPServer: Sendable {
 
         case "task_remove":
             let task = try task(args, in: snap)
-            try store.delete(task)
-            return "Removed: \(task.title)"
+            try store.save(Backlog.remove(task, why: args["reason"] as? String ?? "", at: now()))
+            return "Removed: \(task.title). The record is kept, out of the lists."
+
+        case "task_show":
+            let task = try task(args, in: snap)
+            var lines = [Self.line(task), "note: \(task.note.isEmpty ? "(none)" : task.note)"]
+            if let agent = task.agentID.flatMap({ id in snap.agents.first { $0.id == id } }) { lines.append("agent: \(agent.name)") }
+            for (n, b) in task.blockers.enumerated() { lines.append("blocker \(n + 1): \(b.kind.rawValue)\(b.id.map { " \($0.uuidString)" } ?? ""): \(b.why)") }
+            for e in snap.escalations where e.taskID == task.id {
+                let answer = e.chosen.map { "→ \($0.title), by \(e.decision?.by ?? "someone")" } ?? "open"
+                lines.append("question \(e.id.uuidString): \(e.question) \(answer)")
+            }
+            return lines.joined(separator: "\n")
+
+        case "task_unblock":
+            let task = try task(args, in: snap)
+            guard task.state == .blocked else { throw ToolError(message: "\(task.title) is not blocked.") }
+            do {
+                let cleared = try Backlog.unblock(task, matching: try string("which", args), at: now())
+                try store.save(cleared)
+                return cleared.state == .blocked
+                    ? "Cleared one. \(task.title) still waits on \(cleared.blockers.count): \(cleared.blockedWhy)"
+                    : "Cleared the last one. \(task.title) is back on the backlog."
+            } catch Backlog.UnblockError.noMatch {
+                throw ToolError(message: "No blocker matches. They are: " + task.blockers.enumerated().map { "\($0 + 1). \($1.why)" }.joined(separator: "; "))
+            } catch Backlog.UnblockError.ambiguous {
+                throw ToolError(message: "More than one blocker matches; give its number: " + task.blockers.enumerated().map { "\($0 + 1). \($1.why)" }.joined(separator: "; "))
+            }
+
+        case "task_move":
+            let task = try task(args, in: snap)
+            let project = try resolveProject(try string("project", args), in: snap, create: true)
+            guard project.id != task.projectID else { return "\(task.title) is already on \(project.name)." }
+            try store.save(Backlog.move(task, to: project, in: snap.tasks, at: now()))
+            return "Moved \(task.title) to \(project.name)'s backlog."
 
         case "escalation_raise":
             let project = try resolveProject(try string("project", args), in: snap, create: true)
@@ -496,7 +535,8 @@ public struct MCPServer: Sendable {
 
     static func line(_ t: FactoryTask) -> String {
         let blocked = t.blockers.isEmpty ? "" : "  [blocked on " + t.blockers.map { "\($0.kind.rawValue): \($0.why)" }.joined(separator: "; ") + "]"
-        return "\(t.id.uuidString)  \(t.state.rawValue)  \(t.kind.rawValue)  \(t.title)\(blocked)"
+        let last = t.note.split(whereSeparator: \.isNewline).last.map { "  — \($0)" } ?? ""
+        return "\(t.id.uuidString)  \(t.state.rawValue)  \(t.kind.rawValue)  \(t.title)\(blocked)\(last)"
     }
 
     func string(_ key: String, _ args: [String: Any]) throws -> String {

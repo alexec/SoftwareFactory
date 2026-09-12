@@ -2,8 +2,9 @@ import Foundation
 
 /// The rules for a project's backlog. Pure functions over arrays so a view never decides.
 public enum Backlog {
-    /// The tasks for one project, in the order they should be shown: in progress first,
-    /// then the backlog by rank, then parked by rank, then done, newest first.
+    /// The tasks for one project, in the order they should be shown: blocked first (they
+    /// need someone), then in progress, then the backlog by rank, then parked by rank, then
+    /// done, newest first. (Alex, 12 September 2026: blocked above in progress.)
     public static func tasks(for projectID: String, in all: [FactoryTask]) -> [FactoryTask] {
         all.filter { $0.projectID == projectID }.sorted(by: order)
     }
@@ -17,8 +18,8 @@ public enum Backlog {
 
     private static func stateOrder(_ s: FactoryTask.State) -> Int {
         switch s {
-        case .inProgress: 0
-        case .blocked: 1
+        case .blocked: 0
+        case .inProgress: 1
         case .backlog: 2
         case .parked: 3
         case .done: 4
@@ -42,7 +43,7 @@ public enum Backlog {
 
     /// The list, in blocks by state, in the order they are shown. Empty blocks are left out.
     public static func blocks(_ tasks: [FactoryTask]) -> [(state: FactoryTask.State, tasks: [FactoryTask])] {
-        let order: [FactoryTask.State] = [.inProgress, .blocked, .backlog, .parked, .done]
+        let order: [FactoryTask.State] = [.blocked, .inProgress, .backlog, .parked, .done]
         return order.compactMap { state in
             let group = tasks.filter { $0.state == state }
             return group.isEmpty ? nil : (state, group)
@@ -118,6 +119,53 @@ public enum Backlog {
         if let agentID { task.agentID = agentID }
         if state == .backlog || state == .parked { task.agentID = nil }
         if state != .blocked { task.blockers = [] }
+        return task
+    }
+
+    /// Takes a task off the backlog without losing it: the record stays, with the reason.
+    public static func remove(_ task: FactoryTask, why: String, at date: Date = .now) -> FactoryTask {
+        var task = task
+        task.removed = date
+        task.updated = date
+        let line = "removed" + (why.isEmpty ? "" : ": \(why)")
+        task.note = task.note.isEmpty ? line : task.note + "\n" + line
+        return task
+    }
+
+    /// Clears one blocker, named by its position or by words from its reason. The task
+    /// leaves blocked only when none is left.
+    public static func unblock(_ task: FactoryTask, matching text: String, at date: Date = .now) throws(UnblockError) -> FactoryTask {
+        var task = task
+        let index: Int
+        if let n = Int(text), n >= 1, n <= task.blockers.count {
+            index = n - 1
+        } else {
+            let hits = task.blockers.indices.filter { task.blockers[$0].why.localizedCaseInsensitiveContains(text) }
+            guard hits.count == 1 else { throw hits.isEmpty ? .noMatch : .ambiguous }
+            index = hits[0]
+        }
+        let gone = task.blockers.remove(at: index)
+        task.updated = date
+        let line = "cleared by hand: \(gone.why)"
+        task.note = task.note.isEmpty ? line : task.note + "\n" + line
+        if task.blockers.isEmpty { task = set(task, to: .backlog, at: date) }
+        return task
+    }
+
+    public enum UnblockError: Error, Equatable, Sendable {
+        case noMatch, ambiguous
+    }
+
+    /// Moves a task to another project's backlog, at the bottom. The note says where
+    /// it came from, so a lead reading it knows it was not filed there.
+    public static func move(_ task: FactoryTask, to project: Project, in all: [FactoryTask], at date: Date = .now) -> FactoryTask {
+        var task = task
+        let from = task.projectID
+        task.projectID = project.id
+        task.rank = nextRank(for: project.id, in: all)
+        task.updated = date
+        let line = "moved here from \(URL(fileURLWithPath: from).lastPathComponent)"
+        task.note = task.note.isEmpty ? line : task.note + "\n" + line
         return task
     }
 

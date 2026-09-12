@@ -28,6 +28,7 @@ struct RootView: View {
                             ActivityDot(activity: status.activity)
                             Text(status.project.name)
                             Spacer()
+                            ProgressNumbers(status: status, compact: true)
                             if status.openEscalations > 0 {
                                 Text(status.openEscalations, format: .number)
                                     .font(.caption.weight(.semibold))

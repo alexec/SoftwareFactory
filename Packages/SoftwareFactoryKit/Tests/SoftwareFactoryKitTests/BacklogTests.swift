@@ -22,6 +22,8 @@ import Testing
             FactoryTask(projectID: "/other", title: "elsewhere", rank: 0),
         ]
         #expect(Backlog.tasks(for: p, in: all).map(\.title) == ["now", "first", "second", "parked", "done new", "done old"])
+        let stuck = Backlog.block(task("stuck", rank: 9), on: .init(kind: .person, why: "alex"))
+        #expect(Backlog.tasks(for: p, in: all + [stuck]).first?.title == "stuck")   // blocked above in progress
         #expect(Backlog.next(for: p, in: all)?.title == "first")
         // Parked tasks sit out of the reordering.
         let changed = Backlog.move(in: Backlog.tasks(for: p, in: all), from: IndexSet(integer: 2), to: 0)
@@ -42,6 +44,7 @@ import Testing
         let blocks = Backlog.blocks(shown)
         #expect(blocks.map(\.state) == [.inProgress, .backlog, .parked, .done])
         #expect(blocks[0].tasks.map(\.title) == ["now"])
+        #expect(Backlog.blocks([Backlog.block(task("b", rank: 0), on: .init(kind: .other, why: "x")), task("now", rank: 1, state: .inProgress)]).map(\.state) == [.blocked, .inProgress])
         #expect(Backlog.blocks([]).isEmpty)
     }
 
@@ -68,7 +71,7 @@ import Testing
         try e.decide(e.options[1])
         cleared = Sweep.unblocked(in: Snapshot(tasks: all, escalations: [e]), now: Date(timeIntervalSince1970: 9))
         #expect(Set(cleared.map(\.title)) == ["waiting", "after"])
-        #expect(cleared.first { $0.title == "waiting" }?.note.contains("decided: B") == true)
+        #expect(cleared.first { $0.title == "waiting" }?.note.contains("→ B") == true)
         // A person clears it by hand, never the sweep.
         #expect(!cleared.contains { $0.title == "on alex" })
         #expect(Backlog.set(onAlex, to: .backlog).blockers.isEmpty)
@@ -87,9 +90,42 @@ import Testing
         #expect(swept.count == 1)
         #expect(swept[0].state == .blocked)                       // still waiting on the person
         #expect(swept[0].blockers.map(\.why) == ["the stand-down lifts"])
-        #expect(swept[0].note.contains("cleared, decided: A"))
+        #expect(swept[0].note.contains("cleared, decided ? → A"))
         // Nothing left to clear on its own: the sweep leaves it alone now.
         #expect(Sweep.unblocked(in: Snapshot(tasks: swept, escalations: [e]), now: .now).isEmpty)
+    }
+
+    @Test func clearingOneBlockerByNumberOrWords() throws {
+        var t = Backlog.block(task("t", rank: 0), on: .init(kind: .other, why: "the measurement finishes"))
+        t = Backlog.block(t, on: .init(kind: .person, why: "the stand-down lifts"))
+        let one = try Backlog.unblock(t, matching: "stand-down")
+        #expect(one.state == .blocked)
+        #expect(one.blockers.map(\.why) == ["the measurement finishes"])
+        #expect(one.note.contains("cleared by hand: the stand-down lifts"))
+        let none = try Backlog.unblock(one, matching: "1")
+        #expect(none.state == .backlog)
+        #expect(none.blockers.isEmpty)
+        #expect(throws: Backlog.UnblockError.noMatch) { try Backlog.unblock(t, matching: "zzz") }
+        var same = Backlog.block(task("s", rank: 0), on: .init(kind: .other, why: "wait a"))
+        same = Backlog.block(same, on: .init(kind: .other, why: "wait b"))
+        #expect(throws: Backlog.UnblockError.ambiguous) { try Backlog.unblock(same, matching: "wait") }
+    }
+
+    @Test func removingKeepsTheRecordAndMovingSaysWhereFrom() throws {
+        let gone = Backlog.remove(task("gone", rank: 0), why: "filed twice")
+        #expect(gone.removed != nil)
+        #expect(gone.note.contains("removed: filed twice"))
+        let store = try temporaryStore()
+        try store.save(gone)
+        try store.save(task("kept", rank: 1))
+        #expect(try store.load().tasks.map(\.title) == ["kept"])
+        #expect(try store.loadRemovedTasks().map(\.title) == ["gone"])
+
+        let elsewhere = Project(path: "/Users/alex/Elsewhere")
+        let moved = Backlog.move(task("wrong place", rank: 0), to: elsewhere, in: [FactoryTask(projectID: elsewhere.id, title: "x", rank: 4)])
+        #expect(moved.projectID == elsewhere.id)
+        #expect(moved.rank == 5)
+        #expect(moved.note.contains("moved here from p"))
     }
 
     @Test func aVersionOneBlockerStillReads() throws {

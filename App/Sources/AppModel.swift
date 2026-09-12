@@ -205,8 +205,20 @@ final class AppModel {
         persist { try $0.save(moved) }
     }
 
+    /// Nothing is deleted: the task is kept with the reason, out of every list.
     func delete(_ task: FactoryTask) {
-        persist { try $0.delete(task) }
+        persist { try $0.save(Backlog.remove(task, why: "by Alex, in the app")) }
+    }
+
+    func moveTask(_ task: FactoryTask, to project: Project) {
+        ensureStored(project.id)
+        persist { try $0.save(Backlog.move(task, to: project, in: snapshot.tasks)) }
+    }
+
+    func unblock(_ task: FactoryTask, _ blocker: FactoryTask.Blocker) {
+        guard let index = task.blockers.firstIndex(of: blocker) else { return }
+        guard let cleared = try? Backlog.unblock(task, matching: String(index + 1)) else { return }
+        persist { try $0.save(cleared) }
     }
 
     /// `source` and `destination` are offsets within the backlog block alone.
