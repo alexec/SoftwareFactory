@@ -31,6 +31,10 @@ struct ProjectView: View {
                 }
             }
 
+            Section {
+                steering
+            }
+
             // One section per state, in a fixed order, so the Backlog section (with the
             // add row under it, where a new task lands) is always in the same place.
             // Backlog and Parked rows are draggable, onto each other (crossing the line
@@ -117,24 +121,23 @@ struct ProjectView: View {
         .padding(.vertical, 4)
     }
 
+    // The top row: the dot, the name, the hold toggle, nothing else — no summary
+    // numbers. (Alex, 12 Sep 2026.)
     private var header: some View {
         let status = model.status(for: project.id)
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 ActivityDot(activity: status?.activity ?? .idle)
-                Text(statusLine(status))
+                Text(project.name)
                     .font(.headline)
+                Spacer()
+                Toggle("Active", isOn: Binding(get: { !project.onHold }, set: { model.setOnHold(project, !$0) }))
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .help("Off puts the project on hold: nothing is handed out from its backlog")
             }
-            if let doing = status?.doing {
-                Text(doing)
-                    .foregroundStyle(.secondary)
-            }
-            if let status { ProgressNumbers(status: status) }
-            Toggle("Active", isOn: Binding(get: { !project.onHold }, set: { model.setOnHold(project, !$0) }))
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .help("Off puts the project on hold: nothing is handed out from its backlog")
-            steering
+            Text(project.onHold ? "On hold" : (status?.doing ?? "Nobody is on it"))
+                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
     }
@@ -184,16 +187,6 @@ struct ProjectView: View {
         steer = ""
     }
 
-    private func statusLine(_ status: Dashboard.ProjectStatus?) -> String {
-        if project.onHold { return "On hold" }
-        guard let status, !status.agents.isEmpty else { return "Nobody is on it" }
-        let names = status.agents.map(\.name).joined(separator: ", ")
-        switch status.activity {
-        case .working: return "\(names) \(status.agents.count == 1 ? "is" : "are") on it"
-        case .waiting: return "\(names) \(status.agents.count == 1 ? "is" : "are") on it, waiting"
-        case .idle: return "Nobody is on it"
-        }
-    }
 
     private func add(at position: Backlog.Position) {
         let text = newTitle
