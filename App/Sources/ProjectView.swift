@@ -7,7 +7,6 @@ struct ProjectView: View {
     var project: Project
 
     @State private var newTitle = ""
-    @State private var recording = false
     @State private var steer = ""
 
     private var tasks: [FactoryTask] { model.tasks(for: project.id) }
@@ -99,43 +98,23 @@ struct ProjectView: View {
     }
 
     private var addRow: some View {
-        Group {
-                HStack(alignment: .top, spacing: 8) {
-                    // Grows to five lines, so a long typed task can be read before it is added.
-                    TextField("Add a task", text: $newTitle, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .lineLimit(1...5)
-                        .onSubmit { add(at: .bottom) }
-                    Button {
-                        recording = true
-                    } label: {
-                        Image(systemName: "mic")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Dictate a task: hold to record, let go to add it")
-                    .sheet(isPresented: $recording) {
-                        RecordOverlay(dictation: model.dictation) { words in
-                            _Concurrency.Task { await model.addTask(to: project.id, from: words, at: .bottom) }
-                        }
-                    }
-                    Menu {
-                        Button("Add to the top") { add(at: .top) }
-                        Button("Add to the bottom") { add(at: .bottom) }
-                        Button("Add to parked") { add(at: .parked) }
-                    } label: {
-                        Text("Add")
-                    } primaryAction: {
-                        add(at: .bottom)
-                    }
-                    .menuStyle(.button)
-                    .buttonStyle(.glass)
-                    .fixedSize()
-                    .disabled(newTitle.trimmingCharacters(in: .whitespaces).isEmpty)
-                    .help("Add at the bottom; the arrow adds at the top")
-                }
-                .padding(.vertical, 4)
+        DictateField(placeholder: "Add a task", text: $newTitle, dictation: model.dictation) {
+            Menu {
+                Button("Add to the top") { add(at: .top) }
+                Button("Add to the bottom") { add(at: .bottom) }
+                Button("Add to parked") { add(at: .parked) }
+            } label: {
+                Text("Add")
+            } primaryAction: {
+                add(at: .bottom)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.glass)
+            .fixedSize()
+            .help("Add at the bottom; the arrow adds at the top")
         }
+        .onSubmit { add(at: .bottom) }
+        .padding(.vertical, 4)
     }
 
     private var header: some View {

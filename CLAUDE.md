@@ -85,9 +85,11 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     2026 keep their folder path as id). `resolveProject` takes a name, an id, or an old
     folder path (meaning the folder's name). On hold blocks no tool: every reply on that
     project ends with `MCPServer.holdWarning`.
-  - `Shared/RecordOverlay.swift`: the dictation sheet on both platforms. Hold to record
-    (a zero-distance drag gesture), release to add; the mic primer and the denied and
-    unavailable states live in it. Nothing is dictated into the text field any more.
+  - `Shared/DictateField.swift`: a text field whose trailing control is a microphone
+    while it is empty and the caller's own submit control once there is something to
+    send. Tapping (Mac) or holding (phone) the microphone records; a popover above it
+    shows the words live and throbs while listening; letting go settles them into the
+    field. The primer and the denied and unavailable states live in the popover too.
   - `Shared/TaskTitler.swift`: Apple Intelligence gives a verb-led title and a kind; the
     words as said are the note, whole.
   - `Shared/TaskTitler.swift`: Apple Intelligence turns a long sentence into a title, a

@@ -7,7 +7,6 @@ struct PhoneBacklogView: View {
     var project: Project
 
     @State private var newTitle = ""
-    @State private var recording = false
     @State private var steer = ""
 
     private var tasks: [FactoryTask] { Backlog.visible(for: project.id, in: model.snapshot.tasks) }
@@ -62,25 +61,7 @@ struct PhoneBacklogView: View {
             }
             if model.source == .factory {
                 Section("Add") {
-                    HStack(alignment: .top, spacing: 10) {
-                        TextField("Add a task", text: $newTitle, axis: .vertical)
-                            .lineLimit(1...5)
-                            .onSubmit { add(at: .bottom) }
-                        Button {
-                            recording = true
-                        } label: {
-                            Image(systemName: "mic")
-                                .foregroundStyle(.secondary)
-                                .frame(width: 44, height: 44)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Dictate a task")
-                        .sheet(isPresented: $recording) {
-                            RecordOverlay(dictation: model.dictation) { words in
-                                _Concurrency.Task { await model.addTask(to: project, title: words, at: .bottom) }
-                            }
-                            .presentationDetents([.medium])
-                        }
+                    DictateField(placeholder: "Add a task", text: $newTitle, dictation: model.dictation) {
                         Menu {
                             Button("Add to the top") { add(at: .top) }
                             Button("Add to the bottom") { add(at: .bottom) }
@@ -90,8 +71,8 @@ struct PhoneBacklogView: View {
                         } primaryAction: {
                             add(at: .bottom)
                         }
-                        .disabled(newTitle.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
+                    .onSubmit { add(at: .bottom) }
                 }
             } else {
                 Section {
