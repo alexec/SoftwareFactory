@@ -43,6 +43,11 @@ import Testing
         #expect(changed.map { "\($0.title)\($0.rank)" } == ["c0", "a1", "b2"])
     }
 
+    @Test func placingATaskAboveItselfChangesNothing() {
+        let all = [task("a", rank: 0), task("b", rank: 1)]
+        #expect(Backlog.place(all[0], above: all[0], in: all).isEmpty)
+    }
+
     @Test func startingRecordsTheAgentAndBacklogForgetsIt() {
         let id = UUID()
         let started = Backlog.set(task("a", rank: 0), to: .inProgress, agentID: id)

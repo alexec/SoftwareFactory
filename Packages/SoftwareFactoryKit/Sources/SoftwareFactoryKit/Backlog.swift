@@ -52,6 +52,7 @@ public enum Backlog {
     public static func place(
         _ task: FactoryTask, above other: FactoryTask, in tasks: [FactoryTask], at date: Date = .now
     ) -> [FactoryTask] {
+        guard task.id != other.id else { return [] }
         var open = tasks.filter { $0.state != .done && $0.id != task.id }.sorted(by: order)
         let at = open.firstIndex { $0.id == other.id } ?? open.count
         open.insert(task, at: at)

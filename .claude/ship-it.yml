@@ -26,5 +26,5 @@ git:
 
 devices:
   mac: this Mac
-  iphone: 1A20DB49-E8EF-5931-B9CF-83F50B10CA1D   # iPhone 15 Pro Max
+  iphone: his iPhone 15 Pro Max                 # `xcrun devicectl list devices`; the id stays out of the repo
 keep_installed: true                              # he is using it; never uninstall
