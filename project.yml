@@ -44,6 +44,7 @@ targets:
     sources:
       - path: App/Sources
       - path: App/Resources
+      - path: Shared
     dependencies:
       - package: SoftwareFactoryKit
         product: SoftwareFactoryKit
@@ -55,8 +56,13 @@ targets:
         com.apple.security.app-sandbox: true
         # The factory listens on a port: MCP for agents, a small API for the phone.
         com.apple.security.network.server: true
+        # Outgoing, for iCloud.
+        com.apple.security.network.client: true
         com.apple.security.application-groups:
           - 6T4RVD5724.com.alexecollins.softwarefactory
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.com.alexecollins.softwarefactory
+        com.apple.developer.icloud-services: [CloudKit]
     info:
       path: App/Info.plist
       properties:
@@ -81,6 +87,13 @@ targets:
     sources:
       - path: Phone/Sources
       - path: Phone/Resources
+      - path: Shared
+    entitlements:
+      path: Phone/SoftwareFactoryPhone.entitlements
+      properties:
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.com.alexecollins.softwarefactory
+        com.apple.developer.icloud-services: [CloudKit]
     dependencies:
       - package: SoftwareFactoryKit
         product: SoftwareFactoryKit

@@ -15,6 +15,9 @@ final class AppModel {
     let store: FileStore?
     private(set) var serverState = "Starting"
     @ObservationIgnored private var server: FactoryServer?
+    let cloud = CloudSync()
+    @ObservationIgnored private var lastCloudPull: Date?
+    static let pullDecisionsEvery: TimeInterval = 15
 
     var hasSeenIntro: Bool {
         didSet { UserDefaults.standard.set(hasSeenIntro, forKey: Self.introKey) }
@@ -41,6 +44,7 @@ final class AppModel {
             server.start()
             self.server = server
         }
+        _Concurrency.Task { await cloud.prepare() }
     }
 
     /// The app group container when the sandbox gives us one, the plain path otherwise
@@ -84,6 +88,25 @@ final class AppModel {
         }
         dashboard = Dashboard.make(snapshot: snapshot)
         lastRefresh = .now
+        _Concurrency.Task { await sync() }
+    }
+
+    /// The Mac's half of iCloud: every change goes up; decisions made on the phone come down.
+    private func sync() async {
+        guard cloud.isReady, let store else { return }
+        await cloud.push(snapshot)
+        if lastCloudPull.map({ Date.now.timeIntervalSince($0) < Self.pullDecisionsEvery }) ?? false { return }
+        lastCloudPull = .now
+        guard let theirs = await cloud.pullEscalations() else { return }
+        let adopted = CloudRecords.decisionsToAdopt(local: snapshot.escalations, cloud: theirs)
+        guard !adopted.isEmpty else { return }
+        do {
+            for e in adopted { try store.save(e) }
+            snapshot = try store.load()
+            dashboard = Dashboard.make(snapshot: snapshot)
+        } catch {
+            storeError = error.localizedDescription
+        }
     }
 
     // MARK: Projects

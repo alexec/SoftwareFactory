@@ -20,6 +20,15 @@ final class PhoneModel {
     private(set) var link: Link = .notYetAsked
     private(set) var factoryName: String?
     private(set) var lastError: String?
+    /// Where the last snapshot came from.
+    private(set) var source: Source = .none
+    let cloud = CloudSync()
+
+    enum Source: Equatable {
+        case none
+        case factory
+        case cloud
+    }
 
     var hasSeenIntro: Bool {
         didSet { UserDefaults.standard.set(hasSeenIntro, forKey: Self.introKey) }
@@ -40,6 +49,10 @@ final class PhoneModel {
     init() {
         hasSeenIntro = UserDefaults.standard.bool(forKey: Self.introKey)
         hasPrimedNetwork = UserDefaults.standard.bool(forKey: Self.primedKey)
+        _Concurrency.Task {
+            await cloud.prepare()
+            if !hasPrimedNetwork { startPolling() }
+        }
         if hasPrimedNetwork { startLooking() }
     }
 
@@ -87,23 +100,40 @@ final class PhoneModel {
         }
     }
 
+    /// The factory on the local network when it answers; iCloud otherwise.
     func poll() async {
-        guard let client else { return }
-        do {
-            let response = try await client.send(HTTPRequest(method: "GET", path: "/api/snapshot"))
-            guard response.status == 200 else { throw FactoryClient.ClientError.failed("The factory answered \(response.status).") }
-            snapshot = try FileStore.decoder.decode(Snapshot.self, from: response.body)
-            dashboard = Dashboard.make(snapshot: snapshot)
-            lastError = nil
-            if case .connected = link {} else { link = .connected(name: factoryName ?? "the Mac") }
-        } catch {
-            lastError = error.localizedDescription
-            link = .lost
+        if let client {
+            do {
+                let response = try await client.send(HTTPRequest(method: "GET", path: "/api/snapshot"))
+                guard response.status == 200 else { throw FactoryClient.ClientError.failed("The factory answered \(response.status).") }
+                snapshot = try FileStore.decoder.decode(Snapshot.self, from: response.body)
+                dashboard = Dashboard.make(snapshot: snapshot)
+                source = .factory
+                lastError = nil
+                if case .connected = link {} else { link = .connected(name: factoryName ?? "the Mac") }
+                return
+            } catch {
+                lastError = error.localizedDescription
+                link = .lost
+            }
         }
+        guard cloud.isReady, let pulled = await cloud.pull() else { return }
+        snapshot = pulled
+        dashboard = Dashboard.make(snapshot: snapshot)
+        source = .cloud
     }
 
     func decide(_ escalation: Escalation, _ option: Escalation.Option) async {
-        guard let client else { return }
+        guard source == .factory, let client else {
+            var e = escalation
+            guard (try? e.decide(option, by: "alex, phone")) != nil else { return }
+            await cloud.push(decision: e)
+            if let i = snapshot.escalations.firstIndex(where: { $0.id == e.id }) {
+                snapshot.escalations[i] = e
+                dashboard = Dashboard.make(snapshot: snapshot)
+            }
+            return
+        }
         let body = (try? JSONSerialization.data(withJSONObject: [
             "escalationID": escalation.id.uuidString, "optionID": option.id.uuidString, "by": "alex, phone",
         ])) ?? Data()

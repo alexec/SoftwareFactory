@@ -45,9 +45,15 @@ struct PhoneRootView: View {
                 .foregroundStyle(.secondary)
                 .font(.callout)
         case .lost:
-            Label("Lost the factory. It answers again when the Mac is awake and on this network.", systemImage: "wifi.slash")
-                .foregroundStyle(.secondary)
-                .font(.callout)
+            if model.source == .cloud {
+                Label("Away from the factory. Reading through iCloud.", systemImage: "icloud")
+                    .foregroundStyle(.secondary)
+                    .font(.callout)
+            } else {
+                Label("Lost the factory. It answers again when the Mac is awake and on this network, or through iCloud.", systemImage: "wifi.slash")
+                    .foregroundStyle(.secondary)
+                    .font(.callout)
+            }
         }
     }
 

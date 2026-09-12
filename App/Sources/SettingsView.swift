@@ -30,6 +30,12 @@ struct SettingsView: View {
                 }
             }
 
+            Section("iCloud") {
+                LabeledContent("Sync", value: model.cloud.summary)
+                Text("Questions and decisions go through your own iCloud so the phone works away from this network.")
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Store") {
                 if let store = model.store {
                     LabeledContent("Folder", value: store.root.path)

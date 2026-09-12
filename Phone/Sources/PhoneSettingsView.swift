@@ -32,6 +32,12 @@ struct PhoneSettingsView: View {
                     }
                 }
 
+                Section("iCloud") {
+                    LabeledContent("Sync", value: model.cloud.summary)
+                    Text("Away from the Mac's network, questions arrive and answers go back through your own iCloud.")
+                        .foregroundStyle(.secondary)
+                }
+
                 #if DEBUG
                 Section("Developer") {
                     Button("Show the first-run sheet again") { model.hasSeenIntro = false }
