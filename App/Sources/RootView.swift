@@ -22,7 +22,8 @@ struct RootView: View {
                 Label("Factory", systemImage: "building.2")
                     .tag(Destination.factory)
 
-                Section("Projects") {
+                // Alex, 12 Sep 2026: the count in the heading.
+                Section("Projects (\(model.dashboard.projects.count))") {
                     ForEach(model.dashboard.projects) { status in
                         HStack {
                             ActivityDot(activity: status.project.onHold ? .idle : status.activity)

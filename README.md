@@ -35,8 +35,9 @@ something themselves. You see all of it in one window and answer the questions w
    `~/Library/Group Containers/6T4RVD5724.com.alexecollins.softwarefactory/Store`. The app and
    the server both read and write it; writes are atomic and one file per record, so a
    half-written file is never read.
-3. **A project is a folder.** Its path is its identity. Projects appear when an agent names
-   one or you add one.
+3. **A project is a name.** An app, a role that spans apps such as research, a piece of
+   tooling: it needs no folder. Projects appear when an agent names one or you add one.
+   An agent that still sends a folder path gets the folder's name.
 4. **Working means the agent touched the factory in the last ten minutes.** Quiet means
    registered and silent; an hour of silence and it is marked gone. There is no check-in
    to forget: a claim, an update, a question or a lease is the heartbeat.
@@ -62,7 +63,7 @@ The tools: `agent_register`, `agent_checkin`, `agent_deregister`, `project_list`
 `project_add`, `task_list`, `task_next`, `task_add`, `task_claim`, `task_status`,
 `task_rank`, `task_remove`, `escalation_raise`, `escalation_await`, `escalation_list`,
 `resource_list`, `resource_add`, `resource_lease`, `resource_renew`, `resource_release`,
-`factory_status`, `factory_ask`, `task_block`, `task_unblock`, `task_move`, `task_show`, `task_note`, `task_number`, `project_remove`.
+`factory_status`, `factory_ask`, `task_block`, `task_unblock`, `task_move`, `task_show`, `task_note`, `task_number`, `project_remove`. Task kinds: feature, bug, chore, review, ship.
 There is no check-in: every call an agent makes counts as a sign of life. The server's
 instructions tell an agent to register first, claim what it is on, lease what it shares,
 ask the factory before anything heavy, raise and await when stuck, stop when a project is

@@ -17,9 +17,10 @@ func wholeSecond() -> Date {
     @Test func roundTripsEveryKindOfRecord() throws {
         let store = try temporaryStore()
         let now = wholeSecond()
-        let project = Project(path: "/Users/alex/Where/", added: now)
-        #expect(project.id == "/Users/alex/Where")
+        let project = Project(name: " Where ", added: now)
+        #expect(UUID(uuidString: project.id) != nil)
         #expect(project.name == "Where")
+        #expect(Project.name(fromPath: "/Users/alex/Where/") == "Where")
         let task = FactoryTask(projectID: project.id, title: "Fix it", kind: .bug, rank: 3, note: "why", created: now)
         var escalation = Escalation(
             projectID: project.id, question: "Which?", options: [.init(title: "A", recommended: true), .init(title: "B")],
@@ -43,7 +44,7 @@ func wholeSecond() -> Date {
 
     @Test func everyRecordCarriesAVersionAndReadsWithoutOne() throws {
         let store = try temporaryStore()
-        let project = Project(path: "/a")
+        let project = Project(name: "a", id: "/a")
         try store.save(project)
         let file = store.root.appending(path: "projects/\(FileStore.fileName(forProject: project.id)).json")
         let text = String(decoding: try Data(contentsOf: file), as: UTF8.self)
@@ -64,10 +65,10 @@ func wholeSecond() -> Date {
         #expect(Lease(resourceID: UUID(), agentID: UUID(), why: "", since: .now, until: .now).version == Records.version)
     }
 
-    @Test func sameFolderLandsInOneFile() throws {
+    @Test func sameIDLandsInOneFile() throws {
         let store = try temporaryStore()
-        try store.save(Project(path: "/a/b", name: "first"))
-        try store.save(Project(path: "/a/b/", name: "second"))
+        try store.save(Project(name: "first", id: "/a/b"))
+        try store.save(Project(name: "second", id: "/a/b"))
         let snap = try store.load()
         #expect(snap.projects.count == 1)
         #expect(snap.projects[0].name == "second")
@@ -75,7 +76,7 @@ func wholeSecond() -> Date {
 
     @Test func skipsAFileItCannotRead() throws {
         let store = try temporaryStore()
-        try store.save(Project(path: "/a/b"))
+        try store.save(Project(name: "b", id: "/a/b"))
         try Data("not json".utf8).write(to: store.root.appending(path: "projects/junk.json"))
         #expect(try store.load().projects.count == 1)
     }

@@ -22,7 +22,7 @@ import Testing
 
         snap.tasks[0].title = "renamed"
         let removed = snap.agents.removeLast()
-        snap.projects.append(Project(path: "/new"))
+        snap.projects.append(Project(name: "new", id: "/new"))
         let after = CloudRecords.encode(snap)
         let diff = CloudRecords.diff(from: before, to: after)
         #expect(diff.save.map(\.type).sorted() == ["Project", "Task"])

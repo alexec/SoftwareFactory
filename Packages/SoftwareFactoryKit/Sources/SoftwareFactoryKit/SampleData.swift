@@ -3,8 +3,8 @@ import Foundation
 /// Records for a Debug build to look at before any agent has written one.
 public enum SampleData {
     public static func snapshot(now: Date = .now) -> Snapshot {
-        let where_ = Project(path: "/Users/alexcollins/Where", added: now.addingTimeInterval(-86400 * 3))
-        let packed = Project(path: "/Users/alexcollins/Packed", added: now.addingTimeInterval(-86400 * 2))
+        let where_ = Project(name: "Where", added: now.addingTimeInterval(-86400 * 3))
+        let packed = Project(name: "Packed", added: now.addingTimeInterval(-86400 * 2))
 
         var agent1 = Agent(name: "agent-1", projectID: where_.id, registered: now.addingTimeInterval(-3000))
         agent1.lastSeen = now.addingTimeInterval(-20)

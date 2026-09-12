@@ -20,7 +20,7 @@ final class LockScreen {
             return
         }
         let name = dashboard.projects.first { $0.id == question.projectID }?.project.name
-            ?? URL(fileURLWithPath: question.projectID).lastPathComponent
+            ?? Project.name(fromPath: question.projectID)
         let state = FactoryActivityAttributes.ContentState(
             escalationID: question.id,
             project: name,

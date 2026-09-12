@@ -7,9 +7,12 @@ public enum Records {
 }
 
 /// A product being built, identified by its folder. The path is the id because it is the
-/// one thing the Mac app, the iPhone app and every agent agree on.
+/// one thing the Mac app, the iPhone app and every agent agree on. A project is a name,
+/// nothing more: an app, a cross-cutting role, a piece of tooling. It has no folder.
+/// (Alex, 12 Sep 2026: paths removed; the director's Research had no single folder.)
 public struct Project: Codable, Identifiable, Hashable, Sendable {
     public var version = Records.version
+    /// Stable and opaque. Projects from before 12 Sep 2026 carry their old folder path here.
     public var id: String
     public var name: String
     public var added: Date
@@ -20,18 +23,17 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
     /// out of every list, with its tasks. (Director, 12 Sep 2026: a wrong path.)
     public var removed: Date?
 
-    public init(path: String, name: String? = nil, added: Date = .now) {
-        self.id = Project.canonical(path)
-        self.name = name ?? URL(fileURLWithPath: path).lastPathComponent
+    public init(name: String, id: String = UUID().uuidString, added: Date = .now) {
+        self.id = id
+        self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         self.added = added
     }
 
-    public var path: String { id }
-
-    public static func canonical(_ path: String) -> String {
+    /// What an old caller meant by a folder path: the folder's name. "/Users/a/Where/" is "Where".
+    public static func name(fromPath path: String) -> String {
         var p = (path as NSString).standardizingPath
         while p.count > 1, p.hasSuffix("/") { p.removeLast() }
-        return p
+        return URL(fileURLWithPath: p).lastPathComponent
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -53,6 +55,10 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         /// A UX review, a luxury audit, an App Store compliance pass: work that produces
         /// findings rather than a change. (Alex, 12 September 2026.)
         case review
+        /// Closing-out work on the store record: the listing, privacy and support pages,
+        /// the build attached, the repo made private. (Director, 12 Sep 2026: most of the
+        /// fleet's closing work is this, not review.)
+        case ship
     }
 
     public enum State: String, Codable, CaseIterable, Sendable {

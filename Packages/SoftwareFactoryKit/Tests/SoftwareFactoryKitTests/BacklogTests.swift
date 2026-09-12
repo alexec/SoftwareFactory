@@ -139,11 +139,11 @@ import Testing
         #expect(try store.load().tasks.map(\.title) == ["kept"])
         #expect(try store.loadRemovedTasks().map(\.title) == ["gone"])
 
-        let elsewhere = Project(path: "/Users/alex/Elsewhere")
-        let moved = Backlog.move(task("wrong place", rank: 0), to: elsewhere, in: [FactoryTask(projectID: elsewhere.id, title: "x", rank: 4)])
+        let elsewhere = Project(name: "Elsewhere", id: "/Users/alex/Elsewhere")
+        let moved = Backlog.move(task("wrong place", rank: 0), to: elsewhere, from: Project(name: "Here", id: p), in: [FactoryTask(projectID: elsewhere.id, title: "x", rank: 4)])
         #expect(moved.projectID == elsewhere.id)
         #expect(moved.rank == 5)
-        #expect(moved.note.contains("moved here from p"))
+        #expect(moved.note.contains("moved here from Here"))
     }
 
     @Test func aVersionOneBlockerStillReads() throws {
@@ -211,7 +211,7 @@ import Testing
     let now = Date(timeIntervalSince1970: 10_000)
 
     @Test func countsAndActivity() {
-        let a = Project(path: "/a")
+        let a = Project(name: "a", id: "/a")
         var fresh = Agent(name: "one", projectID: "/a", registered: now.addingTimeInterval(-500))
         fresh.lastSeen = now.addingTimeInterval(-10)
         var quiet = Agent(name: "two", projectID: "/b", registered: now.addingTimeInterval(-500))
@@ -246,7 +246,7 @@ import Testing
     }
 
     @Test func aProjectOnHoldShowsItsNameAndNothingElse() {
-        var held = Project(path: "/held")
+        var held = Project(name: "held", id: "/held")
         held.onHold = true
         var agent = Agent(name: "one", projectID: held.id, registered: now)
         agent.lastSeen = now
@@ -256,7 +256,7 @@ import Testing
         agent.taskID = task.id
         agent.note = "on it"
         let question = Escalation(projectID: held.id, question: "q", options: [.init(title: "a")], agentID: agent.id, raisedBy: "one", raised: now)
-        let live = Project(path: "/live")
+        let live = Project(name: "live", id: "/live")
         var liveTask = FactoryTask(projectID: live.id, title: "live one", rank: 1)
         liveTask.state = .inProgress
         let d = Dashboard.make(snapshot: Snapshot(projects: [held, live], tasks: [task, liveTask], escalations: [question], agents: [agent]), now: now)
@@ -284,7 +284,7 @@ import Testing
     }
 
     @Test func idleProjectWithNothingOnShowsNothing() {
-        let d = Dashboard.make(snapshot: Snapshot(projects: [Project(path: "/a")]), now: now)
+        let d = Dashboard.make(snapshot: Snapshot(projects: [Project(name: "a", id: "/a")]), now: now)
         #expect(d.projects[0].activity == .idle)
         #expect(d.projects[0].doing == nil)
     }

@@ -28,7 +28,7 @@ import Testing
 
     @Test func aProjectCanBeRemovedOnceItsBacklogIsClear() throws {
         let s = try server()
-        _ = call(s, "project_add", ["path": "/Users/alexcollins/Reserch"])
+        #expect(call(s, "project_add", ["name": "Reserch"]).text.hasPrefix("Reserch  "))
         let t = id(after: "task_id:", in: call(s, "task_add", ["project": "Reserch", "title": "stray"]).text).replacingOccurrences(of: ",", with: "")
         #expect(call(s, "project_remove", ["project": "Reserch"]).isError)
         _ = call(s, "task_status", ["task_id": t, "state": "done"])
@@ -210,23 +210,26 @@ import Testing
         #expect(shown.contains("note: unblocked, decided"))
     }
 
-    @Test func aProjectOnHoldHandsNothingOut() throws {
+    @Test func aProjectOnHoldWarnsButBlocksNothing() throws {
         let s = try server()
         _ = call(s, "task_add", ["project": "/tmp/P", "title": "Waiting"])
         var project = try #require(try s.store.load().projects.first)
         project.onHold = true
         try s.store.save(project)
-        #expect(call(s, "task_next", ["project": "P"]).text.hasPrefix("P is on hold"))
+        // On hold blocks nothing: the task is still handed out, with the warning after it.
+        let next = call(s, "task_next", ["project": "P"]).text
+        #expect(next.contains("Waiting") && next.contains("WARNING: P is on hold. Do not start any new tasks on it"))
         #expect(call(s, "project_list").text.contains("ON HOLD"))
-        #expect(call(s, "agent_register", ["name": "a", "project": "/tmp/P"]).text.contains("P is on hold"))
-        #expect(call(s, "task_list", ["project": "P"]).text.hasPrefix("P is ON HOLD"))
+        #expect(call(s, "agent_register", ["name": "a", "project": "/tmp/P"]).text.contains("WARNING: P is on hold"))
+        #expect(call(s, "task_list", ["project": "P"]).text.hasPrefix("WARNING: P is on hold"))
         let a = id(after: "", in: call(s, "agent_register", ["name": "b"]).text)
         let waiting = try #require(try s.store.load().tasks.first)
-        #expect(call(s, "task_claim", ["task_id": waiting.id.uuidString, "agent_id": a]).text.hasPrefix("P is on hold: stop working"))
-        #expect(try s.store.load().tasks.first?.state == .backlog)
+        let claimed = call(s, "task_claim", ["task_id": waiting.id.uuidString, "agent_id": a]).text
+        #expect(claimed.hasPrefix("You are on: Waiting") && claimed.contains("WARNING: P is on hold"))
+        #expect(try s.store.load().tasks.first?.state == .inProgress)
         project.onHold = false
         try s.store.save(project)
-        #expect(call(s, "task_next", ["project": "P"]).text.contains("Waiting"))
+        #expect(!call(s, "task_list", ["project": "P"]).text.contains("WARNING"))
     }
 
     @Test func unblockOneAndMove() throws {

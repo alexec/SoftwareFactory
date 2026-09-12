@@ -104,8 +104,9 @@ public struct MCPServer: Sendable {
     public static let instructions = """
         You are working in a software factory. Register first (agent_register) and keep the id it \
         returns; pass it to every other call; every call you make is your heartbeat. Claim the task \
-        you are on (task_claim) and say when it is done (task_status). If a project is on hold, stop \
-        working on it for the moment. When you cannot decide something yourself, raise it \
+        you are on (task_claim) and say when it is done (task_status). If a reply says a project is \
+        on hold, finish what you are on and start nothing new on it. When you cannot decide \
+        something yourself, raise it \
         (escalation_raise) with two or more \
         options and your recommendation, then wait for the answer (escalation_await). If a task is \
         blocked (waiting on a decision, another task, or a person), mark it (task_block) and pick up \
@@ -135,27 +136,27 @@ public struct MCPServer: Sendable {
         public static var all: [Tool] { [
             Tool(name: "agent_register", description: "Register with the factory. Returns your agent_id; pass it to every other call. Every call you make counts as a sign of life; there is no separate check-in.",
                  properties: ["name": str("Your name, e.g. packed-lead or agent-3"),
-                              "project": str("The project's folder path")],
+                              "project": str("The project you work on, by name. A new name makes a new project")],
                  required: ["name"]),
             Tool(name: "agent_deregister", description: "You are finished. Call this as your last action.",
                  properties: ["agent_id": str("From agent_register")], required: ["agent_id"]),
 
             Tool(name: "project_list", description: "Every project, with what is in progress and who is on it.",
                  properties: [:], required: []),
-            Tool(name: "project_add", description: "Make a folder a project, or rename one.",
-                 properties: ["path": str("Absolute folder path"), "name": str("Display name; defaults to the folder name")],
-                 required: ["path"]),
-            Tool(name: "project_remove", description: "Take a project out of the factory: a wrong path, a project that is over. Refused while it has tasks in the backlog, in progress or blocked; move or remove those first. Nothing is deleted: the record stays on disk, out of every list, and its done and parked tasks go with it.",
-                 properties: ["project": str("Folder path or project name"), "reason": str("Why")],
+            Tool(name: "project_add", description: "Add a project by name: an app, a cross-cutting role such as research, a piece of tooling. A project is a name, not a folder. Returns the project if the name is already taken.",
+                 properties: ["name": str("The project's name")],
+                 required: ["name"]),
+            Tool(name: "project_remove", description: "Take a project out of the factory: a wrong name, a project that is over. Refused while it has tasks in the backlog, in progress or blocked; move or remove those first. Nothing is deleted: the record stays on disk, out of every list, and its done and parked tasks go with it.",
+                 properties: ["project": str("Project name"), "reason": str("Why")],
                  required: ["project"]),
 
             Tool(name: "task_list", description: "A project's backlog in rank order: in progress first, then backlog, then done.",
-                 properties: ["project": str("Folder path or project name")], required: ["project"]),
+                 properties: ["project": str("Project name")], required: ["project"]),
             Tool(name: "task_next", description: "The top task on a project's backlog that nobody is on.",
-                 properties: ["project": str("Folder path or project name")], required: ["project"]),
+                 properties: ["project": str("Project name")], required: ["project"]),
             Tool(name: "task_add", description: "File a task on a project's backlog: at the bottom, at the top, or directly above another task.",
-                 properties: ["project": str("Folder path or project name"), "title": str("The task, in one line"),
-                              "kind": ["type": "string", "enum": ["feature", "bug", "chore", "review"], "description": "Defaults to feature. review is a UX review, a luxury audit or a compliance pass: findings, not a change."],
+                 properties: ["project": str("Project name"), "title": str("The task, in one line"),
+                              "kind": ["type": "string", "enum": ["feature", "bug", "chore", "review", "ship"], "description": "Defaults to feature. review is a UX review, a luxury audit or a compliance pass: findings, not a change. ship is closing-out work on the store record: listing, privacy and support pages, build attached, repo visibility."],
                               "position": ["type": "string", "enum": ["top", "bottom"], "description": "Defaults to bottom"],
                               "above_task_id": str("Put it directly above this task instead"),
                               "note": str("Why, and anything the next reader needs"),
@@ -190,10 +191,10 @@ public struct MCPServer: Sendable {
             Tool(name: "task_unblock", description: "Clear one of a blocked task's blockers, by its number (1, 2, …) or a few words from its reason. The task goes back to the backlog when none is left.",
                  properties: ["task_id": str("The task"), "which": str("The blocker's number, or words from its reason")], required: ["task_id", "which"]),
             Tool(name: "task_move", description: "Move a task to another project's backlog, at the bottom, with a note saying where it came from. For a task that landed on the wrong project.",
-                 properties: ["task_id": str("The task"), "project": str("Folder path or project name to move it to")], required: ["task_id", "project"]),
+                 properties: ["task_id": str("The task"), "project": str("The project to move it to, by name")], required: ["task_id", "project"]),
 
             Tool(name: "escalation_raise", description: "Ask the person to decide something. Give two or more options and say which you recommend. Returns the escalation_id; then call escalation_await. Give task_id when the question stops a task: the task is marked blocked on the decision and unblocks itself when the answer lands.",
-                 properties: ["agent_id": str("From agent_register"), "project": str("Folder path or project name"),
+                 properties: ["agent_id": str("From agent_register"), "project": str("Project name"),
                               "task_id": str("The task this question stops, if any"),
                               "question": str("The question, in one line"), "context": str("What the person needs to know to choose"),
                               "options": ["type": "array", "minItems": 2, "items": ["type": "object",
@@ -206,7 +207,7 @@ public struct MCPServer: Sendable {
                               "timeout_seconds": ["type": "integer", "description": "How long to wait, default 600"]],
                  required: ["escalation_id"]),
             Tool(name: "escalation_list", description: "Open questions, for one project or all.",
-                 properties: ["project": str("Folder path or project name; omit for all")], required: []),
+                 properties: ["project": str("Project name; omit for all")], required: []),
 
             Tool(name: "resource_list", description: "Every shared resource: slots, who holds them and until when. Lease one before using a phone, a simulator, the browser or the whole Mac.",
                  properties: [:], required: []),
@@ -246,10 +247,7 @@ public struct MCPServer: Sendable {
             if let ref = args["project"] as? String, !ref.isEmpty { project = try resolveProject(ref, in: snap, create: true) }
             let agent = Agent(name: agentName, projectID: project?.id, registered: now())
             try store.save(agent)
-            if let project, project.onHold {
-                return "Registered. agent_id: \(agent.id.uuidString). Note: \(project.name) is on hold; stop working on it for the moment, and deregister when you have nothing else."
-            }
-            return "Registered. agent_id: \(agent.id.uuidString)"
+            return "Registered. agent_id: \(agent.id.uuidString)" + Self.holdWarning(project)
 
         case "agent_deregister":
             var agent = try agent(args, in: snap)
@@ -269,14 +267,14 @@ public struct MCPServer: Sendable {
                 let doing = p.doing.map { " · \($0)" } ?? ""
                 let who = p.agents.map(\.name).joined(separator: ", ")
                 let hold = p.project.onHold ? "  ON HOLD" : ""
-                return "\(p.project.name)  \(p.project.path)  [\(p.activity.rawValue)\(who.isEmpty ? "" : ": " + who)]\(doing)\(hold)"
+                return "\(p.project.name)  [\(p.activity.rawValue)\(who.isEmpty ? "" : ": " + who)]\(doing)\(hold)"
             }.joined(separator: "\n")
 
         case "project_add":
-            let path = try string("path", args)
-            var project = try resolveProject(path, in: snap, create: true)
-            if let n = args["name"] as? String, !n.isEmpty { project.name = n; try store.save(project) }
-            return "\(project.name)  \(project.path)"
+            let ref = (args["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? (args["path"] as? String) ?? ""
+            guard !ref.isEmpty else { throw ToolError(message: "name is required") }
+            let project = try resolveProject(ref, in: snap, create: true)
+            return "\(project.name)  \(project.id)"
 
         case "project_remove":
             var project = try resolveProject(try string("project", args), in: snap, create: false)
@@ -292,15 +290,14 @@ public struct MCPServer: Sendable {
         case "task_list":
             let project = try resolveProject(try string("project", args), in: snap, create: false)
             let tasks = Backlog.tasks(for: project.id, in: snap.tasks)
-            let hold = project.onHold ? "\(project.name) is ON HOLD: stop working on it for the moment.\n" : ""
+            let hold = project.onHold ? Self.holdWarning(project).dropFirst() + "\n" : ""
             if tasks.isEmpty { return hold + "Nothing on the backlog." }
             return hold + tasks.map(Self.line).joined(separator: "\n")
 
         case "task_next":
             let project = try resolveProject(try string("project", args), in: snap, create: false)
-            if project.onHold { return "\(project.name) is on hold: stop working on it for the moment. Nothing is handed out from its backlog until the person takes it off hold; task updates and registration still work." }
-            guard let t = Backlog.next(for: project.id, in: snap.tasks) else { return "Nothing waiting." }
-            return Self.line(t) + Self.noteBlock(t)
+            guard let t = Backlog.next(for: project.id, in: snap.tasks) else { return "Nothing waiting." + Self.holdWarning(project) }
+            return Self.line(t) + Self.noteBlock(t) + Self.holdWarning(project)
 
         case "task_add":
             let project = try resolveProject(try string("project", args), in: snap, create: true)
@@ -339,15 +336,12 @@ public struct MCPServer: Sendable {
         case "task_claim":
             let task = try task(args, in: snap)
             var agent = try agent(args, in: snap)
-            if let project = snap.projects.first(where: { $0.id == task.projectID }), project.onHold {
-                return "\(project.name) is on hold: stop working on it for the moment. The task stays where it is."
-            }
             try store.save(Backlog.set(task, to: .inProgress, agentID: agent.id, at: now()))
             agent.taskID = task.id
             agent.note = task.title
             agent.lastSeen = now()
             try store.save(agent)
-            return "You are on: \(task.title)" + Self.noteBlock(task)
+            return "You are on: \(task.title)" + Self.noteBlock(task) + Self.holdWarning(snap.projects.first { $0.id == task.projectID })
 
         case "task_status":
             var task = try task(args, in: snap)
@@ -425,7 +419,7 @@ public struct MCPServer: Sendable {
             let task = try task(args, in: snap)
             let project = try resolveProject(try string("project", args), in: snap, create: true)
             guard project.id != task.projectID else { return "\(task.title) is already on \(project.name)." }
-            try store.save(Backlog.move(task, to: project, in: snap.tasks, at: now()))
+            try store.save(Backlog.move(task, to: project, from: snap.projects.first { $0.id == task.projectID }, in: snap.tasks, at: now()))
             return "Moved \(task.title) to \(project.name)'s backlog."
 
         case "escalation_raise":
@@ -630,17 +624,26 @@ public struct MCPServer: Sendable {
         return Backlog.task(numbered: ref, in: snap.tasks)
     }
 
-    /// A folder path or a project name. A path that is not yet a project becomes one when
-    /// `create` is set, so an agent can file against its own folder without a step first.
+    /// A project by name (case does not matter) or id. An old caller may still send a
+    /// folder path: that means the folder's name, and matches a project registered under
+    /// that path before names stood alone. An unknown name becomes a project when
+    /// `create` is set, so an agent can file against its project without a step first.
     func resolveProject(_ ref: String, in snap: Snapshot, create: Bool) throws -> Project {
-        if let p = snap.projects.first(where: { $0.name.caseInsensitiveCompare(ref) == .orderedSame }) { return p }
-        let path = Project.canonical(ref)
-        if let p = snap.projects.first(where: { $0.id == path }) { return p }
-        guard create, ref.hasPrefix("/") else {
-            throw ToolError(message: "No project called \(ref). Known: \(snap.projects.map(\.name).joined(separator: ", "))")
+        let ref = ref.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = ref.hasPrefix("/") ? Project.name(fromPath: ref) : ref
+        if let p = snap.projects.first(where: { $0.id == ref }) { return p }
+        if let p = snap.projects.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) { return p }
+        guard create, !name.isEmpty else {
+            throw ToolError(message: "No project called \(name). Known: \(snap.projects.map(\.name).joined(separator: ", "))")
         }
-        let p = Project(path: path, added: now())
+        let p = Project(name: name, added: now())
         try store.save(p)
         return p
+    }
+
+    /// Alex, 12 Sep 2026: on hold blocks nothing; every reply carries the warning instead.
+    static func holdWarning(_ project: Project?) -> String {
+        guard let project, project.onHold else { return "" }
+        return "\nWARNING: \(project.name) is on hold. Do not start any new tasks on it; finish what you are on and deregister when you have nothing else."
     }
 }

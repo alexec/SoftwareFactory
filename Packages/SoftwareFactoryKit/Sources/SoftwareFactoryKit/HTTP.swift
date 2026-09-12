@@ -212,7 +212,7 @@ public struct HTTPRouter: Sendable {
 
     func task(_ body: Data) -> HTTPResponse {
         guard let t = try? FileStore.decoder.decode(TaskBody.self, from: body) else {
-            return .text("Body: {project, title, kind?, position?, note?}", status: 400)
+            return .text("Body: {project (name or id), title, kind?, position?, note?}", status: 400)
         }
         do {
             let snap = try store.load()

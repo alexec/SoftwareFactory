@@ -5,6 +5,8 @@ import SoftwareFactoryKit
 /// The floor: what needs you, then who is on the floor.
 struct FloorView: View {
     @Environment(AppModel.self) private var model
+    @State private var addingProject = false
+    @State private var newProjectName = ""
 
     var body: some View {
         ScrollView {
@@ -18,8 +20,9 @@ struct FloorView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .toolbar {
             ToolbarItem {
-                Button("Add a project", systemImage: "plus") { addProject() }
-                    .help("Add a project folder")
+                Button("Add a project", systemImage: "plus") { addingProject = true }
+                    .help("Add a project by name")
+                    .popover(isPresented: $addingProject, arrowEdge: .bottom) { newProject }
             }
         }
     }
@@ -87,7 +90,7 @@ struct FloorView: View {
             if agents.isEmpty {
                 EmptyLine(text: "No agents yet. One appears here the moment it registers.", symbol: "person.2")
                 if model.dashboard.projects.isEmpty {
-                    Button("Add a project") { addProject() }
+                    Button("Add a project") { addingProject = true }
                         .buttonStyle(.glass)
                 }
             } else {
@@ -102,15 +105,31 @@ struct FloorView: View {
         }
     }
 
-    private func addProject() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.prompt = "Add"
-        panel.message = "Choose the project's folder."
-        if panel.runModal() == .OK, let url = panel.url {
-            model.addProject(at: url)
+    /// A project is a name: an app, a role that spans apps, a piece of tooling.
+    private var newProject: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("A project is a name: an app, a role across apps, a piece of tooling. Agents file against it by that name.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            TextField("Project name", text: $newProjectName)
+                .onSubmit(addProject)
+            HStack {
+                Spacer()
+                Button("Cancel") { addingProject = false }
+                Button("Add", action: addProject)
+                    .buttonStyle(.glassProminent)
+                    .disabled(newProjectName.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
         }
+        .padding(16)
+        .frame(width: 320)
+    }
+
+    private func addProject() {
+        model.addProject(named: newProjectName)
+        newProjectName = ""
+        addingProject = false
     }
 }
 

@@ -185,13 +185,12 @@ public enum Backlog {
 
     /// Moves a task to another project's backlog, at the bottom. The note says where
     /// it came from, so a lead reading it knows it was not filed there.
-    public static func move(_ task: FactoryTask, to project: Project, in all: [FactoryTask], at date: Date = .now) -> FactoryTask {
+    public static func move(_ task: FactoryTask, to project: Project, from: Project? = nil, in all: [FactoryTask], at date: Date = .now) -> FactoryTask {
         var task = task
-        let from = task.projectID
         task.projectID = project.id
         task.rank = nextRank(for: project.id, in: all)
         task.updated = date
-        let line = "moved here from \(URL(fileURLWithPath: from).lastPathComponent)"
+        let line = "moved here from \(from?.name ?? "another project")"
         task.note = task.note.isEmpty ? line : task.note + "\n" + line
         return task
     }

@@ -116,10 +116,6 @@ struct ProjectView: View {
                 .controlSize(.small)
                 .help("Nothing is handed out from this backlog while it is on hold")
             HStack(spacing: 10) {
-                Text(project.path)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .textSelection(.enabled)
                 Button("Remove project…") { confirmingRemoval = true }
                     .buttonStyle(.borderless)
                     .font(.caption)
@@ -133,7 +129,7 @@ struct ProjectView: View {
         .confirmationDialog("Remove \(project.name) from the factory?", isPresented: $confirmingRemoval) {
             Button("Remove", role: .destructive) { model.removeProject(project) }
         } message: {
-            Text("It leaves every list, with its done and parked tasks. Nothing is deleted from disk, and adding the same folder again brings it back as it was.")
+            Text("It leaves every list, with its done and parked tasks. Nothing is deleted from disk.")
         }
     }
 

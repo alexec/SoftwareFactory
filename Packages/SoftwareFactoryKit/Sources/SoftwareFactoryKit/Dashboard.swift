@@ -77,7 +77,7 @@ public struct Dashboard: Sendable, Equatable {
         var projects: [String: Project] = [:]
         for p in snapshot.projects { projects[p.id] = p }
         for a in snapshot.agents where a.isOnTheFloor {
-            if let pid = a.projectID, projects[pid] == nil { projects[pid] = Project(path: pid, added: a.registered) }
+            if let pid = a.projectID, projects[pid] == nil { projects[pid] = Project(name: Project.name(fromPath: pid), id: pid, added: a.registered) }
         }
         let onFloor = snapshot.agents.filter(\.isOnTheFloor).sorted { $0.lastSeen > $1.lastSeen }
         let open = snapshot.escalations.filter(\.isOpen)

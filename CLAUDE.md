@@ -68,6 +68,10 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
   - `Shared/CloudSync.swift` (both apps, not the package): the CloudKit calls. Container
     `iCloud.com.alexecollins.softwarefactory`, private database, query on `updated`.
   - `Shared/Dictation.swift`: `SpeechAnalyzer` on device; `volatile` and `settled` text.
+  - A project is a name (`Project(name:)`, id a UUID string; projects from before 12 Sep
+    2026 keep their folder path as id). `resolveProject` takes a name, an id, or an old
+    folder path (meaning the folder's name). On hold blocks no tool: every reply on that
+    project ends with `MCPServer.holdWarning`.
   - `Shared/RecordOverlay.swift`: the dictation sheet on both platforms. Hold to record
     (a zero-distance drag gesture), release to add; the mic primer and the denied and
     unavailable states live in it. Nothing is dictated into the text field any more.

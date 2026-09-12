@@ -157,8 +157,12 @@ final class AppModel {
         dashboard.projects.first { $0.id == id }
     }
 
-    func addProject(at url: URL) {
-        persist { try $0.save(Project(path: url.path)) }
+    /// A project is a name. The same name again is the same project.
+    func addProject(named name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        if snapshot.projects.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) { return }
+        persist { try $0.save(Project(name: name)) }
     }
 
     /// Open tasks that stop a project being removed; the person moves or deletes them first.
@@ -241,7 +245,7 @@ final class AppModel {
 
     func moveTask(_ task: FactoryTask, to project: Project) {
         ensureStored(project.id)
-        persist { try $0.save(Backlog.move(task, to: project, in: snapshot.tasks)) }
+        persist { try $0.save(Backlog.move(task, to: project, from: self.project(for: task.projectID), in: snapshot.tasks)) }
     }
 
     func unblock(_ task: FactoryTask, _ blocker: FactoryTask.Blocker) {
