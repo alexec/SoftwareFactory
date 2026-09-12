@@ -54,13 +54,6 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Apple Intelligence") {
-                Text(TaskTitler.isAvailable
-                     ? "A long sentence typed or dictated as a task gets a short title; the words themselves are kept whole as the note. On this Mac; nothing leaves it."
-                     : "Not available on this Mac, so what you type or say is the title as it is.")
-                    .foregroundStyle(.secondary)
-            }
-
             Section("iCloud") {
                 LabeledContent("Sync", value: model.cloud.summary)
                 Text("Questions and decisions go through your own iCloud so the phone works away from this network.")

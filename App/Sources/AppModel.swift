@@ -239,9 +239,9 @@ final class AppModel {
         }
     }
 
-    /// What was typed or dictated becomes a titled task: Apple Intelligence shortens a
-    /// long sentence to a title and keeps the rest as the note; a short one is the title.
-    /// `position: .parked` lands it seen and set aside, never on the backlog.
+    /// What was typed or dictated becomes a titled task: its first line is the title,
+    /// anything after it the note. `position: .parked` lands it seen and set aside,
+    /// never on the backlog.
     func addTask(to projectID: String, from text: String, at position: Backlog.Position) async {
         let drafted = await TaskTitler.draft(from: text)
         addTask(to: projectID, title: drafted.title, kind: drafted.kind, at: position, note: drafted.note)

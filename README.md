@@ -112,8 +112,8 @@ Notifications are next.
 - **Dictate a task.** The add row shows a mic when it is empty; hold it on the phone, or
   click it on the Mac, and say the task. The words show live above the button as you
   speak, recognised on the device; nothing is recorded. Let go (or click again) and they
-  settle into the field, ready to add. Apple Intelligence gives it a short title and
-  keeps your words whole as the note.
+  settle into the field, ready to add. The first line becomes the title; anything after
+  it is the note.
 
 ## Later, not now
 

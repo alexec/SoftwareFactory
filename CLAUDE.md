@@ -90,10 +90,10 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     send. Tapping (Mac) or holding (phone) the microphone records; a popover above it
     shows the words live and throbs while listening; letting go settles them into the
     field. The primer and the denied and unavailable states live in the popover too.
-  - `Shared/TaskTitler.swift`: Apple Intelligence gives a verb-led title and a kind; the
-    words as said are the note, whole.
-  - `Shared/TaskTitler.swift`: Apple Intelligence turns a long sentence into a title, a
-    kind and a note; short text is the title as it is.
+  - `Shared/TaskTitler.swift`: the first line of what was typed or dictated is the
+    title; anything after it is the note. No model involved any more — Apple
+    Intelligence's title extraction was unreliable enough to be worse than the words
+    themselves.
   - `software-factory` executable: `mcp` (the server over stdio), `status`, `tools`, `decide`.
 - `App/Sources`:
   - `AppModel`: `@Observable @MainActor`; reloads the store every 2 s; every write goes
