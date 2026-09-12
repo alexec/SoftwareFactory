@@ -76,12 +76,15 @@ targets:
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         ITSAppUsesNonExemptEncryption: false
         NSHumanReadableCopyright: © 2026 Alex Collins
+        CFBundleIconName: AppIcon
         NSMicrophoneUsageDescription: Software Factory listens while you dictate a task. The words are recognised on this Mac and nothing is recorded.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.alexecollins.softwarefactory
         PRODUCT_NAME: Software Factory
         GENERATE_INFOPLIST_FILE: NO
+        # Without this the catalog's AppIcon is never compiled in (Alex, 12 Sep 2026: no icon).
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_HARDENED_RUNTIME: YES
         COMBINE_HIDPI_IMAGES: YES
   SoftwareFactoryPhone:
@@ -110,6 +113,7 @@ targets:
         LSApplicationCategoryType: public.app-category.developer-tools
         ITSAppUsesNonExemptEncryption: false
         NSHumanReadableCopyright: © 2026 Alex Collins
+        CFBundleIconName: AppIcon
         NSLocalNetworkUsageDescription: Software Factory looks for the factory running on your Mac, on the same network, so you can answer its questions from here.
         NSMicrophoneUsageDescription: Software Factory listens while you dictate a task. The words are recognised on this phone and nothing is recorded.
         NSBonjourServices: [_softwarefactory._tcp]

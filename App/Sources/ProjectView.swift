@@ -225,12 +225,16 @@ struct ProgressNumbers: View {
     var status: Dashboard.ProjectStatus
     var compact = false
 
+    /// Compact (the sidebar): only blocked and in progress, and never a zero. Full (the
+    /// project header): every count with its word, zeros left out. (Alex, 12 Sep 2026.)
     var body: some View {
         HStack(spacing: compact ? 6 : 12) {
             number(status.blockedCount, "blocked", .orange)
             number(status.inProgressCount, "in progress", .green)
-            number(status.backlogCount, "waiting", .secondary)
-            number(status.doneCount, "done", .secondary.opacity(0.6))
+            if !compact {
+                number(status.backlogCount, "waiting", .secondary)
+                number(status.doneCount, "done", .secondary.opacity(0.6))
+            }
         }
         .font(compact ? .caption.weight(.semibold) : .callout.weight(.medium))
         .monospacedDigit()
@@ -238,7 +242,7 @@ struct ProgressNumbers: View {
 
     @ViewBuilder
     private func number(_ n: Int, _ word: String, _ color: Color) -> some View {
-        if n > 0 || !compact {
+        if n > 0 {
             HStack(spacing: 3) {
                 Text(n, format: .number).foregroundStyle(color)
                 if !compact { Text(word).foregroundStyle(.secondary).font(.callout) }

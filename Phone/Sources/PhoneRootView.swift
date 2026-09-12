@@ -98,7 +98,6 @@ struct PhoneRootView: View {
                             HStack(spacing: 6) {
                                 if status.blockedCount > 0 { Text(status.blockedCount, format: .number).foregroundStyle(.orange) }
                                 if status.inProgressCount > 0 { Text(status.inProgressCount, format: .number).foregroundStyle(.green) }
-                                Text(status.backlogCount, format: .number).foregroundStyle(.secondary)
                             }
                             .font(.subheadline.weight(.semibold))
                             .monospacedDigit()
