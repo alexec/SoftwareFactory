@@ -88,6 +88,9 @@ import Testing
         let t1 = id(after: "", in: call(s, "task_add", ["project": "Where", "title": "First", "kind": "bug"]).text)
         let t2 = id(after: "", in: call(s, "task_add", ["project": "Where", "title": "Second"]).text)
         #expect(call(s, "task_next", ["project": "Where"]).text.contains("First"))
+        let t0 = id(after: "", in: call(s, "task_add", ["project": "Where", "title": "Urgent", "position": "top"]).text)
+        #expect(call(s, "task_next", ["project": "Where"]).text.contains("Urgent"))
+        #expect(call(s, "task_remove", ["task_id": t0]).text == "Removed: Urgent")
 
         #expect(call(s, "task_rank", ["task_id": t2, "above_task_id": t1]).text.contains("Second now sits above First"))
         #expect(call(s, "task_next", ["project": "Where"]).text.contains("Second"))

@@ -23,6 +23,7 @@ final class PhoneModel {
     /// Where the last snapshot came from.
     private(set) var source: Source = .none
     let cloud = CloudSync()
+    let dictation = Dictation()
 
     enum Source: Equatable {
         case none
@@ -140,6 +141,24 @@ final class PhoneModel {
         do {
             let response = try await client.send(HTTPRequest(
                 method: "POST", path: "/api/decide", headers: ["Content-Type": "application/json"], body: body))
+            guard response.status == 200 else { throw FactoryClient.ClientError.failed("The factory answered \(response.status).") }
+            await poll()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    /// Files a task through the factory. Only near the Mac for now; iCloud carries
+    /// questions and decisions, not new tasks, until the Mac learns to adopt them.
+    func addTask(to project: Project, title: String, at position: Backlog.Position) async {
+        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, source == .factory, let client else { return }
+        let body = (try? JSONSerialization.data(withJSONObject: [
+            "project": project.id, "title": title, "position": position.rawValue,
+        ])) ?? Data()
+        do {
+            let response = try await client.send(HTTPRequest(
+                method: "POST", path: "/api/task", headers: ["Content-Type": "application/json"], body: body))
             guard response.status == 200 else { throw FactoryClient.ClientError.failed("The factory answered \(response.status).") }
             await poll()
         } catch {

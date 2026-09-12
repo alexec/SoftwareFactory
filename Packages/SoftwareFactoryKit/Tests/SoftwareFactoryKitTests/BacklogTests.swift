@@ -37,6 +37,16 @@ import Testing
         #expect(Backlog.nextRank(for: "/new", in: all) == 0)
     }
 
+    @Test func topRankGoesFirstAndDoneDoesNotCount() {
+        let all = [task("a", rank: 2), task("b", rank: 5), task("old", rank: -9, state: .done)]
+        #expect(Backlog.topRank(for: p, in: all) == 1)
+        #expect(Backlog.topRank(for: "/new", in: all) == 0)
+        #expect(Backlog.rank(for: .top, projectID: p, in: all) == 1)
+        #expect(Backlog.rank(for: .bottom, projectID: p, in: all) == 6)
+        let first = task("new", rank: Backlog.topRank(for: p, in: all))
+        #expect(Backlog.tasks(for: p, in: all + [first]).first?.title == "new")
+    }
+
     @Test func moveRenumbersOnlyWhatChanged() {
         let all = [task("a", rank: 0), task("b", rank: 1), task("c", rank: 2), task("done", rank: 3, state: .done)]
         let changed = Backlog.move(in: all, from: IndexSet(integer: 2), to: 0)

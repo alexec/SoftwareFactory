@@ -15,12 +15,16 @@ struct PhoneRootView: View {
                         linkLine
                     }
                     needsYou
+                    projects
                     onTheFloor
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .navigationTitle("Needs you")
+            .navigationDestination(for: Project.self) { project in
+                PhoneBacklogView(project: project)
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Settings", systemImage: "gearshape") { showingSettings = true }
@@ -67,6 +71,42 @@ struct PhoneRootView: View {
         } else {
             ForEach(open) { escalation in
                 PhoneEscalationCard(escalation: escalation)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var projects: some View {
+        let projects = model.dashboard.projects
+        if !projects.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Projects")
+                    .font(.title3.weight(.semibold))
+                ForEach(projects) { status in
+                    NavigationLink(value: status.project) {
+                        HStack(spacing: 10) {
+                            Circle()
+                                .fill(status.activity == .working ? Color.green : (status.activity == .waiting ? Color.orange : Color.secondary.opacity(0.4)))
+                                .frame(width: 8, height: 8)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(status.project.name).font(.headline)
+                                if let doing = status.doing {
+                                    Text(doing).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                            }
+                            Spacer()
+                            Text(status.backlogCount, format: .number)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .frame(minHeight: 44)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
     }

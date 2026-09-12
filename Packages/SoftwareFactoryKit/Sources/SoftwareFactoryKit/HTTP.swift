@@ -197,18 +197,20 @@ public struct HTTPRouter: Sendable {
         var project: String
         var title: String
         var kind: FactoryTask.Kind?
+        var position: Backlog.Position?
         var note: String?
     }
 
     func task(_ body: Data) -> HTTPResponse {
         guard let t = try? FileStore.decoder.decode(TaskBody.self, from: body) else {
-            return .text("Body: {project, title, kind?, note?}", status: 400)
+            return .text("Body: {project, title, kind?, position?, note?}", status: 400)
         }
         do {
             let snap = try store.load()
             let project = try server.resolveProject(t.project, in: snap, create: true)
             let task = FactoryTask(projectID: project.id, title: t.title, kind: t.kind ?? .feature,
-                                   rank: Backlog.nextRank(for: project.id, in: snap.tasks), note: t.note ?? "", created: server.now())
+                                   rank: Backlog.rank(for: t.position ?? .bottom, projectID: project.id, in: snap.tasks),
+                                   note: t.note ?? "", created: server.now())
             try store.save(task)
             return .encoded(task)
         } catch let e as MCPServer.ToolError {

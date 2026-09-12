@@ -163,13 +163,13 @@ final class AppModel {
         Backlog.visible(for: projectID, in: snapshot.tasks)
     }
 
-    func addTask(to projectID: String, title: String, kind: FactoryTask.Kind) {
+    func addTask(to projectID: String, title: String, kind: FactoryTask.Kind, at position: Backlog.Position = .bottom, note: String = "") {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
         ensureStored(projectID)
         let task = FactoryTask(
             projectID: projectID, title: title, kind: kind,
-            rank: Backlog.nextRank(for: projectID, in: snapshot.tasks))
+            rank: Backlog.rank(for: position, projectID: projectID, in: snapshot.tasks), note: note)
         persist { try $0.save(task) }
     }
 

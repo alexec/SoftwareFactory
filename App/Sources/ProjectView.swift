@@ -32,7 +32,7 @@ struct ProjectView: View {
                 HStack(spacing: 8) {
                     TextField("Add a task", text: $newTitle)
                         .textFieldStyle(.plain)
-                        .onSubmit(add)
+                        .onSubmit { add(at: .bottom) }
                     if model.dictation.isListening, !model.dictation.volatile.isEmpty {
                         Text(model.dictation.volatile)
                             .foregroundStyle(.tertiary)
@@ -46,9 +46,19 @@ struct ProjectView: View {
                     }
                     .buttonStyle(.borderless)
                     .help(model.dictation.isListening ? "Stop listening" : "Dictate a task")
-                    Button("Add", action: add)
-                        .buttonStyle(.glass)
-                        .disabled(newTitle.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Menu {
+                        Button("Add to the top") { add(at: .top) }
+                        Button("Add to the bottom") { add(at: .bottom) }
+                    } label: {
+                        Text("Add")
+                    } primaryAction: {
+                        add(at: .bottom)
+                    }
+                    .menuStyle(.button)
+                    .buttonStyle(.glass)
+                    .fixedSize()
+                    .disabled(newTitle.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .help("Add at the bottom; the arrow adds at the top")
                 }
                 .padding(.vertical, 4)
                 .onChange(of: model.dictation.settled) { _, settled in
@@ -129,8 +139,8 @@ struct ProjectView: View {
         }
     }
 
-    private func add() {
-        model.addTask(to: project.id, title: newTitle, kind: .feature)
+    private func add(at position: Backlog.Position) {
+        model.addTask(to: project.id, title: newTitle, kind: .feature, at: position)
         newTitle = ""
         model.dictation.clear()
     }

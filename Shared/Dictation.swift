@@ -5,7 +5,7 @@ import Speech
 
 /// Dictating a task title. One on-device engine, `SpeechAnalyzer` with a
 /// `SpeechTranscriber`: its volatile results put words on screen as they are recognised,
-/// and its finalised text replaces them as it settles. Nothing leaves the Mac.
+/// and its finalised text replaces them as it settles. Nothing leaves the device.
 @Observable
 @MainActor
 final class Dictation {
@@ -54,7 +54,7 @@ final class Dictation {
         volatile = ""
         do {
             guard SpeechTranscriber.isAvailable else {
-                standing = .unavailable("Dictation is not available on this Mac.")
+                standing = .unavailable("Dictation is not available on this device.")
                 return
             }
             var resolved = await SpeechTranscriber.supportedLocale(equivalentTo: locale)

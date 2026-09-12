@@ -150,9 +150,10 @@ public struct MCPServer: Sendable {
                  properties: ["project": str("Folder path or project name")], required: ["project"]),
             Tool(name: "task_next", description: "The top task on a project's backlog that nobody is on.",
                  properties: ["project": str("Folder path or project name")], required: ["project"]),
-            Tool(name: "task_add", description: "File a task at the end of a project's backlog.",
+            Tool(name: "task_add", description: "File a task on a project's backlog, at the bottom unless position says top.",
                  properties: ["project": str("Folder path or project name"), "title": str("The task, in one line"),
                               "kind": ["type": "string", "enum": ["feature", "bug", "chore"], "description": "Defaults to feature"],
+                              "position": ["type": "string", "enum": ["top", "bottom"], "description": "Defaults to bottom"],
                               "note": str("Why, and anything the next reader needs")],
                  required: ["project", "title"]),
             Tool(name: "task_claim", description: "You are on this task now. Marks it in progress under your name.",
@@ -271,8 +272,9 @@ public struct MCPServer: Sendable {
         case "task_add":
             let project = try resolveProject(try string("project", args), in: snap, create: true)
             let kind = (args["kind"] as? String).flatMap(FactoryTask.Kind.init(rawValue:)) ?? .feature
+            let position = (args["position"] as? String).flatMap(Backlog.Position.init(rawValue:)) ?? .bottom
             let task = FactoryTask(projectID: project.id, title: try string("title", args), kind: kind,
-                                   rank: Backlog.nextRank(for: project.id, in: snap.tasks),
+                                   rank: Backlog.rank(for: position, projectID: project.id, in: snap.tasks),
                                    note: args["note"] as? String ?? "", created: now())
             try store.save(task)
             return "Filed. task_id: \(task.id.uuidString)"

@@ -39,6 +39,19 @@ public enum Backlog {
         (all.filter { $0.projectID == projectID }.map(\.rank).max() ?? -1) + 1
     }
 
+    /// The rank that puts a new task first. Ranks may go negative; only their order matters.
+    public static func topRank(for projectID: String, in all: [FactoryTask]) -> Int {
+        (all.filter { $0.projectID == projectID && $0.state != .done }.map(\.rank).min() ?? 1) - 1
+    }
+
+    public enum Position: String, Codable, Sendable {
+        case top, bottom
+    }
+
+    public static func rank(for position: Position, projectID: String, in all: [FactoryTask]) -> Int {
+        position == .top ? topRank(for: projectID, in: all) : nextRank(for: projectID, in: all)
+    }
+
     /// The top task nobody is on.
     public static func next(for projectID: String, in all: [FactoryTask]) -> FactoryTask? {
         tasks(for: projectID, in: all).first { $0.state == .backlog }

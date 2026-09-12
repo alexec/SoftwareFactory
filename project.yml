@@ -111,6 +111,7 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         NSHumanReadableCopyright: © 2026 Alex Collins
         NSLocalNetworkUsageDescription: Software Factory looks for the factory running on your Mac, on the same network, so you can answer its questions from here.
+        NSMicrophoneUsageDescription: Software Factory listens while you dictate a task. The words are recognised on this phone and nothing is recorded.
         NSBonjourServices: [_softwarefactory._tcp]
         UILaunchScreen:
           UIColorName: LaunchBackground
