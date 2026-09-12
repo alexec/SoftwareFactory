@@ -1,8 +1,15 @@
 import Foundation
 
+/// The shape of every record on disk and in iCloud. Bump when a record changes in a way
+/// an older reader could not cope with; a reader always decodes an older shape.
+public enum Records {
+    public static let version = 1
+}
+
 /// A product being built, identified by its folder. The path is the id because it is the
 /// one thing the Mac app, the iPhone app and every agent agree on.
 public struct Project: Codable, Identifiable, Hashable, Sendable {
+    public var version = Records.version
     public var id: String
     public var name: String
     public var added: Date
@@ -20,6 +27,14 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
         while p.count > 1, p.hasSuffix("/") { p.removeLast() }
         return p
     }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        added = try c.decode(Date.self, forKey: .added)
+    }
+
 }
 
 /// One task on a project's backlog: a feature, a bug or a chore. Called `FactoryTask` in
@@ -33,6 +48,7 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         case backlog, inProgress, done
     }
 
+    public var version = Records.version
     public var id: UUID
     public var projectID: String
     public var title: String
@@ -62,10 +78,26 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         self.created = created
         self.updated = created
     }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        id = try c.decode(UUID.self, forKey: .id)
+        projectID = try c.decode(String.self, forKey: .projectID)
+        title = try c.decode(String.self, forKey: .title)
+        kind = try c.decode(Kind.self, forKey: .kind)
+        state = try c.decode(State.self, forKey: .state)
+        rank = try c.decode(Int.self, forKey: .rank)
+        note = try c.decode(String.self, forKey: .note)
+        agentID = try c.decodeIfPresent(UUID.self, forKey: .agentID)
+        created = try c.decode(Date.self, forKey: .created)
+        updated = try c.decode(Date.self, forKey: .updated)
+    }
+
 }
 
 /// A worker that has registered with the factory. What it runs on is its own business.
 public struct Agent: Codable, Identifiable, Hashable, Sendable {
+    public var version = Records.version
     public var id: UUID
     public var name: String
     public var projectID: String?
@@ -100,6 +132,19 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
     public func hasGoneQuiet(now: Date) -> Bool {
         isOnTheFloor && now.timeIntervalSince(lastSeen) > Self.goneAfter
     }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        projectID = try c.decodeIfPresent(String.self, forKey: .projectID)
+        taskID = try c.decodeIfPresent(UUID.self, forKey: .taskID)
+        note = try c.decode(String.self, forKey: .note)
+        registered = try c.decode(Date.self, forKey: .registered)
+        lastSeen = try c.decode(Date.self, forKey: .lastSeen)
+        deregistered = try c.decodeIfPresent(Date.self, forKey: .deregistered)
+    }
+
 }
 
 /// The sweep the factory runs on every look: agents that stopped checking in are marked
@@ -156,6 +201,7 @@ public struct Escalation: Codable, Identifiable, Hashable, Sendable {
         }
     }
 
+    public var version = Records.version
     public var id: UUID
     public var projectID: String
     public var question: String
@@ -194,6 +240,20 @@ public struct Escalation: Codable, Identifiable, Hashable, Sendable {
         guard options.contains(where: { $0.id == option.id }) else { throw .unknownOption }
         decision = Decision(optionID: option.id, by: by, at: date)
     }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        id = try c.decode(UUID.self, forKey: .id)
+        projectID = try c.decode(String.self, forKey: .projectID)
+        question = try c.decode(String.self, forKey: .question)
+        context = try c.decode(String.self, forKey: .context)
+        options = try c.decode([Option].self, forKey: .options)
+        agentID = try c.decodeIfPresent(UUID.self, forKey: .agentID)
+        raisedBy = try c.decode(String.self, forKey: .raisedBy)
+        raised = try c.decode(Date.self, forKey: .raised)
+        decision = try c.decodeIfPresent(Decision.self, forKey: .decision)
+    }
+
 }
 
 public enum EscalationError: Error, Equatable, Sendable {
@@ -203,6 +263,7 @@ public enum EscalationError: Error, Equatable, Sendable {
 /// Something only so many agents can use at once: a phone, a browser, the Mac itself,
 /// or a budget of compiles. Each has a number of slots and a longest lease.
 public struct Resource: Codable, Identifiable, Hashable, Sendable {
+    public var version = Records.version
     public var id: UUID
     public var name: String
     public var slots: Int
@@ -219,11 +280,23 @@ public struct Resource: Codable, Identifiable, Hashable, Sendable {
         self.note = note
         self.created = created
     }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        slots = try c.decode(Int.self, forKey: .slots)
+        maxLease = try c.decode(TimeInterval.self, forKey: .maxLease)
+        note = try c.decode(String.self, forKey: .note)
+        created = try c.decode(Date.self, forKey: .created)
+    }
+
 }
 
 /// One slot of a resource, held by one agent, until a time. It expires on its own, so a
 /// dead agent never holds a phone all day.
 public struct Lease: Codable, Identifiable, Hashable, Sendable {
+    public var version = Records.version
     public var id: UUID
     public var resourceID: UUID
     public var agentID: UUID
@@ -244,4 +317,16 @@ public struct Lease: Codable, Identifiable, Hashable, Sendable {
     public func isActive(now: Date) -> Bool {
         released == nil && until > now
     }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        id = try c.decode(UUID.self, forKey: .id)
+        resourceID = try c.decode(UUID.self, forKey: .resourceID)
+        agentID = try c.decode(UUID.self, forKey: .agentID)
+        why = try c.decode(String.self, forKey: .why)
+        since = try c.decode(Date.self, forKey: .since)
+        until = try c.decode(Date.self, forKey: .until)
+        released = try c.decodeIfPresent(Date.self, forKey: .released)
+    }
+
 }

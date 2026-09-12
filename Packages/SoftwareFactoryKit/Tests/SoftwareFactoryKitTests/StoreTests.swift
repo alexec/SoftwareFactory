@@ -41,6 +41,29 @@ func wholeSecond() -> Date {
         #expect(try #require(store.escalation(escalation.id)) == escalation)
     }
 
+    @Test func everyRecordCarriesAVersionAndReadsWithoutOne() throws {
+        let store = try temporaryStore()
+        let project = Project(path: "/a")
+        try store.save(project)
+        let file = store.root.appending(path: "projects/\(FileStore.fileName(forProject: project.id)).json")
+        let text = String(decoding: try Data(contentsOf: file), as: UTF8.self)
+        #expect(text.contains("\"version\" : \(Records.version)"))
+
+        // An older writer never wrote the field; the record still reads, as version 1.
+        var stripped = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+        stripped["version"] = nil
+        try JSONSerialization.data(withJSONObject: stripped).write(to: file)
+        let back = try #require(try store.load().projects.first)
+        #expect(back.version == 1)
+        #expect(back.id == "/a")
+
+        #expect(FactoryTask(projectID: "/a", title: "t", rank: 0).version == Records.version)
+        #expect(Escalation(projectID: "/a", question: "q", options: []).version == Records.version)
+        #expect(Agent(name: "a", projectID: nil).version == Records.version)
+        #expect(Resource(name: "r").version == Records.version)
+        #expect(Lease(resourceID: UUID(), agentID: UUID(), why: "", since: .now, until: .now).version == Records.version)
+    }
+
     @Test func sameFolderLandsInOneFile() throws {
         let store = try temporaryStore()
         try store.save(Project(path: "/a/b", name: "first"))

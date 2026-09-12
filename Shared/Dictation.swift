@@ -100,20 +100,15 @@ final class Dictation {
                 }
             }
 
-            let converter = AVAudioConverter(from: micFormat, to: format)
+            guard let tap = TapConverter(from: micFormat, to: format) else {
+                standing = .unavailable("No audio format the recogniser can use.")
+                return
+            }
             node.removeTap(onBus: 0)
-            node.installTap(onBus: 0, bufferSize: 1024, format: micFormat) { buffer, _ in
-                guard let converter,
-                      let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(Double(buffer.frameLength) * format.sampleRate / micFormat.sampleRate) + 16)
-                else { return }
-                var error: NSError?
-                let handoff = Handoff(buffer)
-                converter.convert(to: out, error: &error) { _, status in
-                    guard let b = handoff.take() else { status.pointee = .noDataNow; return nil }
-                    status.pointee = .haveData
-                    return b
-                }
-                if error == nil, out.frameLength > 0 { continuation.yield(AnalyzerInput(buffer: out)) }
+            // The tap block runs on the audio thread, never on the main actor, so
+            // everything it touches lives in the converter helper below.
+            node.installTap(onBus: 0, bufferSize: 1024, format: micFormat) { @Sendable buffer, _ in
+                if let out = tap.convert(buffer) { continuation.yield(AnalyzerInput(buffer: out)) }
             }
             try await analyzer.start(inputSequence: stream)
             engine.prepare()
@@ -155,17 +150,43 @@ final class Dictation {
     }
 }
 
-/// Hands one microphone buffer to the converter's input block exactly once.
-private final class Handoff: @unchecked Sendable {
-    private var buffer: AVAudioPCMBuffer?
+/// Resamples microphone buffers to the recogniser's format, on the audio thread. Only
+/// that thread touches it, one buffer at a time, which is why it can claim to be Sendable.
+private final class TapConverter: @unchecked Sendable {
+    private let converter: AVAudioConverter
+    private let from: AVAudioFormat
+    private let to: AVAudioFormat
+
+    init?(from: AVAudioFormat, to: AVAudioFormat) {
+        guard let converter = AVAudioConverter(from: from, to: to) else { return nil }
+        self.converter = converter
+        self.from = from
+        self.to = to
+    }
+
+    func convert(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * to.sampleRate / from.sampleRate) + 16
+        guard let out = AVAudioPCMBuffer(pcmFormat: to, frameCapacity: capacity) else { return nil }
+        let once = Once()
+        var error: NSError?
+        converter.convert(to: out, error: &error) { _, status in
+            guard once.first() else { status.pointee = .noDataNow; return nil }
+            status.pointee = .haveData
+            return buffer
+        }
+        return error == nil && out.frameLength > 0 ? out : nil
+    }
+}
+
+/// True the first time, false after: the converter's input block is handed one buffer.
+private final class Once: @unchecked Sendable {
+    private var used = false
     private let lock = NSLock()
 
-    init(_ buffer: AVAudioPCMBuffer) { self.buffer = buffer }
-
-    func take() -> AVAudioPCMBuffer? {
+    func first() -> Bool {
         lock.lock(); defer { lock.unlock() }
-        let b = buffer
-        buffer = nil
-        return b
+        if used { return false }
+        used = true
+        return true
     }
 }
