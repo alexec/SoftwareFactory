@@ -184,17 +184,18 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
 
     public var isOnTheFloor: Bool { deregistered == nil }
 
-    /// Two minutes without a check-in and an agent reads as quiet.
-    public static let quietAfter: TimeInterval = 120
-    /// Three missed check-ins, at five minutes each, and an agent that never said goodbye
-    /// is marked gone anyway.
-    public static let goneAfter: TimeInterval = 15 * 60
+    /// An agent is seen whenever it touches the factory: claims, updates, questions,
+    /// leases. Ten minutes without any of that and it reads as quiet. (Alex, 12 Sep 2026:
+    /// no separate check-in; infer it from the task updates.)
+    public static let quietAfter: TimeInterval = 10 * 60
+    /// An hour of silence and an agent that never said goodbye is marked gone anyway.
+    public static let goneAfter: TimeInterval = 60 * 60
 
     public func isWorking(now: Date) -> Bool {
         isOnTheFloor && now.timeIntervalSince(lastSeen) <= Self.quietAfter
     }
 
-    /// Still registered, but silent for longer than three check-ins.
+    /// Still registered, but silent for an hour.
     public func hasGoneQuiet(now: Date) -> Bool {
         isOnTheFloor && now.timeIntervalSince(lastSeen) > Self.goneAfter
     }
@@ -262,7 +263,7 @@ public enum Sweep {
         var changes = Changes(agents: [], leases: [])
         for var agent in snapshot.agents where agent.hasGoneQuiet(now: now) {
             agent.deregistered = now
-            agent.note = agent.note.isEmpty ? "marked gone after three missed check-ins" : agent.note + " · marked gone after three missed check-ins"
+            agent.note = agent.note.isEmpty ? "marked gone after an hour of silence" : agent.note + " · marked gone after an hour of silence"
             changes.agents.append(agent)
             for var lease in Leases.heldBy(agent.id, in: snapshot.leases, now: now) {
                 lease.released = now

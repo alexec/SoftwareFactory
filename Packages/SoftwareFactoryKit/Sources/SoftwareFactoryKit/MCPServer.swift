@@ -103,8 +103,10 @@ public struct MCPServer: Sendable {
 
     public static let instructions = """
         You are working in a software factory. Register first (agent_register) and keep the id it \
-        returns; pass it to every other call. Check in (agent_checkin) every few minutes with what you \
-        are on. When you cannot decide something yourself, raise it (escalation_raise) with two or more \
+        returns; pass it to every other call; every call you make is your heartbeat. Claim the task \
+        you are on (task_claim) and say when it is done (task_status). If a project is on hold, stop \
+        working on it for the moment. When you cannot decide something yourself, raise it \
+        (escalation_raise) with two or more \
         options and your recommendation, then wait for the answer (escalation_await). If a task is \
         blocked (waiting on a decision, another task, or a person), mark it (task_block) and pick up \
         the next one (task_next); the factory unblocks it when the wait is over. Before using \
@@ -131,14 +133,10 @@ public struct MCPServer: Sendable {
         }
 
         public static var all: [Tool] { [
-            Tool(name: "agent_register", description: "Register with the factory. Returns your agent_id; pass it to every other call.",
+            Tool(name: "agent_register", description: "Register with the factory. Returns your agent_id; pass it to every other call. Every call you make counts as a sign of life; there is no separate check-in.",
                  properties: ["name": str("Your name, e.g. packed-lead or agent-3"),
                               "project": str("The project's folder path")],
                  required: ["name"]),
-            Tool(name: "agent_checkin", description: "Say what you are on. Call it every few minutes; the floor shows an agent as quiet after two minutes without one.",
-                 properties: ["agent_id": str("From agent_register"), "task_id": str("The task you are on, if any"),
-                              "note": str("One line on what you are doing")],
-                 required: ["agent_id"]),
             Tool(name: "agent_deregister", description: "You are finished. Call this as your last action.",
                  properties: ["agent_id": str("From agent_register")], required: ["agent_id"]),
 
@@ -239,17 +237,9 @@ public struct MCPServer: Sendable {
             let agent = Agent(name: agentName, projectID: project?.id, registered: now())
             try store.save(agent)
             if let project, project.onHold {
-                return "Registered. agent_id: \(agent.id.uuidString). Note: \(project.name) is on hold; do not start work on it, and deregister when you have nothing else."
+                return "Registered. agent_id: \(agent.id.uuidString). Note: \(project.name) is on hold; stop working on it for the moment, and deregister when you have nothing else."
             }
             return "Registered. agent_id: \(agent.id.uuidString)"
-
-        case "agent_checkin":
-            var agent = try agent(args, in: snap)
-            agent.lastSeen = now()
-            if let t = args["task_id"] as? String, let id = UUID(uuidString: t) { agent.taskID = id }
-            if let note = args["note"] as? String { agent.note = note }
-            try store.save(agent)
-            return "Checked in."
 
         case "agent_deregister":
             var agent = try agent(args, in: snap)
@@ -281,12 +271,13 @@ public struct MCPServer: Sendable {
         case "task_list":
             let project = try resolveProject(try string("project", args), in: snap, create: false)
             let tasks = Backlog.tasks(for: project.id, in: snap.tasks)
-            if tasks.isEmpty { return "Nothing on the backlog." }
-            return tasks.map(Self.line).joined(separator: "\n")
+            let hold = project.onHold ? "\(project.name) is ON HOLD: stop working on it for the moment.\n" : ""
+            if tasks.isEmpty { return hold + "Nothing on the backlog." }
+            return hold + tasks.map(Self.line).joined(separator: "\n")
 
         case "task_next":
             let project = try resolveProject(try string("project", args), in: snap, create: false)
-            if project.onHold { return "\(project.name) is on hold: nothing is handed out from its backlog until the person takes it off hold." }
+            if project.onHold { return "\(project.name) is on hold: stop working on it for the moment. Nothing is handed out from its backlog until the person takes it off hold; task updates and registration still work." }
             guard let t = Backlog.next(for: project.id, in: snap.tasks) else { return "Nothing waiting." }
             return Self.line(t)
 
@@ -312,8 +303,12 @@ public struct MCPServer: Sendable {
         case "task_claim":
             let task = try task(args, in: snap)
             var agent = try agent(args, in: snap)
+            if let project = snap.projects.first(where: { $0.id == task.projectID }), project.onHold {
+                return "\(project.name) is on hold: stop working on it for the moment. The task stays where it is."
+            }
             try store.save(Backlog.set(task, to: .inProgress, agentID: agent.id, at: now()))
             agent.taskID = task.id
+            agent.note = task.title
             agent.lastSeen = now()
             try store.save(agent)
             return "You are on: \(task.title)"
@@ -549,10 +544,15 @@ public struct MCPServer: Sendable {
         return v
     }
 
+    /// Resolves the caller and marks it seen: any call an agent makes is its heartbeat.
     func agent(_ args: [String: Any], in snap: Snapshot) throws -> Agent {
         guard let id = UUID(uuidString: try string("agent_id", args)),
-              let agent = snap.agents.first(where: { $0.id == id })
+              var agent = snap.agents.first(where: { $0.id == id })
         else { throw ToolError(message: "Unknown agent_id. Call agent_register first.") }
+        if agent.isOnTheFloor {
+            agent.lastSeen = now()
+            try? store.save(agent)
+        }
         return agent
     }
 

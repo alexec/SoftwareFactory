@@ -48,7 +48,6 @@ print("tools:", " ".join(t["name"] for t in tools), flush=True)
 agent = uuid_in(call("agent_register", {"name": "drive-lead", "project": project}))
 task = uuid_in(call("task_add", {"project": project, "title": "Prove the narrow slice end to end", "kind": "chore"}))
 call("task_claim", {"task_id": task, "agent_id": agent})
-call("agent_checkin", {"agent_id": agent, "task_id": task, "note": "raising a question from a script"})
 esc = uuid_in(call("escalation_raise", {
     "agent_id": agent, "project": project,
     "question": "Which option proves the slice?",

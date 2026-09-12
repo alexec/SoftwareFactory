@@ -129,7 +129,7 @@ func wholeSecond() -> Date {
     @Test func goneAfterThreeMissedCheckIns() {
         let now = Date()
         var silent = Agent(name: "silent", projectID: nil, registered: now.addingTimeInterval(-3600))
-        silent.lastSeen = now.addingTimeInterval(-16 * 60)
+        silent.lastSeen = now.addingTimeInterval(-61 * 60)
         var talking = Agent(name: "talking", projectID: nil, registered: now.addingTimeInterval(-3600))
         talking.lastSeen = now.addingTimeInterval(-60)
         var left = Agent(name: "left", projectID: nil, registered: now.addingTimeInterval(-3600))
@@ -151,7 +151,7 @@ func wholeSecond() -> Date {
         var a = Agent(name: "x", projectID: nil, registered: now.addingTimeInterval(-1000))
         a.lastSeen = now.addingTimeInterval(-30)
         #expect(a.isWorking(now: now))
-        a.lastSeen = now.addingTimeInterval(-300)
+        a.lastSeen = now.addingTimeInterval(-11 * 60)
         #expect(!a.isWorking(now: now))
         a.lastSeen = now
         a.deregistered = now

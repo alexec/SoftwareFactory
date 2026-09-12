@@ -197,7 +197,7 @@ import Testing
         var fresh = Agent(name: "one", projectID: "/a", registered: now.addingTimeInterval(-500))
         fresh.lastSeen = now.addingTimeInterval(-10)
         var quiet = Agent(name: "two", projectID: "/b", registered: now.addingTimeInterval(-500))
-        quiet.lastSeen = now.addingTimeInterval(-600)
+        quiet.lastSeen = now.addingTimeInterval(-900)
         var gone = Agent(name: "three", projectID: "/c", registered: now.addingTimeInterval(-500))
         gone.deregistered = now
         let snap = Snapshot(

@@ -37,8 +37,9 @@ something themselves. You see all of it in one window and answer the questions w
    half-written file is never read.
 3. **A project is a folder.** Its path is its identity. Projects appear when an agent names
    one or you add one.
-4. **Working means checked in within two minutes.** Quiet means registered and silent.
-   Gone means deregistered.
+4. **Working means the agent touched the factory in the last ten minutes.** Quiet means
+   registered and silent; an hour of silence and it is marked gone. There is no check-in
+   to forget: a claim, an update, a question or a lease is the heartbeat.
 5. **Agents ask; you decide.** The recommendation is marked, never pre-selected. Choosing
    again changes the record.
 6. **A task's progress is the agent's word.** You add, rank, park and delete. An agent
@@ -61,9 +62,11 @@ The tools: `agent_register`, `agent_checkin`, `agent_deregister`, `project_list`
 `project_add`, `task_list`, `task_next`, `task_add`, `task_claim`, `task_status`,
 `task_rank`, `task_remove`, `escalation_raise`, `escalation_await`, `escalation_list`,
 `resource_list`, `resource_add`, `resource_lease`, `resource_renew`, `resource_release`,
-`factory_status`, `factory_ask`. The server's instructions tell an agent to register
-first, check in as it goes, lease what it shares, ask the factory before anything heavy,
-raise and await when stuck, and deregister when done, which also releases whatever it held.
+`factory_status`, `factory_ask`, `task_block`, `task_unblock`, `task_move`, `task_show`.
+There is no check-in: every call an agent makes counts as a sign of life. The server's
+instructions tell an agent to register first, claim what it is on, lease what it shares,
+ask the factory before anything heavy, raise and await when stuck, stop when a project is
+on hold, and deregister when done, which also releases whatever it held.
 
 `Packages/SoftwareFactoryKit` also builds `software-factory`, a shell tool: `status` prints the floor as
 text, `tools` lists the tools, `mcp` is the same server over stdio for scripts.

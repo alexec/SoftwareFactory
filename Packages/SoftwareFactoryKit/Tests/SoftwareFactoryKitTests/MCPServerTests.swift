@@ -176,6 +176,11 @@ import Testing
         #expect(call(s, "task_next", ["project": "P"]).text.hasPrefix("P is on hold"))
         #expect(call(s, "project_list").text.contains("ON HOLD"))
         #expect(call(s, "agent_register", ["name": "a", "project": "/tmp/P"]).text.contains("P is on hold"))
+        #expect(call(s, "task_list", ["project": "P"]).text.hasPrefix("P is ON HOLD"))
+        let a = id(after: "", in: call(s, "agent_register", ["name": "b"]).text)
+        let waiting = try #require(try s.store.load().tasks.first)
+        #expect(call(s, "task_claim", ["task_id": waiting.id.uuidString, "agent_id": a]).text.hasPrefix("P is on hold: stop working"))
+        #expect(try s.store.load().tasks.first?.state == .backlog)
         project.onHold = false
         try s.store.save(project)
         #expect(call(s, "task_next", ["project": "P"]).text.contains("Waiting"))
@@ -210,6 +215,21 @@ import Testing
         _ = a
     }
 
+    @Test func anyCallIsAHeartbeat() throws {
+        let clock = Clock()
+        let s = MCPServer(store: try temporaryStore(), now: { clock.tick() }, pollInterval: 0)
+        let a = id(after: "", in: call(s, "agent_register", ["name": "a", "project": "/tmp/P"]).text)
+        let seen0 = try #require(try s.store.load().agents.first).lastSeen
+        _ = call(s, "task_add", ["project": "P", "title": "t"])
+        let t = try #require(try s.store.load().tasks.first).id.uuidString
+        _ = call(s, "task_claim", ["task_id": t, "agent_id": a])
+        let seen1 = try #require(try s.store.load().agents.first).lastSeen
+        #expect(seen1 > seen0)
+        _ = call(s, "task_status", ["task_id": t, "state": "done"])       // no agent_id: not a heartbeat
+        let seen2 = try #require(try s.store.load().agents.first).lastSeen
+        #expect(seen2 == seen1)
+    }
+
     @Test func factoryStatusAndAsk() throws {
         let gb: UInt64 = 1_073_741_824
         let busy = MachineReading(memoryTotal: 32 * gb, memoryFree: 6 * gb, swapUsed: 3 * gb, swapTotal: 4 * gb, load: 2, cores: 10, compiles: 1, simulators: 0)
@@ -230,9 +250,8 @@ import Testing
 
     @Test func errorsAreToolErrorsNotProtocolErrors() throws {
         let s = try server()
-        let r = call(s, "agent_checkin", ["agent_id": "not-an-id"])
+        let r = call(s, "task_claim", ["agent_id": "not-an-id", "task_id": UUID().uuidString])
         #expect(r.isError)
-        #expect(r.text.contains("agent_register"))
         #expect(call(s, "task_list", ["project": "Nowhere"]).isError)
         #expect(call(s, "nothing").isError)
     }
