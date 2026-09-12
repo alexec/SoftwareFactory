@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import ForemanKit
 
@@ -116,8 +117,13 @@ struct StatTile: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity)
-        .glassEffect(tint.map { .regular.tint($0.opacity(0.18)) } ?? .regular, in: .rect(cornerRadius: 18))
+        .glassEffect(glass, in: .rect(cornerRadius: 18))
         .animation(.snappy, value: value)
+    }
+
+    private var glass: Glass {
+        if let tint { return .regular.tint(tint.opacity(0.18)) }
+        return .regular
     }
 }
 

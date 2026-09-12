@@ -11,7 +11,6 @@ struct RootView: View {
     @State private var selection: Destination? = .dashboard
 
     var body: some View {
-        @Bindable var model = model
         NavigationSplitView {
             List(selection: $selection) {
                 Label("Dashboard", systemImage: "square.grid.2x2")

@@ -137,7 +137,8 @@ struct ItemRow: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.button)
+            .buttonStyle(.borderless)
             .fixedSize()
         }
         .padding(.vertical, 2)
