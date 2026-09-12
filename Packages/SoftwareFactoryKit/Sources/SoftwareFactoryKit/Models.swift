@@ -13,6 +13,9 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
     public var id: String
     public var name: String
     public var added: Date
+    /// Set aside by the person: nothing is handed out from its backlog and agents are
+    /// told so. Everything stays; the switch is in the app only.
+    public var onHold = false
 
     public init(path: String, name: String? = nil, added: Date = .now) {
         self.id = Project.canonical(path)
@@ -33,6 +36,7 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
         id = try c.decode(String.self, forKey: .id)
         name = try c.decode(String.self, forKey: .name)
         added = try c.decode(Date.self, forKey: .added)
+        onHold = try c.decodeIfPresent(Bool.self, forKey: .onHold) ?? false
     }
 
 }

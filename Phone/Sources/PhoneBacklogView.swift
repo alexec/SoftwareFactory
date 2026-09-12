@@ -13,8 +13,40 @@ struct PhoneBacklogView: View {
 
     var body: some View {
         List {
-            if model.source == .factory {
+            if tasks.isEmpty {
                 Section {
+                    Label("Nothing on the backlog.", systemImage: "list.bullet")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            ForEach(Backlog.blocks(tasks), id: \.state) { block in
+              Section(block.state.word) {
+                ForEach(block.tasks) { task in
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(task.title)
+                                .strikethrough(task.state == .done)
+                                .foregroundStyle(task.state == .done || task.state == .parked ? .secondary : .primary)
+                            Spacer()
+                            Text(task.state == .inProgress ? "In progress" : (task.state == .done ? "Done" : (task.state == .parked ? "Parked" : (task.state == .blocked ? "Blocked" : ""))))
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(task.state == .inProgress ? .green : (task.state == .blocked ? .orange : .secondary))
+                        }
+                        if task.state == .blocked, !task.blockers.isEmpty {
+                            Text(task.blockedWhy).font(.caption).foregroundStyle(.orange).lineLimit(2)
+                        } else if let ending = task.note.split(whereSeparator: \.isNewline).last, !ending.isEmpty {
+                            Text(ending)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+              }
+            }
+            if model.source == .factory {
+                Section("Add") {
                     HStack(alignment: .top, spacing: 10) {
                         TextField("Add a task", text: $newTitle, axis: .vertical)
                             .lineLimit(1...5)
@@ -79,38 +111,6 @@ struct PhoneBacklogView: View {
                 }
             }
 
-            if tasks.isEmpty {
-                Section {
-                    Label("Nothing on the backlog.", systemImage: "list.bullet")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            ForEach(Backlog.blocks(tasks), id: \.state) { block in
-              Section(block.state.word) {
-                ForEach(block.tasks) { task in
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(task.title)
-                                .strikethrough(task.state == .done)
-                                .foregroundStyle(task.state == .done || task.state == .parked ? .secondary : .primary)
-                            Spacer()
-                            Text(task.state == .inProgress ? "In progress" : (task.state == .done ? "Done" : (task.state == .parked ? "Parked" : (task.state == .blocked ? "Blocked" : ""))))
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(task.state == .inProgress ? .green : (task.state == .blocked ? .orange : .secondary))
-                        }
-                        if task.state == .blocked, !task.blockers.isEmpty {
-                            Text(task.blockedWhy).font(.caption).foregroundStyle(.orange).lineLimit(2)
-                        } else if let ending = task.note.split(whereSeparator: \.isNewline).last, !ending.isEmpty {
-                            Text(ending)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-              }
-            }
         }
         .navigationTitle(project.name)
         .navigationBarTitleDisplayMode(.inline)

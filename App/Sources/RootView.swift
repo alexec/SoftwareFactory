@@ -25,8 +25,15 @@ struct RootView: View {
                 Section("Projects") {
                     ForEach(model.dashboard.projects) { status in
                         HStack {
-                            ActivityDot(activity: status.activity)
+                            ActivityDot(activity: status.project.onHold ? .idle : status.activity)
                             Text(status.project.name)
+                                .foregroundStyle(status.project.onHold ? .secondary : .primary)
+                            if status.project.onHold {
+                                Image(systemName: "pause.circle")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .help("On hold")
+                            }
                             Spacer()
                             ProgressNumbers(status: status, compact: true)
                             if status.openEscalations > 0 {

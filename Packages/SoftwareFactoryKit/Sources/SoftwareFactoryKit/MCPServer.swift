@@ -238,6 +238,9 @@ public struct MCPServer: Sendable {
             if let ref = args["project"] as? String, !ref.isEmpty { project = try resolveProject(ref, in: snap, create: true) }
             let agent = Agent(name: agentName, projectID: project?.id, registered: now())
             try store.save(agent)
+            if let project, project.onHold {
+                return "Registered. agent_id: \(agent.id.uuidString). Note: \(project.name) is on hold; do not start work on it, and deregister when you have nothing else."
+            }
             return "Registered. agent_id: \(agent.id.uuidString)"
 
         case "agent_checkin":
@@ -265,7 +268,8 @@ public struct MCPServer: Sendable {
             return dash.projects.map { p in
                 let doing = p.doing.map { " · \($0)" } ?? ""
                 let who = p.agents.map(\.name).joined(separator: ", ")
-                return "\(p.project.name)  \(p.project.path)  [\(p.activity.rawValue)\(who.isEmpty ? "" : ": " + who)]\(doing)"
+                let hold = p.project.onHold ? "  ON HOLD" : ""
+                return "\(p.project.name)  \(p.project.path)  [\(p.activity.rawValue)\(who.isEmpty ? "" : ": " + who)]\(doing)\(hold)"
             }.joined(separator: "\n")
 
         case "project_add":
@@ -282,6 +286,7 @@ public struct MCPServer: Sendable {
 
         case "task_next":
             let project = try resolveProject(try string("project", args), in: snap, create: false)
+            if project.onHold { return "\(project.name) is on hold: nothing is handed out from its backlog until the person takes it off hold." }
             guard let t = Backlog.next(for: project.id, in: snap.tasks) else { return "Nothing waiting." }
             return Self.line(t)
 

@@ -161,6 +161,12 @@ final class AppModel {
         persist { try $0.save(Project(path: url.path)) }
     }
 
+    func setOnHold(_ project: Project, _ onHold: Bool) {
+        var p = project
+        p.onHold = onHold
+        persist { try $0.save(p) }
+    }
+
     /// A project that only exists because an agent named it is written down the first
     /// time something is filed against it, so the record outlives the agent.
     private func ensureStored(_ projectID: String) {

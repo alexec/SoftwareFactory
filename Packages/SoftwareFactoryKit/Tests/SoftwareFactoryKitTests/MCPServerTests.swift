@@ -167,6 +167,20 @@ import Testing
         #expect(shown.contains("note: unblocked, decided"))
     }
 
+    @Test func aProjectOnHoldHandsNothingOut() throws {
+        let s = try server()
+        _ = call(s, "task_add", ["project": "/tmp/P", "title": "Waiting"])
+        var project = try #require(try s.store.load().projects.first)
+        project.onHold = true
+        try s.store.save(project)
+        #expect(call(s, "task_next", ["project": "P"]).text.hasPrefix("P is on hold"))
+        #expect(call(s, "project_list").text.contains("ON HOLD"))
+        #expect(call(s, "agent_register", ["name": "a", "project": "/tmp/P"]).text.contains("P is on hold"))
+        project.onHold = false
+        try s.store.save(project)
+        #expect(call(s, "task_next", ["project": "P"]).text.contains("Waiting"))
+    }
+
     @Test func unblockOneAndMove() throws {
         let s = try server()
         _ = call(s, "agent_register", ["name": "a", "project": "/tmp/P"])

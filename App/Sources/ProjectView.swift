@@ -31,7 +31,43 @@ struct ProjectView: View {
                 }
             }
 
-            Section("Backlog") {
+            if tasks.isEmpty {
+                Section("Backlog") {
+                    addRow
+                    EmptyLine(text: "Nothing on the backlog.", symbol: "list.bullet")
+                }
+            }
+
+            // One block per state. Only the backlog block reorders by drag; the three
+            // newest done and ten newest parked are shown, the store keeps the rest. The
+            // add row sits under the Backlog block, where a new task lands.
+            ForEach(Backlog.blocks(tasks), id: \.state) { block in
+                Section(block.state.word) {
+                    if block.state == .backlog {
+                        ForEach(block.tasks) { task in
+                            TaskRow(task: task)
+                        }
+                        .onMove { source, destination in
+                            model.move(in: project.id, from: source, to: destination)
+                        }
+                        addRow
+                    } else {
+                        ForEach(block.tasks) { task in
+                            TaskRow(task: task)
+                        }
+                    }
+                }
+            }
+            if !tasks.isEmpty, !tasks.contains(where: { $0.state == .backlog }) {
+                Section("Backlog") { addRow }
+            }
+        }
+        .listStyle(.inset)
+        .scrollContentBackground(.hidden)
+    }
+
+    private var addRow: some View {
+        Group {
                 HStack(alignment: .top, spacing: 8) {
                     // Grows to five lines, so a dictated sentence can be read before it is added.
                     TextField("Add a task", text: $newTitle, axis: .vertical)
@@ -98,32 +134,7 @@ struct ProjectView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                if tasks.isEmpty {
-                    EmptyLine(text: "Nothing on the backlog.", symbol: "list.bullet")
-                }
-            }
-
-            // One block per state. Only the backlog block reorders by drag; the three
-            // newest done and ten newest parked are shown, the store keeps the rest.
-            ForEach(Backlog.blocks(tasks), id: \.state) { block in
-                Section(block.state.word) {
-                    if block.state == .backlog {
-                        ForEach(block.tasks) { task in
-                            TaskRow(task: task)
-                        }
-                        .onMove { source, destination in
-                            model.move(in: project.id, from: source, to: destination)
-                        }
-                    } else {
-                        ForEach(block.tasks) { task in
-                            TaskRow(task: task)
-                        }
-                    }
-                }
-            }
         }
-        .listStyle(.inset)
-        .scrollContentBackground(.hidden)
     }
 
     private var header: some View {
@@ -139,6 +150,10 @@ struct ProjectView: View {
                     .foregroundStyle(.secondary)
             }
             if let status { ProgressNumbers(status: status) }
+            Toggle("On hold", isOn: Binding(get: { project.onHold }, set: { model.setOnHold(project, $0) }))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .help("Nothing is handed out from this backlog while it is on hold")
             Text(project.path)
                 .font(.caption)
                 .foregroundStyle(.tertiary)
@@ -148,6 +163,7 @@ struct ProjectView: View {
     }
 
     private func statusLine(_ status: Dashboard.ProjectStatus?) -> String {
+        if project.onHold { return "On hold" }
         guard let status, !status.agents.isEmpty else { return "Nobody is on it" }
         let names = status.agents.map(\.name).joined(separator: ", ")
         switch status.activity {
