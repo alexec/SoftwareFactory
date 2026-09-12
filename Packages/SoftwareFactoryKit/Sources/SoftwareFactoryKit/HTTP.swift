@@ -151,6 +151,8 @@ public struct HTTPRouter: Sendable {
             return note(request.body)
         case ("POST", "/api/nudge"):
             return nudge(request.body)
+        case ("POST", "/api/stop_hook"):
+            return stopHook(request.body)
         case ("GET", "/"):
             return .text("Software Factory. MCP at /mcp; the apps use /api.", status: 200)
         default:
@@ -271,5 +273,28 @@ public struct HTTPRouter: Sendable {
         } catch let e as MCPServer.ToolError {
             return .text(e.message, status: 400)
         } catch { return .text("\(error)", status: 500) }
+    }
+
+    /// Claude Code's own Stop hook body: the fields it sends are documented at
+    /// code.claude.com/docs/hooks-guide; only these two matter here.
+    struct StopHookBody: Decodable {
+        var session_id: String?
+        var stop_hook_active: Bool?
+    }
+
+    /// A session about to go idle: offer it the top of its project's backlog, once,
+    /// or answer with nothing to say and let the stop happen normally.
+    func stopHook(_ body: Data) -> HTTPResponse {
+        guard let h = try? FileStore.decoder.decode(StopHookBody.self, from: body), let sessionID = h.session_id else {
+            return .json([String: Any]())
+        }
+        do {
+            let snap = try store.load()
+            guard let (agent, task) = StopHook.check(sessionID: sessionID, stopHookActive: h.stop_hook_active ?? false, in: snap)
+            else { return .json([String: Any]()) }
+            let (announced, reason) = StopHook.announce(task, to: agent)
+            try store.save(announced)
+            return .json(["decision": "block", "reason": reason])
+        } catch { return .json([String: Any]()) }
     }
 }

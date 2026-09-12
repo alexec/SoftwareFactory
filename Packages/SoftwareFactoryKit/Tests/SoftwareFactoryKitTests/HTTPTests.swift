@@ -68,6 +68,32 @@ import Testing
         #expect(bad.status == 400)
     }
 
+    @Test func stopHookOffersTheTopOfTheBacklogOnceOverHTTP() throws {
+        let r = try router()
+        let reg = post(r, "/mcp", ["jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                                    "params": ["name": "agent_register",
+                                               "arguments": ["name": "a", "project": "Stop Hook Test",
+                                                             "provider": "claude-code",
+                                                             "url": "claude://code/continue?session=abc123"]]])
+        #expect(reg.status == 200)
+
+        #expect(post(r, "/api/task", ["project": "Stop Hook Test", "title": "Fix the thing"]).status == 200)
+
+        let blocked = post(r, "/api/stop_hook", ["session_id": "abc123", "stop_hook_active": false])
+        let obj = try JSONSerialization.jsonObject(with: blocked.body) as! [String: Any]
+        #expect(obj["decision"] as? String == "block")
+        #expect((obj["reason"] as? String ?? "").contains("Fix the thing"))
+
+        // Offered once: the same session hears nothing the second time.
+        let again = post(r, "/api/stop_hook", ["session_id": "abc123", "stop_hook_active": false])
+        let obj2 = try JSONSerialization.jsonObject(with: again.body) as! [String: Any]
+        #expect(obj2["decision"] == nil)
+
+        // A session nobody registered gets nothing either.
+        let stranger = post(r, "/api/stop_hook", ["session_id": "nope", "stop_hook_active": false])
+        #expect((try JSONSerialization.jsonObject(with: stranger.body) as! [String: Any])["decision"] == nil)
+    }
+
     @Test func browserOriginsAreRefused() throws {
         let r = try router()
         #expect(post(r, "/mcp", ["jsonrpc": "2.0", "id": 1, "method": "ping"], origin: "https://evil.example").status == 403)

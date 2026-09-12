@@ -222,6 +222,9 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
     public var url: String?
     /// Set when the person nudged the agent; handed over on its next call and cleared.
     public var nudged: Date?
+    /// Task ids already offered to this agent by the Stop hook, so a task is announced
+    /// only once. Last 50 kept.
+    public var announcedTasks: [UUID] = []
 
     public static let providers = ["claude-code"]
 
@@ -269,6 +272,7 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
         provider = try c.decodeIfPresent(String.self, forKey: .provider)
         url = try c.decodeIfPresent(String.self, forKey: .url)
         nudged = try c.decodeIfPresent(Date.self, forKey: .nudged)
+        announcedTasks = try c.decodeIfPresent([UUID].self, forKey: .announcedTasks) ?? []
     }
 
 }

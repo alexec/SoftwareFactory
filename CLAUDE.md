@@ -77,6 +77,10 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     table; `call(_:_:)` does the work. `escalation_await` polls the store.
   - `HTTP`: `HTTPRequest.parse`, `HTTPResponse.serialized`, and `HTTPRouter` (`POST /mcp`,
     `GET /api/snapshot`, `POST /api/decide`, `POST /api/task`; browser origins refused).
+    `POST /api/stop_hook` is Claude Code's own Stop hook contract: given a
+    `session_id`, `StopHook.check` finds the agent whose `url` carries it and, once per
+    agent, blocks the stop with the top of its project's backlog as the reason, so an
+    idle session hears about new work without waiting on its next MCP call.
   - `SampleData`: records for a Debug build to look at.
   - `Shared/CloudSync.swift` (both apps, not the package): the CloudKit calls. Container
     `iCloud.com.alexecollins.softwarefactory`, private database, query on `updated`.

@@ -101,6 +101,11 @@ Notifications are next.
 - **Open and Nudge.** Each agent on the floor says what it runs on and links to its own
   session, so you can open it and look under the hood. Nudge sends the word "nudge" to
   the agent with its next reply from the factory.
+- **A new task reaches an idle agent on its own.** For Claude Code, whose session id the
+  factory already has from registration: when its session is about to go idle, its own
+  Stop hook asks the factory whether there is anything waiting; the first time there is,
+  the factory tells it instead of letting it stop, once per task. Needs the hook added to
+  `~/.claude/settings.json`, pointed at `http://127.0.0.1:4747/api/stop_hook`.
 - **A word for the agent.** On a project's page, Mac or phone, type a note and send it. It
   waits on the project, and can be taken back, until an agent's next call about that
   project; then it goes out once at the end of that reply, "NOTE FROM ALEX: …", and is
