@@ -153,6 +153,16 @@ import Testing
         #expect(names.contains("agent_register"))
         #expect(names.allSatisfy { $0.allSatisfy { $0.isLetter || $0 == "_" } })
 
+        // Every tool takes a call description, so the transcript can show what a call
+        // is doing rather than the bare tool name.
+        for tool in tools {
+            let schema = tool["inputSchema"] as! [String: Any]
+            let properties = schema["properties"] as! [String: Any]
+            #expect(properties["description"] != nil, "\(tool["name"] ?? "?") has no call description")
+            let required = schema["required"] as! [String]
+            #expect(!required.contains("description"))
+        }
+
         let unknown = s.handle(["jsonrpc": "2.0", "id": 3, "method": "nope"])!
         #expect((unknown["error"] as? [String: Any])?["code"] as? Int == -32601)
     }

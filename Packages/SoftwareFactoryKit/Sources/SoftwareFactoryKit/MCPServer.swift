@@ -128,9 +128,20 @@ public struct MCPServer: Sendable {
         var properties: [String: Any]
         var required: [String]
 
+        /// Every tool takes this, the same way Claude Code's own Bash tool does: a short
+        /// line in active voice saying what this particular call is doing ("Claiming
+        /// T509", not "task_claim"), so the person reading the transcript sees that
+        /// instead of the bare tool name. Not required, and never read by `call`;
+        /// display only.
+        static var callDescription: [String: Any] {
+            str("One line, active voice, what this call is doing right now, e.g. \"Claiming T509\" — shown to the person in place of the tool's name.")
+        }
+
         var descriptor: [String: Any] {
-            ["name": name, "description": description,
-             "inputSchema": ["type": "object", "properties": properties, "required": required]]
+            var properties = properties
+            properties["description"] = Self.callDescription
+            return ["name": name, "description": description,
+                    "inputSchema": ["type": "object", "properties": properties, "required": required]]
         }
 
         public static var all: [Tool] { [
