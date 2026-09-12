@@ -35,7 +35,12 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     `Escalation` (options, one recommended; `decide(_:by:)` records a `Decision`),
     `Resource` (slots, maxLease), `Lease` (one slot, one agent, until; `isActive(now:)`).
   - `FileStore`: one JSON file per record under `projects/`, `tasks/`, `escalations/`,
-    `agents/`, `resources/`, `leases/`; atomic writes; unreadable files skipped.
+    `agents/`, `resources/`, `leases/`; atomic writes; unreadable files skipped. Tasks
+    carry a short `number` (T509), unique across projects, given on add and settable
+    (`task_number`); any `task_id` argument also takes "T509" or "509". A removed
+    project (`project_remove`, or the header's Remove project) keeps its record with
+    `removed` set and drops out of `load()` with its tasks; `loadEveryTask()` sees
+    everything, so a number is never reused.
     `Snapshot` decodes with missing collections as empty, for older clients. `defaultRoot()` is the app group
     container or `$SOFTWARE_FACTORY_STORE`.
   - `Backlog`: order (in progress, backlog, parked, done), next rank, top rank, next

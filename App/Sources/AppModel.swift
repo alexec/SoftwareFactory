@@ -161,6 +161,19 @@ final class AppModel {
         persist { try $0.save(Project(path: url.path)) }
     }
 
+    /// Open tasks that stop a project being removed; the person moves or deletes them first.
+    func openTasks(in project: Project) -> [FactoryTask] {
+        snapshot.tasks.filter { $0.projectID == project.id && [.backlog, .inProgress, .blocked].contains($0.state) }
+    }
+
+    /// Nothing is deleted: the project's record stays, out of every list, its tasks with it.
+    func removeProject(_ project: Project) {
+        guard openTasks(in: project).isEmpty else { return }
+        var p = project
+        p.removed = .now
+        persist { try $0.save(p) }
+    }
+
     func setOnHold(_ project: Project, _ onHold: Bool) {
         var p = project
         p.onHold = onHold
@@ -185,10 +198,13 @@ final class AppModel {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
         ensureStored(projectID)
-        let task = FactoryTask(
+        var task = FactoryTask(
             projectID: projectID, title: title, kind: kind,
             rank: Backlog.rank(for: position, projectID: projectID, in: snapshot.tasks), note: note)
-        persist { try $0.save(task) }
+        persist { store in
+            task.number = Backlog.nextNumber(in: (try? store.loadEveryTask()) ?? snapshot.tasks)
+            try store.save(task)
+        }
     }
 
     /// What was typed or dictated becomes a titled task: Apple Intelligence shortens a

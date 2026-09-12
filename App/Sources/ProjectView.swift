@@ -8,6 +8,7 @@ struct ProjectView: View {
 
     @State private var newTitle = ""
     @State private var recording = false
+    @State private var confirmingRemoval = false
 
     private var tasks: [FactoryTask] { model.tasks(for: project.id) }
     private var questions: Escalations.Shown { Escalations.visible(for: project.id, in: model.snapshot.escalations) }
@@ -114,12 +115,26 @@ struct ProjectView: View {
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .help("Nothing is handed out from this backlog while it is on hold")
-            Text(project.path)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .textSelection(.enabled)
+            HStack(spacing: 10) {
+                Text(project.path)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .textSelection(.enabled)
+                Button("Remove project…") { confirmingRemoval = true }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                    .disabled(!model.openTasks(in: project).isEmpty)
+                    .help(model.openTasks(in: project).isEmpty
+                          ? "Take this project out of the factory. Its record is kept."
+                          : "Move or delete its open tasks first")
+            }
         }
         .padding(.vertical, 4)
+        .confirmationDialog("Remove \(project.name) from the factory?", isPresented: $confirmingRemoval) {
+            Button("Remove", role: .destructive) { model.removeProject(project) }
+        } message: {
+            Text("It leaves every list, with its done and parked tasks. Nothing is deleted from disk, and adding the same folder again brings it back as it was.")
+        }
     }
 
     private func statusLine(_ status: Dashboard.ProjectStatus?) -> String {
@@ -211,6 +226,14 @@ struct TaskRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
+            if let label = task.label {
+                Text(label)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.tertiary)
+                    .frame(minWidth: 34, alignment: .trailing)
+                    .textSelection(.enabled)
+                    .help("The task's number: say it, type it, or give it to an agent")
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(task.title)
                     .strikethrough(task.state == .done)

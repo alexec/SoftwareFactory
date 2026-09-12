@@ -16,6 +16,9 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
     /// Set aside by the person: nothing is handed out from its backlog and agents are
     /// told so. Everything stays; the switch is in the app only.
     public var onHold = false
+    /// Set when the project was taken out of the factory. The record stays on disk and
+    /// out of every list, with its tasks. (Director, 12 Sep 2026: a wrong path.)
+    public var removed: Date?
 
     public init(path: String, name: String? = nil, added: Date = .now) {
         self.id = Project.canonical(path)
@@ -37,6 +40,7 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
         name = try c.decode(String.self, forKey: .name)
         added = try c.decode(Date.self, forKey: .added)
         onHold = try c.decodeIfPresent(Bool.self, forKey: .onHold) ?? false
+        removed = try c.decodeIfPresent(Date.self, forKey: .removed)
     }
 
 }
@@ -79,6 +83,10 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
 
     public var version = Records.version
     public var id: UUID
+    /// A short number people can say and type, T509, unique across every project. New
+    /// tasks take the next one; a task can be given one to match numbers already in use
+    /// elsewhere. (Director, 12 Sep 2026.) Nil on tasks from before numbers existed.
+    public var number: Int?
     public var projectID: String
     public var title: String
     public var kind: Kind
@@ -102,8 +110,11 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
     /// Every reason, as one line.
     public var blockedWhy: String { blockers.map(\.why).joined(separator: "; ") }
 
+    /// "T509", or nil.
+    public var label: String? { number.map { "T\($0)" } }
+
     enum CodingKeys: String, CodingKey {
-        case version, id, projectID, title, kind, state, rank, note, agentID, blockers, removed, created, updated
+        case version, id, number, projectID, title, kind, state, rank, note, agentID, blockers, removed, created, updated
         case legacyBlocker = "blocker"
     }
 
@@ -111,6 +122,7 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(version, forKey: .version)
         try c.encode(id, forKey: .id)
+        try c.encodeIfPresent(number, forKey: .number)
         try c.encode(projectID, forKey: .projectID)
         try c.encode(title, forKey: .title)
         try c.encode(kind, forKey: .kind)
@@ -125,11 +137,12 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
     }
 
     public init(
-        id: UUID = UUID(), projectID: String, title: String, kind: Kind = .feature,
+        id: UUID = UUID(), number: Int? = nil, projectID: String, title: String, kind: Kind = .feature,
         state: State = .backlog, rank: Int, note: String = "", agentID: UUID? = nil,
         created: Date = .now
     ) {
         self.id = id
+        self.number = number
         self.projectID = projectID
         self.title = title
         self.kind = kind
@@ -144,6 +157,7 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
         id = try c.decode(UUID.self, forKey: .id)
+        number = try c.decodeIfPresent(Int.self, forKey: .number)
         projectID = try c.decode(String.self, forKey: .projectID)
         title = try c.decode(String.self, forKey: .title)
         kind = try c.decode(Kind.self, forKey: .kind)

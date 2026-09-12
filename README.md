@@ -62,7 +62,7 @@ The tools: `agent_register`, `agent_checkin`, `agent_deregister`, `project_list`
 `project_add`, `task_list`, `task_next`, `task_add`, `task_claim`, `task_status`,
 `task_rank`, `task_remove`, `escalation_raise`, `escalation_await`, `escalation_list`,
 `resource_list`, `resource_add`, `resource_lease`, `resource_renew`, `resource_release`,
-`factory_status`, `factory_ask`, `task_block`, `task_unblock`, `task_move`, `task_show`, `task_note`.
+`factory_status`, `factory_ask`, `task_block`, `task_unblock`, `task_move`, `task_show`, `task_note`, `task_number`, `project_remove`.
 There is no check-in: every call an agent makes counts as a sign of life. The server's
 instructions tell an agent to register first, claim what it is on, lease what it shares,
 ask the factory before anything heavy, raise and await when stuck, stop when a project is

@@ -24,6 +24,9 @@ struct PhoneBacklogView: View {
                 ForEach(block.tasks) { task in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            if let label = task.label {
+                                Text(label).font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
+                            }
                             Text(task.title)
                                 .strikethrough(task.state == .done)
                                 .foregroundStyle(task.state == .done || task.state == .parked ? .secondary : .primary)

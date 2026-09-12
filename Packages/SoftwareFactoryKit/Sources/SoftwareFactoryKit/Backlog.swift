@@ -50,6 +50,20 @@ public enum Backlog {
         }
     }
 
+    /// The next short number, across every project: one more than the highest in use.
+    /// The first task numbered at all gets 1 unless someone sets a higher one first.
+    public static func nextNumber(in all: [FactoryTask]) -> Int {
+        (all.compactMap(\.number).max() ?? 0) + 1
+    }
+
+    /// A task by its number, said as "T509", "t509" or "509".
+    public static func task(numbered ref: String, in all: [FactoryTask]) -> FactoryTask? {
+        var digits = Substring(ref.trimmingCharacters(in: .whitespaces))
+        if digits.first?.lowercased() == "t" { digits = digits.dropFirst() }
+        guard let n = Int(digits) else { return nil }
+        return all.first { $0.number == n }
+    }
+
     /// The rank a new task gets: after everything already on that project.
     public static func nextRank(for projectID: String, in all: [FactoryTask]) -> Int {
         (all.filter { $0.projectID == projectID }.map(\.rank).max() ?? -1) + 1

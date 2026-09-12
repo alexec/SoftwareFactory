@@ -145,6 +145,9 @@ public struct MCPServer: Sendable {
             Tool(name: "project_add", description: "Make a folder a project, or rename one.",
                  properties: ["path": str("Absolute folder path"), "name": str("Display name; defaults to the folder name")],
                  required: ["path"]),
+            Tool(name: "project_remove", description: "Take a project out of the factory: a wrong path, a project that is over. Refused while it has tasks in the backlog, in progress or blocked; move or remove those first. Nothing is deleted: the record stays on disk, out of every list, and its done and parked tasks go with it.",
+                 properties: ["project": str("Folder path or project name"), "reason": str("Why")],
+                 required: ["project"]),
 
             Tool(name: "task_list", description: "A project's backlog in rank order: in progress first, then backlog, then done.",
                  properties: ["project": str("Folder path or project name")], required: ["project"]),
@@ -155,8 +158,12 @@ public struct MCPServer: Sendable {
                               "kind": ["type": "string", "enum": ["feature", "bug", "chore", "review"], "description": "Defaults to feature. review is a UX review, a luxury audit or a compliance pass: findings, not a change."],
                               "position": ["type": "string", "enum": ["top", "bottom"], "description": "Defaults to bottom"],
                               "above_task_id": str("Put it directly above this task instead"),
-                              "note": str("Why, and anything the next reader needs")],
+                              "note": str("Why, and anything the next reader needs"),
+                              "number": ["type": "integer", "description": "A short number of your choosing (T509), to match a number already in use elsewhere; otherwise the next free one is given"]],
                  required: ["project", "title"]),
+            Tool(name: "task_number", description: "Give a task a short number, T509, or change it. Numbers are unique across every project. Anywhere a task_id is asked for, T509 or 509 works too.",
+                 properties: ["task_id": str("The task"), "number": ["type": "integer", "description": "The number, without the T"]],
+                 required: ["task_id", "number"]),
             Tool(name: "task_claim", description: "You are on this task now. Marks it in progress under your name.",
                  properties: ["task_id": str("The task"), "agent_id": str("From agent_register")], required: ["task_id", "agent_id"]),
             Tool(name: "task_status", description: "Change a task's state: backlog, inProgress, done or parked, with a note on how it ended up.",
@@ -271,6 +278,17 @@ public struct MCPServer: Sendable {
             if let n = args["name"] as? String, !n.isEmpty { project.name = n; try store.save(project) }
             return "\(project.name)  \(project.path)"
 
+        case "project_remove":
+            var project = try resolveProject(try string("project", args), in: snap, create: false)
+            let open = snap.tasks.filter { $0.projectID == project.id && [.backlog, .inProgress, .blocked].contains($0.state) }
+            guard open.isEmpty else {
+                throw ToolError(message: "\(project.name) still has \(open.count) task\(open.count == 1 ? "" : "s") in the backlog, in progress or blocked. Move them (task_move) or remove them (task_remove) first.")
+            }
+            project.removed = now()
+            try store.save(project)
+            let why = (args["reason"] as? String).map { ": \($0)" } ?? ""
+            return "Removed \(project.name)\(why). The record is kept, out of the lists."
+
         case "task_list":
             let project = try resolveProject(try string("project", args), in: snap, create: false)
             let tasks = Backlog.tasks(for: project.id, in: snap.tasks)
@@ -288,12 +306,17 @@ public struct MCPServer: Sendable {
             let project = try resolveProject(try string("project", args), in: snap, create: true)
             let kind = (args["kind"] as? String).flatMap(FactoryTask.Kind.init(rawValue:)) ?? .feature
             let position = (args["position"] as? String).flatMap(Backlog.Position.init(rawValue:)) ?? .bottom
-            var task = FactoryTask(projectID: project.id, title: try string("title", args), kind: kind,
+            let every = (try? store.loadEveryTask()) ?? snap.tasks
+            var number = Backlog.nextNumber(in: every)
+            if let wanted = args["number"] as? Int {
+                if let taken = every.first(where: { $0.number == wanted }) { throw ToolError(message: "T\(wanted) is already \(taken.title).") }
+                number = wanted
+            }
+            var task = FactoryTask(number: number, projectID: project.id, title: try string("title", args), kind: kind,
                                    rank: Backlog.rank(for: position, projectID: project.id, in: snap.tasks),
                                    note: args["note"] as? String ?? "", created: now())
             if let aboveRef = args["above_task_id"] as? String, !aboveRef.isEmpty {
-                guard let aboveID = UUID(uuidString: aboveRef),
-                      let above = snap.tasks.first(where: { $0.id == aboveID }), above.projectID == project.id
+                guard let above = taskRef(aboveRef, in: snap), above.projectID == project.id
                 else { throw ToolError(message: "above_task_id is not a task on that backlog") }
                 task.rank = above.rank
                 for moved in Backlog.place(task, above: above, in: snap.tasks.filter { $0.projectID == project.id } + [task], at: now()) {
@@ -301,7 +324,17 @@ public struct MCPServer: Sendable {
                 }
             }
             try store.save(task)
-            return "Filed. task_id: \(task.id.uuidString)"
+            return "Filed. task_id: \(task.id.uuidString), T\(number)"
+
+        case "task_number":
+            var task = try task(args, in: snap)
+            guard let wanted = args["number"] as? Int, wanted > 0 else { throw ToolError(message: "number must be a whole number above 0") }
+            let every = (try? store.loadEveryTask()) ?? snap.tasks
+            if let taken = every.first(where: { $0.number == wanted && $0.id != task.id }) { throw ToolError(message: "T\(wanted) is already \(taken.title).") }
+            task.number = wanted
+            task.updated = now()
+            try store.save(task)
+            return "\(task.title) is T\(wanted)."
 
         case "task_claim":
             let task = try task(args, in: snap)
@@ -351,8 +384,7 @@ public struct MCPServer: Sendable {
 
         case "task_rank":
             let task = try task(args, in: snap)
-            guard let otherID = UUID(uuidString: try string("above_task_id", args)),
-                  let other = snap.tasks.first(where: { $0.id == otherID }), other.projectID == task.projectID
+            guard let other = taskRef(try string("above_task_id", args), in: snap), other.projectID == task.projectID
             else { throw ToolError(message: "above_task_id is not a task on the same backlog") }
             let changed = Backlog.place(task, above: other, in: snap.tasks.filter { $0.projectID == task.projectID }, at: now())
             for t in changed { try store.save(t) }
@@ -564,7 +596,7 @@ public struct MCPServer: Sendable {
     static func line(_ t: FactoryTask) -> String {
         let blocked = t.blockers.isEmpty ? "" : "  [blocked on " + t.blockers.map { "\($0.kind.rawValue): \($0.why)" }.joined(separator: "; ") + "]"
         let last = t.note.split(whereSeparator: \.isNewline).last.map { "  — \($0)" } ?? ""
-        return "\(t.id.uuidString)  \(t.state.rawValue)  \(t.kind.rawValue)  \(t.title)\(blocked)\(last)"
+        return "\(t.label ?? "T-")  \(t.id.uuidString)  \(t.state.rawValue)  \(t.kind.rawValue)  \(t.title)\(blocked)\(last)"
     }
 
     func string(_ key: String, _ args: [String: Any]) throws -> String {
@@ -584,11 +616,18 @@ public struct MCPServer: Sendable {
         return agent
     }
 
+    /// A task by its id, or by its number as "T509" or "509".
     func task(_ args: [String: Any], in snap: Snapshot) throws -> FactoryTask {
-        guard let id = UUID(uuidString: try string("task_id", args)),
-              let task = snap.tasks.first(where: { $0.id == id })
-        else { throw ToolError(message: "Unknown task_id") }
+        let ref = try string("task_id", args)
+        guard let task = taskRef(ref, in: snap) else {
+            throw ToolError(message: "Unknown task_id: \(ref). A task's UUID, or its number as T509.")
+        }
         return task
+    }
+
+    func taskRef(_ ref: String, in snap: Snapshot) -> FactoryTask? {
+        if let id = UUID(uuidString: ref), let task = snap.tasks.first(where: { $0.id == id }) { return task }
+        return Backlog.task(numbered: ref, in: snap.tasks)
     }
 
     /// A folder path or a project name. A path that is not yet a project becomes one when

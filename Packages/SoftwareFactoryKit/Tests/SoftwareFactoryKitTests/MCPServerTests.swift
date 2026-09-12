@@ -7,6 +7,37 @@ import Testing
         MCPServer(store: try temporaryStore(), pollInterval: 0.01)
     }
 
+    @Test func numbersAreShortUniqueAndUsableAsIds() throws {
+        let s = try server()
+        let first = call(s, "task_add", ["project": "/tmp/N", "title": "First"]).text
+        #expect(first.hasSuffix(", T1"))
+        // Someone matches an older numbering; the next task continues from it.
+        #expect(call(s, "task_add", ["project": "/tmp/N", "title": "Old", "number": 509]).text.hasSuffix(", T509"))
+        #expect(call(s, "task_add", ["project": "/tmp/N", "title": "Next"]).text.hasSuffix(", T510"))
+        #expect(call(s, "task_add", ["project": "/tmp/N", "title": "Clash", "number": 509]).isError)
+        #expect(call(s, "task_show", ["task_id": "T509"]).text.contains("Old"))
+        #expect(call(s, "task_show", ["task_id": "509"]).text.contains("Old"))
+        #expect(call(s, "task_number", ["task_id": "t1", "number": 354]).text == "First is T354.")
+        #expect(call(s, "task_number", ["task_id": "T354", "number": 509]).isError)
+        #expect(call(s, "task_rank", ["task_id": "T510", "above_task_id": "T354"]).text.contains("Next now sits above First"))
+        #expect(call(s, "task_list", ["project": "N"]).text.hasPrefix("T510  "))
+        // A removed task keeps its number: it is never given out again.
+        _ = call(s, "task_remove", ["task_id": "T510"])
+        #expect(call(s, "task_add", ["project": "/tmp/N", "title": "After"]).text.hasSuffix(", T511"))
+    }
+
+    @Test func aProjectCanBeRemovedOnceItsBacklogIsClear() throws {
+        let s = try server()
+        _ = call(s, "project_add", ["path": "/Users/alexcollins/Reserch"])
+        let t = id(after: "task_id:", in: call(s, "task_add", ["project": "Reserch", "title": "stray"]).text).replacingOccurrences(of: ",", with: "")
+        #expect(call(s, "project_remove", ["project": "Reserch"]).isError)
+        _ = call(s, "task_status", ["task_id": t, "state": "done"])
+        #expect(call(s, "project_remove", ["project": "Reserch", "reason": "typo"]).text.hasPrefix("Removed Reserch: typo"))
+        #expect(!call(s, "project_list").text.contains("Reserch"))
+        #expect(try s.store.load().tasks.isEmpty)
+        #expect(try s.store.loadEveryTask().count == 1)
+    }
+
     func call(_ s: MCPServer, _ tool: String, _ args: [String: Any] = [:], id: Int = 1) -> (text: String, isError: Bool) {
         let response = s.handle(["jsonrpc": "2.0", "id": id, "method": "tools/call",
                                  "params": ["name": tool, "arguments": args]])!
@@ -102,7 +133,7 @@ import Testing
         #expect(call(s, "task_remove", ["task_id": t0, "reason": "a test"]).text.hasPrefix("Removed: Urgent"))
         #expect(try s.store.loadRemovedTasks().first?.note.contains("removed: a test") == true)
         let mid = id(after: "", in: call(s, "task_add", ["project": "Where", "title": "Middle", "above_task_id": t2]).text)
-        let order = call(s, "task_list", ["project": "Where"]).text.split(separator: "\n").map { String($0.split(separator: "  ")[3]) }
+        let order = call(s, "task_list", ["project": "Where"]).text.split(separator: "\n").map { String($0.split(separator: "  ")[4]) }
         #expect(order == ["First", "Middle", "Second"])
         #expect(call(s, "task_status", ["task_id": mid, "state": "parked"]).text == "Middle: parked")
         #expect(call(s, "task_next", ["project": "Where"]).text.contains("First"))

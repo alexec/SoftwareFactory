@@ -82,11 +82,15 @@ public struct FileStore: Sendable {
 
     // MARK: Reading
 
-    /// Removed tasks stay on disk and out of the snapshot; `loadRemovedTasks` reads them.
+    /// Removed tasks and projects stay on disk and out of the snapshot; a removed
+    /// project's tasks go with it. `loadRemovedTasks` reads the tasks back.
     public func load() throws -> Snapshot {
-        Snapshot(
-            projects: try loadAll("projects"),
-            tasks: (try loadAll("tasks") as [FactoryTask]).filter { $0.removed == nil },
+        let projects = (try loadAll("projects") as [Project]).filter { $0.removed == nil }
+        let live = Set(projects.map(\.id))
+        let gone = Set((try loadAll("projects") as [Project]).filter { $0.removed != nil }.map(\.id))
+        return Snapshot(
+            projects: projects,
+            tasks: (try loadAll("tasks") as [FactoryTask]).filter { $0.removed == nil && (live.contains($0.projectID) || !gone.contains($0.projectID)) },
             escalations: try loadAll("escalations"),
             agents: try loadAll("agents"),
             resources: try loadAll("resources"),
@@ -107,6 +111,12 @@ public struct FileStore: Sendable {
 
     public func loadRemovedTasks() throws -> [FactoryTask] {
         (try loadAll("tasks") as [FactoryTask]).filter { $0.removed != nil }
+    }
+
+    /// Every task on disk, removed or not, on a removed project or not: for numbering,
+    /// so a number is never given twice.
+    public func loadEveryTask() throws -> [FactoryTask] {
+        try loadAll("tasks")
     }
 
     public func escalation(_ id: UUID) -> Escalation? {
