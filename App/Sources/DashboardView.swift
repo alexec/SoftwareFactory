@@ -56,6 +56,9 @@ struct FloorView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            if model.notifier.standing == .notAsked {
+                NotificationPrimer()
+            }
             if open.isEmpty {
                 EmptyLine(text: "Nothing needs you.", symbol: "checkmark.circle")
             } else {
@@ -197,5 +200,21 @@ struct AgentRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+    }
+}
+
+struct NotificationPrimer: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Software Factory can tell you when a question arrives, even with this window hidden. The banner carries the options, so you answer from it. Nothing leaves this Mac.")
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Continue") { model.askForNotifications() }
+                .buttonStyle(.glassProminent)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(.regular, in: .rect(cornerRadius: 18))
     }
 }

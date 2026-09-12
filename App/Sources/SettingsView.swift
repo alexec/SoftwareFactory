@@ -30,6 +30,28 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Notifications") {
+                switch model.notifier.standing {
+                case .notAsked:
+                    Text("Not asked yet. The floor asks the first time.")
+                        .foregroundStyle(.secondary)
+                case .allowed:
+                    Text("A banner for each new question, with the options as its actions.")
+                        .foregroundStyle(.secondary)
+                case .denied:
+                    Text("Banners are off. They can be turned on for Software Factory in System Settings, Notifications.")
+                        .foregroundStyle(.secondary)
+                    Button("Open System Settings") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                }
+                LabeledContent("You", value: model.isAtTheMac ? "At the Mac" : "Away")
+                Text("At the Mac means the screen is unlocked and something was typed or clicked in the last two minutes.")
+                    .foregroundStyle(.secondary)
+            }
+
             Section("iCloud") {
                 LabeledContent("Sync", value: model.cloud.summary)
                 Text("Questions and decisions go through your own iCloud so the phone works away from this network.")
@@ -48,6 +70,8 @@ struct SettingsView: View {
 
             #if DEBUG
             Section("Developer") {
+                LabeledContent("Last banner", value: model.notifier.lastPost)
+                LabeledContent("Delivered now", value: model.notifier.delivered.formatted())
                 Button("Show the first-run sheet again") { model.hasSeenIntro = false }
                 Button("Add sample data") { model.addSampleData() }
                 if let store = model.store {

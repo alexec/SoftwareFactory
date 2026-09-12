@@ -18,6 +18,8 @@ final class AppModel {
     private(set) var throttle = Throttle.default
     @ObservationIgnored private var server: FactoryServer?
     let cloud = CloudSync()
+    let notifier = Notifier()
+    private(set) var isAtTheMac = true
     @ObservationIgnored private var lastCloudPull: Date?
     static let pullDecisionsEvery: TimeInterval = 15
 
@@ -47,6 +49,12 @@ final class AppModel {
             self.server = server
         }
         _Concurrency.Task { await cloud.prepare() }
+        _Concurrency.Task { await notifier.refreshStanding() }
+        notifier.onDecision = { [weak self] escalationID, optionID in
+            guard let self, let e = snapshot.escalations.first(where: { $0.id == escalationID }),
+                  let option = e.options.first(where: { $0.id == optionID }) else { return }
+            decide(e, option, by: "alex, banner")
+        }
     }
 
     /// The app group container when the sandbox gives us one, the plain path otherwise
@@ -91,8 +99,14 @@ final class AppModel {
         dashboard = Dashboard.make(snapshot: snapshot)
         throttle = store.throttle()
         machine = MachineReading.sample()
+        isAtTheMac = Presence.isAtTheMac
+        notifier.notice(dashboard.openEscalations, projects: snapshot.projects)
         lastRefresh = .now
         _Concurrency.Task { await sync() }
+    }
+
+    func askForNotifications() {
+        _Concurrency.Task { await notifier.ask() }
     }
 
     func setThrottle(_ change: (inout Throttle) -> Void) {
@@ -183,10 +197,11 @@ final class AppModel {
     }
 
     /// Records the choice. The agent waiting on `escalation_await` sees it within a second.
-    func decide(_ escalation: Escalation, _ option: Escalation.Option) {
+    func decide(_ escalation: Escalation, _ option: Escalation.Option, by: String = "alex") {
         var e = escalation
-        guard (try? e.decide(option, by: "alex")) != nil else { return }
+        guard (try? e.decide(option, by: by)) != nil else { return }
         persist { try $0.save(e) }
+        notifier.withdraw(e.id)
     }
 
     // MARK: Resources
