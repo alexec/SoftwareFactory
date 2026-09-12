@@ -91,6 +91,12 @@ import Testing
         let t0 = id(after: "", in: call(s, "task_add", ["project": "Where", "title": "Urgent", "position": "top"]).text)
         #expect(call(s, "task_next", ["project": "Where"]).text.contains("Urgent"))
         #expect(call(s, "task_remove", ["task_id": t0]).text == "Removed: Urgent")
+        let mid = id(after: "", in: call(s, "task_add", ["project": "Where", "title": "Middle", "above_task_id": t2]).text)
+        let order = call(s, "task_list", ["project": "Where"]).text.split(separator: "\n").map { String($0.split(separator: "  ").last ?? "") }
+        #expect(order == ["First", "Middle", "Second"])
+        #expect(call(s, "task_status", ["task_id": mid, "state": "parked"]).text == "Middle: parked")
+        #expect(call(s, "task_next", ["project": "Where"]).text.contains("First"))
+        #expect(call(s, "task_remove", ["task_id": mid]).text == "Removed: Middle")
 
         #expect(call(s, "task_rank", ["task_id": t2, "above_task_id": t1]).text.contains("Second now sits above First"))
         #expect(call(s, "task_next", ["project": "Where"]).text.contains("Second"))

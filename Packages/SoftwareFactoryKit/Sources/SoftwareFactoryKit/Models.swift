@@ -46,6 +46,8 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
 
     public enum State: String, Codable, CaseIterable, Sendable {
         case backlog, inProgress, done
+        /// Seen by the person and set aside: not next, not done, not forgotten.
+        case parked
     }
 
     public var version = Records.version

@@ -14,8 +14,10 @@ something themselves. You see all of it in one window and answer the questions w
   has been waiting on `escalation_await`, gets the answer and carries on.
 - **On the floor.** Every registered agent, which project it is in, what it is on, and
   when it last checked in.
-- **Backlogs.** Each project's tasks, features, bugs and chores, in rank order. Add,
-  reorder by dragging, mark started and done. Agents can do the same over MCP.
+- **Backlogs.** Each project's tasks, features, bugs and chores, in rank order. Add at the
+  top or the bottom, reorder by dragging, park what you are not going to do and unpark it
+  later. Agents file tasks anywhere on the list, pick them up, and are the only ones who
+  say a task is in progress or done: that is their work to report, not yours to mark.
 - **Resources.** Things only so many agents can use at once: a phone, a simulator, the
   browser, the whole Mac. Each has slots and a longest lease. An agent leases a slot,
   saying why and for how long, and gives it back; a lease that runs out is over on its
@@ -39,6 +41,8 @@ something themselves. You see all of it in one window and answer the questions w
    Gone means deregistered.
 5. **Agents ask; you decide.** The recommendation is marked, never pre-selected. Choosing
    again changes the record.
+6. **A task's progress is the agent's word.** You add, rank, park and delete. An agent
+   claims, and says done. (Alex, 12 September 2026.)
 
 ## Connecting an agent
 

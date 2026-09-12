@@ -3,7 +3,7 @@ import Foundation
 /// The rules for a project's backlog. Pure functions over arrays so a view never decides.
 public enum Backlog {
     /// The tasks for one project, in the order they should be shown: in progress first,
-    /// then the backlog by rank, then done, newest first.
+    /// then the backlog by rank, then parked by rank, then done, newest first.
     public static func tasks(for projectID: String, in all: [FactoryTask]) -> [FactoryTask] {
         all.filter { $0.projectID == projectID }.sorted(by: order)
     }
@@ -19,7 +19,8 @@ public enum Backlog {
         switch s {
         case .inProgress: 0
         case .backlog: 1
-        case .done: 2
+        case .parked: 2
+        case .done: 3
         }
     }
 
@@ -62,7 +63,7 @@ public enum Backlog {
     public static func move(
         in tasks: [FactoryTask], from source: IndexSet, to destination: Int, at date: Date = .now
     ) -> [FactoryTask] {
-        let open = tasks.filter { $0.state != .done }.sorted(by: order)
+        let open = tasks.filter { $0.state != .done && $0.state != .parked }.sorted(by: order)
         // The same semantics as SwiftUI's onMove: the moved tasks land before the task
         // that was at `destination` in the unmoved list.
         let moving = source.map { open[$0] }
@@ -77,7 +78,7 @@ public enum Backlog {
         _ task: FactoryTask, above other: FactoryTask, in tasks: [FactoryTask], at date: Date = .now
     ) -> [FactoryTask] {
         guard task.id != other.id else { return [] }
-        var open = tasks.filter { $0.state != .done && $0.id != task.id }.sorted(by: order)
+        var open = tasks.filter { $0.state != .done && $0.state != .parked && $0.id != task.id }.sorted(by: order)
         let at = open.firstIndex { $0.id == other.id } ?? open.count
         open.insert(task, at: at)
         return renumber(open, at: date)
@@ -101,9 +102,13 @@ public enum Backlog {
         task.state = state
         task.updated = date
         if let agentID { task.agentID = agentID }
-        if state == .backlog { task.agentID = nil }
+        if state == .backlog || state == .parked { task.agentID = nil }
         return task
     }
+
+    /// Who may set which state. The person parks and unparks; only an agent, which is
+    /// doing the work, says a task is in progress or done. (Alex, 12 September 2026.)
+    public static let personMaySet: [FactoryTask.State] = [.backlog, .parked]
 
     /// The one task a project is on right now: the in-progress task that changed most recently.
     public static func current(for projectID: String, in all: [FactoryTask]) -> FactoryTask? {

@@ -150,17 +150,18 @@ public struct MCPServer: Sendable {
                  properties: ["project": str("Folder path or project name")], required: ["project"]),
             Tool(name: "task_next", description: "The top task on a project's backlog that nobody is on.",
                  properties: ["project": str("Folder path or project name")], required: ["project"]),
-            Tool(name: "task_add", description: "File a task on a project's backlog, at the bottom unless position says top.",
+            Tool(name: "task_add", description: "File a task on a project's backlog: at the bottom, at the top, or directly above another task.",
                  properties: ["project": str("Folder path or project name"), "title": str("The task, in one line"),
                               "kind": ["type": "string", "enum": ["feature", "bug", "chore"], "description": "Defaults to feature"],
                               "position": ["type": "string", "enum": ["top", "bottom"], "description": "Defaults to bottom"],
+                              "above_task_id": str("Put it directly above this task instead"),
                               "note": str("Why, and anything the next reader needs")],
                  required: ["project", "title"]),
             Tool(name: "task_claim", description: "You are on this task now. Marks it in progress under your name.",
                  properties: ["task_id": str("The task"), "agent_id": str("From agent_register")], required: ["task_id", "agent_id"]),
-            Tool(name: "task_status", description: "Change a task's state: backlog, inProgress or done, with a note on how it ended up.",
+            Tool(name: "task_status", description: "Change a task's state: backlog, inProgress, done or parked, with a note on how it ended up.",
                  properties: ["task_id": str("The task"),
-                              "state": ["type": "string", "enum": ["backlog", "inProgress", "done"]],
+                              "state": ["type": "string", "enum": ["backlog", "inProgress", "done", "parked"]],
                               "note": str("What happened")],
                  required: ["task_id", "state"]),
             Tool(name: "task_rank", description: "Move a task directly above another on the same backlog.",
@@ -273,9 +274,18 @@ public struct MCPServer: Sendable {
             let project = try resolveProject(try string("project", args), in: snap, create: true)
             let kind = (args["kind"] as? String).flatMap(FactoryTask.Kind.init(rawValue:)) ?? .feature
             let position = (args["position"] as? String).flatMap(Backlog.Position.init(rawValue:)) ?? .bottom
-            let task = FactoryTask(projectID: project.id, title: try string("title", args), kind: kind,
+            var task = FactoryTask(projectID: project.id, title: try string("title", args), kind: kind,
                                    rank: Backlog.rank(for: position, projectID: project.id, in: snap.tasks),
                                    note: args["note"] as? String ?? "", created: now())
+            if let aboveRef = args["above_task_id"] as? String, !aboveRef.isEmpty {
+                guard let aboveID = UUID(uuidString: aboveRef),
+                      let above = snap.tasks.first(where: { $0.id == aboveID }), above.projectID == project.id
+                else { throw ToolError(message: "above_task_id is not a task on that backlog") }
+                task.rank = above.rank
+                for moved in Backlog.place(task, above: above, in: snap.tasks.filter { $0.projectID == project.id } + [task], at: now()) {
+                    if moved.id == task.id { task = moved } else { try store.save(moved) }
+                }
+            }
             try store.save(task)
             return "Filed. task_id: \(task.id.uuidString)"
 
@@ -291,7 +301,7 @@ public struct MCPServer: Sendable {
         case "task_status":
             var task = try task(args, in: snap)
             guard let state = FactoryTask.State(rawValue: try string("state", args)) else {
-                throw ToolError(message: "state must be backlog, inProgress or done")
+                throw ToolError(message: "state must be backlog, inProgress, done or parked")
             }
             if let note = args["note"] as? String, !note.isEmpty {
                 task.note = task.note.isEmpty ? note : task.note + "\n" + note

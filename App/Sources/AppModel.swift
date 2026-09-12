@@ -190,8 +190,17 @@ final class AppModel {
         addTask(to: projectID, title: drafted.title, kind: drafted.kind, at: position, note: drafted.note)
     }
 
+    /// The person parks and unparks. In progress and done are an agent's to say.
     func set(_ task: FactoryTask, to state: FactoryTask.State) {
+        guard Backlog.personMaySet.contains(state) else { return }
         persist { try $0.save(Backlog.set(task, to: state)) }
+    }
+
+    func move(_ task: FactoryTask, to position: Backlog.Position) {
+        var moved = task
+        moved.rank = Backlog.rank(for: position, projectID: task.projectID, in: snapshot.tasks)
+        moved.updated = .now
+        persist { try $0.save(moved) }
     }
 
     func delete(_ task: FactoryTask) {

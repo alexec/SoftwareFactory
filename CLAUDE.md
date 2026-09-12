@@ -29,7 +29,7 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
 
 - `Packages/SoftwareFactoryKit` (Foundation only, `swift test`):
   - `Models`: `Project` (id is the folder path), `FactoryTask` (a task; named so because
-    `Task` is Swift's; feature/bug/chore; backlog/inProgress/done; rank), `Agent` (name,
+    `Task` is Swift's; feature/bug/chore; backlog/inProgress/done/parked; rank), `Agent` (name,
     project, task, lastSeen, deregistered; working within 2 min of a check-in),
     `Escalation` (options, one recommended; `decide(_:by:)` records a `Decision`),
     `Resource` (slots, maxLease), `Lease` (one slot, one agent, until; `isActive(now:)`).
@@ -37,8 +37,9 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     `agents/`, `resources/`, `leases/`; atomic writes; unreadable files skipped.
     `Snapshot` decodes with missing collections as empty, for older clients. `defaultRoot()` is the app group
     container or `$SOFTWARE_FACTORY_STORE`.
-  - `Backlog`: order, next rank, next task, move (onMove semantics), place above, state
-    changes, current task, `visible` (open plus the newest five done).
+  - `Backlog`: order (in progress, backlog, parked, done), next rank, top rank, next
+    task, move (onMove semantics; parked sits out), place above, state changes,
+    `personMaySet` (backlog and parked only), current task, `visible`.
   - `Leases`: active leases, free slots, lease (renews if already held; full says when a
     slot frees), renew, release, heldBy, stale.
   - `CloudRecords`: each record as one CloudKit record (`json`, `updated`); diff for

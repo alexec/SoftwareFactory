@@ -88,9 +88,9 @@ struct PhoneBacklogView: View {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(task.title)
                                 .strikethrough(task.state == .done)
-                                .foregroundStyle(task.state == .done ? .secondary : .primary)
+                                .foregroundStyle(task.state == .done || task.state == .parked ? .secondary : .primary)
                             Spacer()
-                            Text(task.state == .inProgress ? "In progress" : (task.state == .done ? "Done" : ""))
+                            Text(task.state == .inProgress ? "In progress" : (task.state == .done ? "Done" : (task.state == .parked ? "Parked" : "")))
                                 .font(.caption.weight(.medium))
                                 .foregroundStyle(task.state == .inProgress ? .green : .secondary)
                         }

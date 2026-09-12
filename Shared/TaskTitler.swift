@@ -8,7 +8,7 @@ import SoftwareFactoryKit
 enum TaskTitler {
     @Generable(description: "A task for a software project's backlog.")
     struct Drafted {
-        @Guide(description: "A short title in plain words, under ten words, no full stop.")
+        @Guide(description: "What should be done, as an instruction starting with a verb, under twelve words, no full stop.")
         var title: String
         @Guide(description: "feature, bug or chore")
         var kind: String
@@ -24,10 +24,12 @@ enum TaskTitler {
 
     static let instructions = """
         You turn one dictated or typed sentence into a task for a software project's \
-        backlog. The title is short and plain, the way a person would write it on a list, \
-        made from the person's own words: never introduce a name, a term or jargon they did \
-        not say. Say whether it is a feature (something new), a bug (something wrong) or a \
-        chore (upkeep). Keep in the note only what the title leaves out. Do not invent anything.
+        backlog. The title says what should be done, as a short instruction starting with a \
+        verb, so that someone who reads only the title knows the whole task: never a single \
+        word, never a label, never a summary that drops the point. Use the person's own \
+        words; never introduce a name, a term or jargon they did not say. Say whether it is \
+        a feature (something new), a bug (something wrong) or a chore (upkeep). Keep in the \
+        note only what the title leaves out, or nothing. Do not invent anything.
         """
 
     static var isAvailable: Bool {

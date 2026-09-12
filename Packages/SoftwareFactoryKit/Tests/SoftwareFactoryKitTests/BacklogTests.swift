@@ -11,17 +11,24 @@ import Testing
         return t
     }
 
-    @Test func orderIsInProgressThenBacklogByRankThenDoneNewestFirst() {
+    @Test func orderIsInProgressThenBacklogThenParkedThenDoneNewestFirst() {
         let all = [
             task("done old", rank: 0, state: .done, updated: 10),
             task("second", rank: 2),
+            task("parked", rank: 0, state: .parked),
             task("done new", rank: 1, state: .done, updated: 20),
             task("first", rank: 1),
             task("now", rank: 5, state: .inProgress),
             FactoryTask(projectID: "/other", title: "elsewhere", rank: 0),
         ]
-        #expect(Backlog.tasks(for: p, in: all).map(\.title) == ["now", "first", "second", "done new", "done old"])
+        #expect(Backlog.tasks(for: p, in: all).map(\.title) == ["now", "first", "second", "parked", "done new", "done old"])
         #expect(Backlog.next(for: p, in: all)?.title == "first")
+        // Parked tasks sit out of the reordering.
+        let changed = Backlog.move(in: Backlog.tasks(for: p, in: all), from: IndexSet(integer: 2), to: 0)
+        #expect(changed.first?.title == "second")
+        #expect(!changed.contains { $0.title == "parked" })
+        #expect(Backlog.personMaySet == [.backlog, .parked])
+        #expect(Backlog.set(task("a", rank: 0, state: .inProgress), to: .parked).agentID == nil)
     }
 
     @Test func visibleKeepsOnlyTheNewestDone() {

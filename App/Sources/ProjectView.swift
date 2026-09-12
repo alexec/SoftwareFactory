@@ -206,7 +206,7 @@ struct TaskRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(task.title)
                     .strikethrough(task.state == .done)
-                    .foregroundStyle(task.state == .done ? .secondary : .primary)
+                    .foregroundStyle(task.state == .done || task.state == .parked ? .secondary : .primary)
                 if let ending = task.note.split(whereSeparator: \.isNewline).last, !ending.isEmpty {
                     Text(ending)
                         .font(.caption)
@@ -222,10 +222,18 @@ struct TaskRow: View {
                     .background(.green.opacity(0.2), in: .capsule)
             }
             Spacer()
+            // The person's menu: park, unpark, move, delete. Whether a task is in
+            // progress or done is the agent's to say, so those are not here.
             Menu {
-                ForEach(FactoryTask.State.allCases, id: \.self) { state in
-                    Button(state.word) { model.set(task, to: state) }
-                        .disabled(state == task.state)
+                if task.state == .parked {
+                    Button("Back to the backlog") { model.set(task, to: .backlog) }
+                } else if task.state != .done {
+                    Button("Park") { model.set(task, to: .parked) }
+                }
+                if task.state == .backlog {
+                    Divider()
+                    Button("Move to the top") { model.move(task, to: .top) }
+                    Button("Move to the bottom") { model.move(task, to: .bottom) }
                 }
                 Divider()
                 Button("Delete", role: .destructive) { model.delete(task) }
@@ -248,6 +256,7 @@ extension FactoryTask.State {
         case .backlog: "Backlog"
         case .inProgress: "In progress"
         case .done: "Done"
+        case .parked: "Parked"
         }
     }
 }
