@@ -103,6 +103,26 @@ func wholeSecond() -> Date {
 }
 
 @Suite struct AgentTests {
+    @Test func goneAfterThreeMissedCheckIns() {
+        let now = Date()
+        var silent = Agent(name: "silent", projectID: nil, registered: now.addingTimeInterval(-3600))
+        silent.lastSeen = now.addingTimeInterval(-16 * 60)
+        var talking = Agent(name: "talking", projectID: nil, registered: now.addingTimeInterval(-3600))
+        talking.lastSeen = now.addingTimeInterval(-60)
+        var left = Agent(name: "left", projectID: nil, registered: now.addingTimeInterval(-3600))
+        left.lastSeen = now.addingTimeInterval(-3600)
+        left.deregistered = now.addingTimeInterval(-1800)
+        let phone = Resource(name: "iPhone")
+        let held = Lease(resourceID: phone.id, agentID: silent.id, why: "", since: now.addingTimeInterval(-1000), until: now.addingTimeInterval(1000))
+        let snap = Snapshot(agents: [silent, talking, left], resources: [phone], leases: [held])
+        let changes = Sweep.goneAgents(in: snap, now: now)
+        #expect(changes.agents.map(\.name) == ["silent"])
+        #expect(changes.agents[0].deregistered == now)
+        #expect(changes.leases.map(\.id) == [held.id])
+        #expect(changes.leases[0].released == now)
+        #expect(Sweep.goneAgents(in: Snapshot(agents: [talking, left]), now: now).isEmpty)
+    }
+
     @Test func quietAfterTwoMinutes() {
         let now = Date()
         var a = Agent(name: "x", projectID: nil, registered: now.addingTimeInterval(-1000))
@@ -114,5 +134,21 @@ func wholeSecond() -> Date {
         a.deregistered = now
         #expect(!a.isOnTheFloor)
         #expect(!a.isWorking(now: now))
+    }
+}
+
+@Suite struct EscalationsViewTests {
+    @Test func openInFullThenTheNewestFewDecided() throws {
+        let t0 = Date(timeIntervalSince1970: 1000)
+        func q(_ n: Int, decidedAt: TimeInterval? = nil) throws -> Escalation {
+            var e = Escalation(projectID: "/p", question: "q\(n)", options: [.init(title: "A"), .init(title: "B")], raised: t0.addingTimeInterval(TimeInterval(n)))
+            if let decidedAt { try e.decide(e.options[0], at: t0.addingTimeInterval(decidedAt)) }
+            return e
+        }
+        let all = [try q(5), try q(1), try q(2, decidedAt: 50), try q(3, decidedAt: 70), try q(4, decidedAt: 60), try q(6, decidedAt: 10),
+                   Escalation(projectID: "/other", question: "x", options: [.init(title: "A")])]
+        let shown = Escalations.visible(for: "/p", in: all, recentDecided: 3)
+        #expect(shown.open.map(\.question) == ["q1", "q5"])
+        #expect(shown.decided.map(\.question) == ["q3", "q4", "q2"])
     }
 }

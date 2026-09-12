@@ -97,6 +97,16 @@ final class AppModel {
         } catch {
             storeError = error.localizedDescription
         }
+        let gone = Sweep.goneAgents(in: snapshot, now: .now)
+        if !gone.isEmpty {
+            do {
+                for a in gone.agents { try store.save(a) }
+                for l in gone.leases { try store.save(l) }
+                snapshot = try store.load()
+            } catch {
+                storeError = error.localizedDescription
+            }
+        }
         dashboard = Dashboard.make(snapshot: snapshot)
         throttle = store.throttle()
         machine = MachineReading.sample()

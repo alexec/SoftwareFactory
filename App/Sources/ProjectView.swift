@@ -10,7 +10,7 @@ struct ProjectView: View {
     @State private var showingMicPrimer = false
 
     private var tasks: [FactoryTask] { model.tasks(for: project.id) }
-    private var escalations: [Escalation] { model.escalations(for: project.id) }
+    private var questions: Escalations.Shown { Escalations.visible(for: project.id, in: model.snapshot.escalations) }
 
     var body: some View {
         List {
@@ -18,12 +18,15 @@ struct ProjectView: View {
                 header
             }
 
-            if !escalations.isEmpty {
+            if !questions.open.isEmpty || !questions.decided.isEmpty {
                 Section("Questions") {
-                    ForEach(escalations) { e in
+                    ForEach(questions.open) { e in
                         EscalationCard(escalation: e, showsProject: false)
                             .listRowSeparator(.hidden)
                             .padding(.vertical, 4)
+                    }
+                    ForEach(questions.decided) { e in
+                        DecidedRow(escalation: e)
                     }
                 }
             }
@@ -160,6 +163,36 @@ struct ProjectView: View {
             }
         default:
             break
+        }
+    }
+}
+
+/// An answered question, folded to one line. Open it to see the whole card again.
+struct DecidedRow: View {
+    var escalation: Escalation
+    @State private var isOpen = false
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isOpen) {
+            EscalationCard(escalation: escalation, showsProject: false)
+                .padding(.vertical, 6)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Text(escalation.chosen?.title ?? "Decided")
+                    .font(.callout.weight(.medium))
+                Text(escalation.question)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer()
+                if let at = escalation.decision?.at {
+                    Text(at, format: .relative(presentation: .named))
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
         }
     }
 }

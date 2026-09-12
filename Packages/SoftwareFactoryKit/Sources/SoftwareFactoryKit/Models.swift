@@ -88,9 +88,42 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
 
     /// Two minutes without a check-in and an agent reads as quiet.
     public static let quietAfter: TimeInterval = 120
+    /// Three missed check-ins, at five minutes each, and an agent that never said goodbye
+    /// is marked gone anyway.
+    public static let goneAfter: TimeInterval = 15 * 60
 
     public func isWorking(now: Date) -> Bool {
         isOnTheFloor && now.timeIntervalSince(lastSeen) <= Self.quietAfter
+    }
+
+    /// Still registered, but silent for longer than three check-ins.
+    public func hasGoneQuiet(now: Date) -> Bool {
+        isOnTheFloor && now.timeIntervalSince(lastSeen) > Self.goneAfter
+    }
+}
+
+/// The sweep the factory runs on every look: agents that stopped checking in are marked
+/// gone and their leases released, so a crashed session never holds a phone all day.
+public enum Sweep {
+    public struct Changes: Equatable, Sendable {
+        public var agents: [Agent]
+        public var leases: [Lease]
+
+        public var isEmpty: Bool { agents.isEmpty && leases.isEmpty }
+    }
+
+    public static func goneAgents(in snapshot: Snapshot, now: Date) -> Changes {
+        var changes = Changes(agents: [], leases: [])
+        for var agent in snapshot.agents where agent.hasGoneQuiet(now: now) {
+            agent.deregistered = now
+            agent.note = agent.note.isEmpty ? "marked gone after three missed check-ins" : agent.note + " · marked gone after three missed check-ins"
+            changes.agents.append(agent)
+            for var lease in Leases.heldBy(agent.id, in: snapshot.leases, now: now) {
+                lease.released = now
+                changes.leases.append(lease)
+            }
+        }
+        return changes
     }
 }
 
