@@ -15,8 +15,9 @@ struct PhoneBacklogView: View {
         List {
             if model.source == .factory {
                 Section {
-                    HStack(spacing: 10) {
-                        TextField("Add a task", text: $newTitle)
+                    HStack(alignment: .top, spacing: 10) {
+                        TextField("Add a task", text: $newTitle, axis: .vertical)
+                            .lineLimit(1...5)
                             .onSubmit { add(at: .bottom) }
                         if model.dictation.isListening, !model.dictation.volatile.isEmpty {
                             Text(model.dictation.volatile)
@@ -78,12 +79,15 @@ struct PhoneBacklogView: View {
                 }
             }
 
-            Section {
-                if tasks.isEmpty {
+            if tasks.isEmpty {
+                Section {
                     Label("Nothing on the backlog.", systemImage: "list.bullet")
                         .foregroundStyle(.secondary)
                 }
-                ForEach(tasks) { task in
+            }
+            ForEach(Backlog.blocks(tasks), id: \.state) { block in
+              Section(block.state.word) {
+                ForEach(block.tasks) { task in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(task.title)
@@ -105,6 +109,7 @@ struct PhoneBacklogView: View {
                     }
                     .padding(.vertical, 2)
                 }
+              }
             }
         }
         .navigationTitle(project.name)
@@ -132,6 +137,18 @@ struct PhoneBacklogView: View {
             }
         default:
             break
+        }
+    }
+}
+
+extension FactoryTask.State {
+    var word: String {
+        switch self {
+        case .backlog: "Backlog"
+        case .inProgress: "In progress"
+        case .done: "Done"
+        case .parked: "Parked"
+        case .blocked: "Blocked"
         }
     }
 }

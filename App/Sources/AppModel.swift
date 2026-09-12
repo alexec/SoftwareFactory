@@ -209,8 +209,10 @@ final class AppModel {
         persist { try $0.delete(task) }
     }
 
+    /// `source` and `destination` are offsets within the backlog block alone.
     func move(in projectID: String, from source: IndexSet, to destination: Int) {
-        let changed = Backlog.move(in: tasks(for: projectID), from: source, to: destination)
+        let backlog = tasks(for: projectID).filter { $0.state == .backlog }
+        let changed = Backlog.move(in: backlog, from: source, to: destination)
         persist { store in for task in changed { try store.save(task) } }
     }
 

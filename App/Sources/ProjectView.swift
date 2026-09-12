@@ -32,9 +32,11 @@ struct ProjectView: View {
             }
 
             Section("Backlog") {
-                HStack(spacing: 8) {
-                    TextField("Add a task", text: $newTitle)
+                HStack(alignment: .top, spacing: 8) {
+                    // Grows to five lines, so a dictated sentence can be read before it is added.
+                    TextField("Add a task", text: $newTitle, axis: .vertical)
                         .textFieldStyle(.plain)
+                        .lineLimit(1...5)
                         .onSubmit { add(at: .bottom) }
                     if model.dictation.isListening, !model.dictation.volatile.isEmpty {
                         Text(model.dictation.volatile)
@@ -99,12 +101,24 @@ struct ProjectView: View {
                 if tasks.isEmpty {
                     EmptyLine(text: "Nothing on the backlog.", symbol: "list.bullet")
                 }
+            }
 
-                ForEach(tasks) { task in
-                    TaskRow(task: task)
-                }
-                .onMove { source, destination in
-                    model.move(in: project.id, from: source, to: destination)
+            // One block per state. Only the backlog block reorders by drag; the three
+            // newest done and ten newest parked are shown, the store keeps the rest.
+            ForEach(Backlog.blocks(tasks), id: \.state) { block in
+                Section(block.state.word) {
+                    if block.state == .backlog {
+                        ForEach(block.tasks) { task in
+                            TaskRow(task: task)
+                        }
+                        .onMove { source, destination in
+                            model.move(in: project.id, from: source, to: destination)
+                        }
+                    } else {
+                        ForEach(block.tasks) { task in
+                            TaskRow(task: task)
+                        }
+                    }
                 }
             }
         }

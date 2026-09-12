@@ -25,14 +25,27 @@ public enum Backlog {
         }
     }
 
-    /// What the project view shows: everything open, then only the newest few done, so a
-    /// long-lived project's list does not fill with what is finished.
-    public static func visible(for projectID: String, in all: [FactoryTask], recentDone: Int = 5) -> [FactoryTask] {
-        var shown = 0
+    /// What the project view shows: everything in progress, blocked and on the backlog,
+    /// then at most `recentParked` parked and `recentDone` done, so a long-lived project's
+    /// list does not fill with what is set aside or finished. (Alex, 12 September 2026:
+    /// three done, ten parked.)
+    public static func visible(for projectID: String, in all: [FactoryTask], recentDone: Int = 3, recentParked: Int = 10) -> [FactoryTask] {
+        var doneShown = 0, parkedShown = 0
         return tasks(for: projectID, in: all).filter { task in
-            guard task.state == .done else { return true }
-            shown += 1
-            return shown <= recentDone
+            switch task.state {
+            case .done: doneShown += 1; return doneShown <= recentDone
+            case .parked: parkedShown += 1; return parkedShown <= recentParked
+            default: return true
+            }
+        }
+    }
+
+    /// The list, in blocks by state, in the order they are shown. Empty blocks are left out.
+    public static func blocks(_ tasks: [FactoryTask]) -> [(state: FactoryTask.State, tasks: [FactoryTask])] {
+        let order: [FactoryTask.State] = [.inProgress, .blocked, .backlog, .parked, .done]
+        return order.compactMap { state in
+            let group = tasks.filter { $0.state == state }
+            return group.isEmpty ? nil : (state, group)
         }
     }
 

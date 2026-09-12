@@ -31,11 +31,18 @@ import Testing
         #expect(Backlog.set(task("a", rank: 0, state: .inProgress), to: .parked).agentID == nil)
     }
 
-    @Test func visibleKeepsOnlyTheNewestDone() {
+    @Test func visibleKeepsThreeDoneAndTenParkedInBlocks() {
         var all = [task("open", rank: 0), task("now", rank: 1, state: .inProgress)]
         for n in 0..<8 { all.append(task("done \(n)", rank: 9, state: .done, updated: TimeInterval(n))) }
-        let shown = Backlog.visible(for: p, in: all, recentDone: 3)
-        #expect(shown.map(\.title) == ["now", "open", "done 7", "done 6", "done 5"])
+        for n in 0..<12 { all.append(task("parked \(n)", rank: n, state: .parked)) }
+        let shown = Backlog.visible(for: p, in: all)
+        #expect(shown.filter { $0.state == .done }.map(\.title) == ["done 7", "done 6", "done 5"])
+        #expect(shown.filter { $0.state == .parked }.count == 10)
+        #expect(shown.filter { $0.state == .parked }.first?.title == "parked 0")
+        let blocks = Backlog.blocks(shown)
+        #expect(blocks.map(\.state) == [.inProgress, .backlog, .parked, .done])
+        #expect(blocks[0].tasks.map(\.title) == ["now"])
+        #expect(Backlog.blocks([]).isEmpty)
     }
 
     @Test func blockedIsNotNextAndClearsOnItsOwn() throws {
