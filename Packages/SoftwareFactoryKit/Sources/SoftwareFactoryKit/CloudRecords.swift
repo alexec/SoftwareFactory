@@ -87,4 +87,10 @@ public enum CloudRecords {
             return adopted
         }
     }
+
+    /// Tasks added on another device, away from the Mac: in the cloud but not here yet.
+    public static func tasksToAdopt(local: [FactoryTask], cloud: [FactoryTask]) -> [FactoryTask] {
+        let mine = Set(local.map(\.id))
+        return cloud.filter { !mine.contains($0.id) }
+    }
 }

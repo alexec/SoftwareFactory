@@ -144,10 +144,19 @@ final class AppModel {
             let merged = Steering.notesToAdopt(local: mine, cloud: cloud)
             return merged.notes == mine.notes ? nil : merged
         }
-        guard !adopted.isEmpty || !noted.isEmpty else { return }
+        // Tasks added on the phone away from the Mac: adopted with a number if they
+        // arrived without one.
+        let newTasks = (await cloud.pullTasks()).map { CloudRecords.tasksToAdopt(local: snapshot.tasks, cloud: $0) } ?? []
+        guard !adopted.isEmpty || !noted.isEmpty || !newTasks.isEmpty else { return }
         do {
             for e in adopted { try store.save(e) }
             for p in noted { try store.save(p) }
+            let every = (try? store.loadEveryTask()) ?? snapshot.tasks
+            var nextNumber = Backlog.nextNumber(in: every)
+            for var t in newTasks {
+                if t.number == nil { t.number = nextNumber; nextNumber += 1 }
+                try store.save(t)
+            }
             snapshot = try store.load()
             dashboard = Dashboard.make(snapshot: snapshot)
         } catch {

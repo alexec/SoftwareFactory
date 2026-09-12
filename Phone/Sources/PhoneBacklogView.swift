@@ -59,7 +59,7 @@ struct PhoneBacklogView: View {
                 }
               }
             }
-            if model.source == .factory {
+            if model.source == .factory || model.cloud.isReady {
                 Section("Add") {
                     DictateField(placeholder: "Add a task", text: $newTitle, dictation: model.dictation) {
                         Menu {
@@ -73,10 +73,15 @@ struct PhoneBacklogView: View {
                         }
                     }
                     .onSubmit { add(at: .bottom) }
+                    if model.source != .factory {
+                        Text("Away from the Mac; this goes through iCloud and lands there in a moment, numbered once it does.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             } else {
                 Section {
-                    Text("Adding a task needs the Mac's network for now. Reading works anywhere.")
+                    Text("Adding a task needs iCloud, which is not signed in on this phone.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }

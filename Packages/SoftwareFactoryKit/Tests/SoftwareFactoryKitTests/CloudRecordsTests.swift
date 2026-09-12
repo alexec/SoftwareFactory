@@ -57,4 +57,11 @@ import Testing
         try odd.decide(odd.options[1])
         #expect(CloudRecords.decisionsToAdopt(local: [open], cloud: [odd]).isEmpty)
     }
+
+    @Test func aTaskAddedAwayFromTheMacIsAdopted() {
+        let mine = FactoryTask(projectID: "/p", title: "already here", rank: 0)
+        let addedOnThePhone = FactoryTask(projectID: "/p", title: "added away from the Mac", rank: 1)
+        let adopted = CloudRecords.tasksToAdopt(local: [mine], cloud: [mine, addedOnThePhone])
+        #expect(adopted.map(\.id) == [addedOnThePhone.id])
+    }
 }

@@ -196,24 +196,37 @@ final class PhoneModel {
         }
     }
 
-    /// Files a task through the factory. Only near the Mac for now; iCloud carries
-    /// questions and decisions, not new tasks, until the Mac learns to adopt them.
+    /// Files a task through the factory when near it; through iCloud otherwise, the same
+    /// as a decision or a note. The Mac adopts it, and gives it a number, on its next
+    /// pull; here it has none until then.
     func addTask(to project: Project, title: String, at position: Backlog.Position) async {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty, source == .factory, let client else { return }
+        guard !title.isEmpty else { return }
         let drafted = await TaskTitler.draft(from: title)
-        let body = (try? JSONSerialization.data(withJSONObject: [
-            "project": project.id, "title": drafted.title, "kind": drafted.kind.rawValue,
-            "note": drafted.note, "position": position.rawValue,
-        ])) ?? Data()
-        do {
-            let response = try await client.send(HTTPRequest(
-                method: "POST", path: "/api/task", headers: ["Content-Type": "application/json"], body: body))
-            guard response.status == 200 else { throw FactoryClient.ClientError.failed("The factory answered \(response.status).") }
-            await poll()
-        } catch {
-            lastError = error.localizedDescription
+        if source == .factory, let client {
+            let body = (try? JSONSerialization.data(withJSONObject: [
+                "project": project.id, "title": drafted.title, "kind": drafted.kind.rawValue,
+                "note": drafted.note, "position": position.rawValue,
+            ])) ?? Data()
+            do {
+                let response = try await client.send(HTTPRequest(
+                    method: "POST", path: "/api/task", headers: ["Content-Type": "application/json"], body: body))
+                guard response.status == 200 else { throw FactoryClient.ClientError.failed("The factory answered \(response.status).") }
+                await poll()
+            } catch {
+                lastError = error.localizedDescription
+            }
+            return
         }
+        guard cloud.isReady else { return }
+        let task = FactoryTask(
+            projectID: project.id, title: drafted.title, kind: drafted.kind,
+            state: Backlog.state(for: position),
+            rank: Backlog.rank(for: position, projectID: project.id, in: snapshot.tasks),
+            note: drafted.note)
+        await cloud.push(task: task)
+        snapshot.tasks.append(task)
+        dashboard = Dashboard.make(snapshot: snapshot)
     }
 
     func project(for id: String) -> Project? {

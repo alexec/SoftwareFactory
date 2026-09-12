@@ -93,6 +93,12 @@ final class CloudSync {
         await push(one: CloudRecords.encode(Snapshot(projects: [project]))[0], what: "the note")
     }
 
+    /// Writes one new task, added on the phone away from the Mac. The Mac adopts it,
+    /// and gives it a number, on its next pull.
+    func push(task: FactoryTask) async {
+        await push(one: CloudRecords.encode(Snapshot(tasks: [task]))[0], what: "the task")
+    }
+
     private func push(one encoded: CloudRecords.Encoded, what: String) async {
         guard isReady else { return }
         let id = CKRecord.ID(recordName: encoded.recordName)
@@ -176,6 +182,20 @@ final class CloudSync {
     /// Only the questions.
     func pullEscalations() async -> [Escalation]? {
         await pullEscalationsAndProjects()?.escalations
+    }
+
+    /// Tasks in iCloud, for the Mac to adopt any added on the phone away from it.
+    func pullTasks() async -> [FactoryTask]? {
+        guard isReady else { return nil }
+        do {
+            let decoded = CloudRecords.decode(try await fetchAll("Task"))
+            lastSync = .now
+            lastError = nil
+            return decoded.tasks
+        } catch {
+            lastError = "Could not read iCloud: \(error.localizedDescription)"
+            return nil
+        }
     }
 
     /// One project as iCloud has it, for adding a note to it from the phone.

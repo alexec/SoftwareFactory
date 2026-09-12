@@ -113,9 +113,11 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     command, iCloud, the store, Developer in DEBUG).
 - `Phone/Sources`: `PhoneModel` (NWBrowser finds the factory; `FactoryClient` speaks the
   package's HTTP over the Bonjour endpoint, polling `/api/snapshot` every 3 s and posting
-  `/api/decide`; when the factory is out of reach it reads and decides through
-  `CloudSync`), `PhoneRootView` (network primer in place, Needs you, On the floor),
-  `PhoneBacklogView` (a project's backlog; type or hold the mic to add, near the Mac only),
+  `/api/decide` and `/api/task`; when the factory is out of reach it reads, decides and
+  adds tasks through `CloudSync` instead, so adding works anywhere iCloud does, not only
+  on the Mac's own network; a task added that way carries no number until the Mac adopts
+  it and gives it one), `PhoneRootView` (network primer in place, Needs you, On the floor),
+  `PhoneBacklogView` (a project's backlog; type or hold the mic to add, anywhere iCloud reaches),
   `PhoneIntroSheet`, `PhoneSettingsView`, `PhoneNotifier` (a banner per new question
   with the options as actions; announced ids kept in UserDefaults so a cold launch by a
   push still knows what is news; the primer on the floor asks), `PhoneAppDelegate`

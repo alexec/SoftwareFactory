@@ -121,9 +121,4 @@ Notifications are next.
   settle into the field, ready to add. The first line becomes the title; anything after
   it is the note.
 
-## Later, not now
-
-A notification on the phone when a question arrives away from the Mac. Adding a task from
-the phone away from the Mac. Each arrives on its own; the order is the backlog in the app.
-
 MIT licence. © 2026 Alex Collins.
