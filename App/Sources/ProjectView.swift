@@ -152,10 +152,10 @@ struct ProjectView: View {
                     .foregroundStyle(.secondary)
             }
             if let status { ProgressNumbers(status: status) }
-            Toggle("On hold", isOn: Binding(get: { project.onHold }, set: { model.setOnHold(project, $0) }))
+            Toggle("Active", isOn: Binding(get: { !project.onHold }, set: { model.setOnHold(project, !$0) }))
                 .toggleStyle(.switch)
                 .controlSize(.small)
-                .help("Nothing is handed out from this backlog while it is on hold")
+                .help("Off puts the project on hold: nothing is handed out from its backlog")
             steering
             HStack(spacing: 10) {
                 Button("Remove project…") { confirmingRemoval = true }
