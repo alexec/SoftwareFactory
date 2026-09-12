@@ -43,6 +43,9 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     slot frees), renew, release, heldBy, stale.
   - `CloudRecords`: each record as one CloudKit record (`json`, `updated`); diff for
     pushes; `decisionsToAdopt` for decisions made on another device.
+  - `Escalations.visible`: open questions in full, the newest three answered ones.
+  - `Sweep.goneAgents`: fifteen silent minutes and an agent is marked gone, leases released.
+  - `Records.version` on every record; a decoder reads an older shape without it.
   - `Capacity`: `MachineReading` (`sample()` on macOS reads memory, swap, load, compiles,
     simulators through sysctl and Mach), `Throttle` (one file, `throttle.json`), the
     verdict, the reason, and `ask(work:)` for compile, simulator, model.
@@ -82,7 +85,10 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
 ## Rules for changes
 
 - A rule goes in the package with a test before it goes in a view.
-- Never change a record's JSON shape without a reader for the old shape.
+- Never change a record's JSON shape without a reader for the old shape; bump
+  `Records.version` when an older reader could not cope.
+- Anything that runs on an audio or network thread is `@Sendable` and touches nothing
+  main-actor: the dictation tap crashed once for exactly this.
 - A new tool: add it to `Tool.all` and `call`, and a test in `MCPServerTests`.
 - Every string a person reads follows `alex-writing-voice`; no em dashes.
 - First-run: the sheet shows once (`hasSeenIntro`) and again from Settings. Reset with the

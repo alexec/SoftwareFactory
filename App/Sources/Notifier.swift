@@ -9,12 +9,14 @@ import SoftwareFactoryKit
 @MainActor
 final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     enum Standing: Equatable {
+        /// Not read yet. The primer waits for a real answer rather than flashing.
+        case unknown
         case notAsked
         case allowed
         case denied
     }
 
-    private(set) var standing: Standing = .notAsked
+    private(set) var standing: Standing = .unknown
     /// What the last post said, for Settings' Developer section.
     private(set) var lastPost = "nothing posted yet"
     private(set) var delivered = 0

@@ -32,6 +32,8 @@ struct SettingsView: View {
 
             Section("Notifications") {
                 switch model.notifier.standing {
+                case .unknown:
+                    Text("Checking.").foregroundStyle(.secondary)
                 case .notAsked:
                     Text("Not asked yet. The floor asks the first time.")
                         .foregroundStyle(.secondary)

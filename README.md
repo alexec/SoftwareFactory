@@ -70,6 +70,8 @@ pulls and pushes decisions. That needs the iCloud container
 `iCloud.com.alexecollins.softwarefactory` registered in the developer account once.
 Notifications are next.
 
+- **Answered questions fold away.** A decided question becomes one line in the project
+  view, and only the newest three stay; the store keeps them all.
 - **A banner at the Mac.** Each new question is a macOS notification with the options as
   its actions. Asked for once, in place, before the system alert.
 - **Dictate a task.** A mic on the add field, on the Mac and the phone. Words appear as
