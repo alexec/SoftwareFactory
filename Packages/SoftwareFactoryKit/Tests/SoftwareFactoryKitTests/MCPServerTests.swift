@@ -38,6 +38,43 @@ import Testing
         #expect(try s.store.loadEveryTask().count == 1)
     }
 
+    @Test func aNoteForTheAgentGoesOutOnceOnTheNextCall() throws {
+        let s = try server()
+        let a = id(after: "", in: call(s, "agent_register", ["name": "lead", "project": "P"]).text)
+        _ = call(s, "task_add", ["project": "P", "title": "Waiting"])
+        var project = try #require(try s.store.load().projects.first)
+        project = Steering.note("Use the new API, not the old one", on: project, by: "Alex")
+        project = Steering.note("  ", on: project, by: "Alex")
+        #expect(project.notes.count == 1)
+        try s.store.save(project)
+
+        // Any call the agent makes about its project carries the note, once.
+        let status = call(s, "factory_status", ["agent_id": a]).text
+        #expect(status.hasSuffix("\nNOTE FROM ALEX: Use the new API, not the old one"))
+        #expect(try s.store.load().projects.first?.notes.isEmpty == true)
+        #expect(try s.store.load().projects.first?.sentNoteIDs.count == 1)
+        #expect(!call(s, "factory_status", ["agent_id": a]).text.contains("NOTE FROM"))
+
+        // A call that names the project, from an agent without one, gets it too.
+        try s.store.save(Steering.note("Park the rest", on: try #require(try s.store.load().projects.first), by: "Alex"))
+        #expect(call(s, "task_next", ["project": "P"]).text.contains("NOTE FROM ALEX: Park the rest"))
+        #expect(!call(s, "task_next", ["project": "P"]).text.contains("NOTE FROM"))
+
+        // Withdrawn before anyone saw it: never goes out.
+        var again = try #require(try s.store.load().projects.first)
+        again = Steering.note("Actually no", on: again, by: "Alex")
+        again = Steering.withdraw(again.notes[0].id, from: again)
+        try s.store.save(again)
+        #expect(!call(s, "task_list", ["project": "P"]).text.contains("NOTE FROM"))
+
+        // A copy from another device: only notes not seen here are adopted.
+        var cloud = try #require(try s.store.load().projects.first)
+        let seen = cloud.sentNoteIDs[0]
+        cloud.notes = [.init(id: seen, text: "Use the new API, not the old one", by: "Alex"), .init(text: "From the phone", by: "alex, phone")]
+        let adopted = Steering.notesToAdopt(local: try #require(try s.store.load().projects.first), cloud: cloud)
+        #expect(adopted.notes.map(\.text) == ["From the phone"])
+    }
+
     func call(_ s: MCPServer, _ tool: String, _ args: [String: Any] = [:], id: Int = 1) -> (text: String, isError: Bool) {
         let response = s.handle(["jsonrpc": "2.0", "id": id, "method": "tools/call",
                                  "params": ["name": tool, "arguments": args]])!

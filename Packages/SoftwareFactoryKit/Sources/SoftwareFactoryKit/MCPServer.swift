@@ -80,7 +80,7 @@ public struct MCPServer: Sendable {
             let name = params["name"] as? String ?? ""
             let args = params["arguments"] as? [String: Any] ?? [:]
             do {
-                let text = try call(name, args)
+                let text = try call(name, args) + steering(after: name, args)
                 return Self.result(id: id, ["content": [["type": "text", "text": text]], "isError": false])
             } catch let e as ToolError {
                 return Self.result(id: id, ["content": [["type": "text", "text": e.message]], "isError": true])
@@ -642,6 +642,26 @@ public struct MCPServer: Sendable {
     }
 
     /// Alex, 12 Sep 2026: on hold blocks nothing; every reply carries the warning instead.
+    /// The project a call is about: the caller's own, the task's, or the one named. A
+    /// note waiting on it goes out with this reply and is gone from the project.
+    func steering(after name: String, _ args: [String: Any]) -> String {
+        guard let snap = try? store.load() else { return "" }
+        var project: Project?
+        if let id = (args["agent_id"] as? String).flatMap(UUID.init(uuidString:)),
+           let agent = snap.agents.first(where: { $0.id == id }), let pid = agent.projectID {
+            project = snap.projects.first { $0.id == pid }
+        }
+        if project == nil, let ref = args["task_id"] as? String, let task = taskRef(ref, in: snap) {
+            project = snap.projects.first { $0.id == task.projectID }
+        }
+        if project == nil, ["task_next", "task_list"].contains(name), let ref = args["project"] as? String {
+            project = try? resolveProject(ref, in: snap, create: false)
+        }
+        guard let project, let handed = Steering.handOver(project) else { return "" }
+        try? store.save(handed.project)
+        return handed.text
+    }
+
     static func holdWarning(_ project: Project?) -> String {
         guard let project, project.onHold else { return "" }
         return "\nWARNING: \(project.name) is on hold. Do not start any new tasks on it; finish what you are on and deregister when you have nothing else."

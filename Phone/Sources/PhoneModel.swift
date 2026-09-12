@@ -204,4 +204,29 @@ final class PhoneModel {
     func project(for id: String) -> Project? {
         dashboard.projects.first { $0.id == id }?.project
     }
+
+    /// A word for the agent on a project. Through the factory when near it; through
+    /// iCloud otherwise, where the Mac picks it up within its next pull.
+    func note(_ text: String, on project: Project) async {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        if source == .factory, let client {
+            let body = (try? JSONSerialization.data(withJSONObject: ["project": project.id, "text": text, "by": "alex, phone"])) ?? Data()
+            do {
+                let response = try await client.send(HTTPRequest(method: "POST", path: "/api/note", headers: ["Content-Type": "application/json"], body: body))
+                guard response.status == 200 else { throw FactoryClient.ClientError.failed("The factory answered \(response.status).") }
+                await poll()
+            } catch {
+                lastError = error.localizedDescription
+            }
+            return
+        }
+        let base = await cloud.pullProject(project.id) ?? project
+        let noted = Steering.note(text, on: base, by: "alex, phone")
+        await cloud.push(project: noted)
+        if let i = snapshot.projects.firstIndex(where: { $0.id == project.id }) {
+            snapshot.projects[i] = noted
+            dashboard = Dashboard.make(snapshot: snapshot)
+        }
+    }
 }

@@ -9,6 +9,7 @@ struct ProjectView: View {
     @State private var newTitle = ""
     @State private var recording = false
     @State private var confirmingRemoval = false
+    @State private var steer = ""
 
     private var tasks: [FactoryTask] { model.tasks(for: project.id) }
     private var questions: Escalations.Shown { Escalations.visible(for: project.id, in: model.snapshot.escalations) }
@@ -115,6 +116,7 @@ struct ProjectView: View {
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .help("Nothing is handed out from this backlog while it is on hold")
+            steering
             HStack(spacing: 10) {
                 Button("Remove project…") { confirmingRemoval = true }
                     .buttonStyle(.borderless)
@@ -131,6 +133,51 @@ struct ProjectView: View {
         } message: {
             Text("It leaves every list, with its done and parked tasks. Nothing is deleted from disk.")
         }
+    }
+
+    /// A word for the agent. It waits here until the agent's next call about this
+    /// project, then it is gone; until then it can be taken back. (Alex, 12 Sep 2026.)
+    private var steering: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 8) {
+                TextField("A word for the agent, sent on its next call", text: $steer, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...4)
+                    .font(.callout)
+                    .onSubmit(sendSteer)
+                Button("Send", action: sendSteer)
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+                    .disabled(steer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .help("The agent reads it once, with its next reply from the factory")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 12))
+            ForEach(project.notes) { note in
+                HStack(spacing: 8) {
+                    Image(systemName: "text.bubble")
+                        .foregroundStyle(.secondary)
+                    Text(note.text)
+                        .font(.callout)
+                        .lineLimit(2)
+                    Text("waiting for the agent")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                    Spacer()
+                    Button("Take back") { model.withdraw(note: note, from: project) }
+                        .buttonStyle(.borderless)
+                        .font(.callout)
+                }
+                .padding(.leading, 4)
+            }
+        }
+        .frame(maxWidth: 640, alignment: .leading)
+    }
+
+    private func sendSteer() {
+        model.note(steer, on: project)
+        steer = ""
     }
 
     private func statusLine(_ status: Dashboard.ProjectStatus?) -> String {

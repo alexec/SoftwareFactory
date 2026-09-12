@@ -22,6 +22,27 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
     /// Set when the project was taken out of the factory. The record stays on disk and
     /// out of every list, with its tasks. (Director, 12 Sep 2026: a wrong path.)
     public var removed: Date?
+    /// Words from the person for whoever works on this project next. Each is handed to
+    /// an agent on its next call about the project and then gone. (Alex, 12 Sep 2026:
+    /// a way to steer the agent.)
+    public var notes: [Note] = []
+    /// Notes already handed over, so a copy that comes back from another device is not
+    /// handed over twice. The last fifty.
+    public var sentNoteIDs: [UUID] = []
+
+    public struct Note: Codable, Identifiable, Hashable, Sendable {
+        public var id: UUID
+        public var text: String
+        public var by: String
+        public var at: Date
+
+        public init(id: UUID = UUID(), text: String, by: String, at: Date = .now) {
+            self.id = id
+            self.text = text
+            self.by = by
+            self.at = at
+        }
+    }
 
     public init(name: String, id: String = UUID().uuidString, added: Date = .now) {
         self.id = id
@@ -43,6 +64,8 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
         added = try c.decode(Date.self, forKey: .added)
         onHold = try c.decodeIfPresent(Bool.self, forKey: .onHold) ?? false
         removed = try c.decodeIfPresent(Date.self, forKey: .removed)
+        notes = try c.decodeIfPresent([Note].self, forKey: .notes) ?? []
+        sentNoteIDs = try c.decodeIfPresent([UUID].self, forKey: .sentNoteIDs) ?? []
     }
 
 }

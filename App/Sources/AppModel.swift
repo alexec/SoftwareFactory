@@ -135,16 +135,37 @@ final class AppModel {
         await cloud.push(snapshot)
         if lastCloudPull.map({ Date.now.timeIntervalSince($0) < Self.pullDecisionsEvery }) ?? false { return }
         lastCloudPull = .now
-        guard let theirs = await cloud.pullEscalations() else { return }
-        let adopted = CloudRecords.decisionsToAdopt(local: snapshot.escalations, cloud: theirs)
-        guard !adopted.isEmpty else { return }
+        guard let theirs = await cloud.pullEscalationsAndProjects() else { return }
+        let adopted = CloudRecords.decisionsToAdopt(local: snapshot.escalations, cloud: theirs.escalations)
+        // Notes written on the phone away from the Mac come down the same way.
+        let cloudProjects = Dictionary(uniqueKeysWithValues: theirs.projects.map { ($0.id, $0) })
+        let noted = snapshot.projects.compactMap { mine -> Project? in
+            guard let cloud = cloudProjects[mine.id] else { return nil }
+            let merged = Steering.notesToAdopt(local: mine, cloud: cloud)
+            return merged.notes == mine.notes ? nil : merged
+        }
+        guard !adopted.isEmpty || !noted.isEmpty else { return }
         do {
             for e in adopted { try store.save(e) }
+            for p in noted { try store.save(p) }
             snapshot = try store.load()
             dashboard = Dashboard.make(snapshot: snapshot)
         } catch {
             storeError = error.localizedDescription
         }
+    }
+
+    // MARK: Steering
+
+    /// A word for whoever works on the project next; it goes out on their next call.
+    func note(_ text: String, on project: Project) {
+        let noted = Steering.note(text, on: project, by: "Alex")
+        guard noted.notes != project.notes else { return }
+        persist { try $0.save(noted) }
+    }
+
+    func withdraw(note: Project.Note, from project: Project) {
+        persist { try $0.save(Steering.withdraw(note.id, from: project)) }
     }
 
     // MARK: Projects

@@ -8,6 +8,7 @@ struct PhoneBacklogView: View {
 
     @State private var newTitle = ""
     @State private var recording = false
+    @State private var steer = ""
 
     private var tasks: [FactoryTask] { Backlog.visible(for: project.id, in: model.snapshot.tasks) }
 
@@ -47,6 +48,27 @@ struct PhoneBacklogView: View {
                     .padding(.vertical, 2)
                 }
               }
+            }
+            Section("For the agent") {
+                HStack(alignment: .bottom, spacing: 8) {
+                    TextField("A word for the agent, sent on its next call", text: $steer, axis: .vertical)
+                        .lineLimit(1...4)
+                    Button("Send") {
+                        let text = steer
+                        steer = ""
+                        _Concurrency.Task { await model.note(text, on: project) }
+                    }
+                    .buttonStyle(.glass)
+                    .disabled(steer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                ForEach((model.project(for: project.id) ?? project).notes) { note in
+                    HStack(spacing: 8) {
+                        Image(systemName: "text.bubble").foregroundStyle(.secondary)
+                        Text(note.text).font(.subheadline).lineLimit(2)
+                        Spacer()
+                        Text("waiting").font(.caption).foregroundStyle(.tertiary)
+                    }
+                }
             }
             if model.source == .factory {
                 Section("Add") {

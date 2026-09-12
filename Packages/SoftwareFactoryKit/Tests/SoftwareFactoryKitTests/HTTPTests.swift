@@ -101,6 +101,10 @@ import Testing
         #expect(own.status == 200)
         #expect(try FileStore.decoder.decode(Escalation.self, from: own.body).answeredInOwnWords)
         #expect(post(r, "/api/decide", ["escalationID": e.id.uuidString, "answer": " "]).status == 400)
+        let steered = post(r, "/api/note", ["project": "P", "text": "steer left"])
+        #expect(steered.status == 200)
+        #expect(try FileStore.decoder.decode(Project.self, from: steered.body).notes.first?.by == "alex, phone")
+        #expect(post(r, "/api/note", ["project": "Nowhere", "text": "x"]).status == 404)
         #expect(post(r, "/api/decide", ["escalationID": UUID().uuidString, "optionID": UUID().uuidString]).status == 404)
         #expect(r.respond(to: HTTPRequest(method: "GET", path: "/nothing")).status == 404)
     }

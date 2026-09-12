@@ -147,6 +147,8 @@ public struct HTTPRouter: Sendable {
             return decide(request.body)
         case ("POST", "/api/task"):
             return task(request.body)
+        case ("POST", "/api/note"):
+            return note(request.body)
         case ("GET", "/"):
             return .text("Software Factory. MCP at /mcp; the apps use /api.", status: 200)
         default:
@@ -172,6 +174,28 @@ public struct HTTPRouter: Sendable {
         }
         guard let response = server.handle(one) else { return HTTPResponse(status: 202) }
         return .json(response)
+    }
+
+    struct NoteBody: Decodable {
+        var project: String
+        var text: String
+        var by: String?
+    }
+
+    /// A note for the agent on a project; it goes out on the agent's next call.
+    func note(_ body: Data) -> HTTPResponse {
+        guard let n = try? FileStore.decoder.decode(NoteBody.self, from: body) else {
+            return .text("Body: {project, text, by?}", status: 400)
+        }
+        do {
+            let snap = try store.load()
+            let project = try server.resolveProject(n.project, in: snap, create: false)
+            let noted = Steering.note(n.text, on: project, by: n.by ?? "alex, phone", at: server.now())
+            try store.save(noted)
+            return .encoded(noted)
+        } catch let e as MCPServer.ToolError {
+            return .text(e.message, status: 404)
+        } catch { return .text("\(error)", status: 500) }
     }
 
     /// An option with an optional note, or `answer` alone for the person's own words.

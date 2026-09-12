@@ -85,8 +85,16 @@ final class CloudSync {
 
     /// Writes one escalation's decision. Reads the record first so nothing else on it is lost.
     func push(decision escalation: Escalation) async {
+        await push(one: CloudRecords.encode(Snapshot(escalations: [escalation]))[0], what: "the decision")
+    }
+
+    /// Writes one project, for a note added on the phone.
+    func push(project: Project) async {
+        await push(one: CloudRecords.encode(Snapshot(projects: [project]))[0], what: "the note")
+    }
+
+    private func push(one encoded: CloudRecords.Encoded, what: String) async {
         guard isReady else { return }
-        let encoded = CloudRecords.encode(Snapshot(escalations: [escalation]))[0]
         let id = CKRecord.ID(recordName: encoded.recordName)
         do {
             let record = (try? await database.record(for: id)) ?? CKRecord(recordType: encoded.type, recordID: id)
@@ -96,7 +104,7 @@ final class CloudSync {
             lastSync = .now
             lastError = nil
         } catch {
-            lastError = "Could not send the decision: \(error.localizedDescription)"
+            lastError = "Could not send \(what): \(error.localizedDescription)"
         }
     }
 
@@ -120,18 +128,32 @@ final class CloudSync {
         return CloudRecords.decode(all)
     }
 
-    /// Only the questions, which is all the Mac needs to learn of decisions made elsewhere.
-    func pullEscalations() async -> [Escalation]? {
+    /// The questions and the projects: what the Mac needs to learn of decisions made and
+    /// notes written elsewhere.
+    func pullEscalationsAndProjects() async -> (escalations: [Escalation], projects: [Project])? {
         guard isReady else { return nil }
         do {
-            let records = try await fetchAll("Escalation")
+            let decoded = CloudRecords.decode(try await fetchAll("Escalation") + (try await fetchAll("Project")))
             lastSync = .now
             lastError = nil
-            return CloudRecords.decode(records).escalations
+            return (decoded.escalations, decoded.projects)
         } catch {
             lastError = "Could not read iCloud: \(error.localizedDescription)"
             return nil
         }
+    }
+
+    /// Only the questions.
+    func pullEscalations() async -> [Escalation]? {
+        await pullEscalationsAndProjects()?.escalations
+    }
+
+    /// One project as iCloud has it, for adding a note to it from the phone.
+    func pullProject(_ id: String) async -> Project? {
+        guard isReady else { return nil }
+        let name = CloudRecords.encode(Snapshot(projects: [Project(name: "", id: id)]))[0].recordName
+        guard let record = try? await database.record(for: CKRecord.ID(recordName: name)), let encoded = Self.encoded(record) else { return nil }
+        return CloudRecords.decode([encoded]).projects.first
     }
 
     private func fetchAll(_ type: String) async throws -> [CloudRecords.Encoded] {

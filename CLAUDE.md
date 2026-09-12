@@ -50,6 +50,11 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     slot frees), renew, release, heldBy, stale.
   - `CloudRecords`: each record as one CloudKit record (`json`, `updated`); diff for
     pushes; `decisionsToAdopt` for decisions made on another device.
+  - `Steering`: notes from the person on a project (`Project.notes`); `handOver` gives
+    the text to append to a reply and clears them, remembering ids in `sentNoteIDs`;
+    `notesToAdopt` merges a copy from iCloud. `MCPServer.steering(after:)` runs after
+    every successful tool call and picks the project from agent_id, task_id, or the
+    `project` of task_next and task_list. `POST /api/note` adds one.
   - `Escalations.visible`: open questions in full, the newest three answered ones.
   - `Sweep.goneAgents`: an hour of silence and an agent is marked gone, leases released.
   - `Sweep.unblocked`: a task blocked on a decision now made, or a task now done, goes

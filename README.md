@@ -91,6 +91,10 @@ Notifications are next.
   Typed before clicking an option it rides along as a note; sent on its own with "Answer
   with this" it is the answer, none of the options. The agent gets it from
   `escalation_await` either way. On the phone too.
+- **A word for the agent.** On a project's page, Mac or phone, type a note and send it. It
+  waits on the project, and can be taken back, until an agent's next call about that
+  project; then it goes out once at the end of that reply, "NOTE FROM ALEX: …", and is
+  gone. Away from the Mac the note goes through iCloud and the Mac picks it up.
 - **Answered questions fold away.** A decided question becomes one line in the project
   view, and only the newest three stay; the store keeps them all.
 - **A banner at the Mac.** Each new question is a macOS notification with the options as
