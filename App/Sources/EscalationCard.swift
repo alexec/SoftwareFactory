@@ -7,6 +7,7 @@ struct EscalationCard: View {
     @Environment(AppModel.self) private var model
     var escalation: Escalation
     var showsProject: Bool
+    @State private var words = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -23,8 +24,8 @@ struct EscalationCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer()
-                if let chosen = escalation.chosen, let decision = escalation.decision {
-                    Label("\(chosen.title) · \(decision.at, format: .relative(presentation: .named))", systemImage: "checkmark.circle.fill")
+                if let decision = escalation.decision {
+                    Label("\(escalation.chosen?.title ?? "In your own words") · \(decision.at, format: .relative(presentation: .named))", systemImage: "checkmark.circle.fill")
                         .font(.caption)
                         .foregroundStyle(.green)
                         .lineLimit(1)
@@ -52,10 +53,35 @@ struct EscalationCard: View {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(escalation.options) { option in
                         OptionButton(option: option, isChosen: option.id == escalation.decision?.optionID) {
-                            model.decide(escalation, option)
+                            model.decide(escalation, option, note: words)
+                            words = ""
                         }
                     }
                 }
+            }
+
+            // One field, two uses: typed before clicking an option it rides along as a
+            // note; sent on its own it is the answer, none of the options. (Alex, 12 Sep 2026.)
+            if let decision = escalation.decision, !decision.note.isEmpty {
+                Label(decision.note, systemImage: escalation.answeredInOwnWords ? "text.bubble" : "note.text")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                HStack(alignment: .top, spacing: 8) {
+                    TextField("A note for the agent, or your own answer", text: $words, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .lineLimit(1...4)
+                        .font(.callout)
+                    Button("Answer with this") { model.answer(escalation, words); words = "" }
+                        .buttonStyle(.glass)
+                        .controlSize(.small)
+                        .disabled(words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .help("Send these words as the answer instead of an option")
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 12))
             }
         }
         .padding(16)

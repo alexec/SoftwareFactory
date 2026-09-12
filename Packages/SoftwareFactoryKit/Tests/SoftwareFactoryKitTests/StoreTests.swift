@@ -117,6 +117,27 @@ func wholeSecond() -> Date {
         #expect(e.chosen?.title == "B")
     }
 
+    @Test func aNoteRidesWithTheChoiceAndOwnWordsNeedNoOption() throws {
+        var e = Escalation(projectID: "/p", question: "q", options: [.init(title: "A"), .init(title: "B")])
+        try e.decide(e.options[0], note: "  but only after lunch ", by: "alex")
+        #expect(e.chosen?.title == "A")
+        #expect(e.decision?.note == "but only after lunch")
+        #expect(e.answer == "A. but only after lunch")
+        #expect(!e.answeredInOwnWords)
+
+        try e.answer("Neither: ship it without the field", by: "alex, phone")
+        #expect(!e.isOpen)
+        #expect(e.chosen == nil)
+        #expect(e.answeredInOwnWords)
+        #expect(e.answer == "Neither: ship it without the field")
+        #expect(throws: EscalationError.emptyAnswer) { try e.answer("   ") }
+
+        // A decision written before notes existed still reads.
+        let old = Data(#"{"optionID":"\#(e.options[1].id.uuidString)","by":"alex","at":"2026-09-12T20:00:00Z"}"#.utf8)
+        let decoded = try FileStore.decoder.decode(Escalation.Decision.self, from: old)
+        #expect(decoded.optionID == e.options[1].id && decoded.note.isEmpty)
+    }
+
     @Test func anOptionFromElsewhereIsRefused() {
         var e = Escalation(projectID: "/p", question: "q", options: [.init(title: "A"), .init(title: "B")])
         #expect(throws: EscalationError.unknownOption) {

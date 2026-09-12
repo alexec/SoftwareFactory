@@ -146,10 +146,22 @@ final class PhoneModel {
         await lockScreen.reflect(dashboard, factory: factoryName ?? "the Mac")
     }
 
-    func decide(_ escalation: Escalation, _ option: Escalation.Option) async {
+    func decide(_ escalation: Escalation, _ option: Escalation.Option, note: String = "") async {
+        var e = escalation
+        guard (try? e.decide(option, note: note, by: "alex, phone")) != nil else { return }
+        await send(e, body: ["escalationID": escalation.id.uuidString, "optionID": option.id.uuidString, "note": note, "by": "alex, phone"])
+    }
+
+    /// The answer in the person's own words, none of the options.
+    func answer(_ escalation: Escalation, _ words: String) async {
+        var e = escalation
+        guard (try? e.answer(words, by: "alex, phone")) != nil else { return }
+        await send(e, body: ["escalationID": escalation.id.uuidString, "answer": e.decision?.note ?? words, "by": "alex, phone"])
+    }
+
+    /// The decided escalation goes to the factory when it answers, to iCloud otherwise.
+    private func send(_ e: Escalation, body fields: [String: String]) async {
         guard source == .factory, let client else {
-            var e = escalation
-            guard (try? e.decide(option, by: "alex, phone")) != nil else { return }
             await cloud.push(decision: e)
             if let i = snapshot.escalations.firstIndex(where: { $0.id == e.id }) {
                 snapshot.escalations[i] = e
@@ -158,9 +170,7 @@ final class PhoneModel {
             }
             return
         }
-        let body = (try? JSONSerialization.data(withJSONObject: [
-            "escalationID": escalation.id.uuidString, "optionID": option.id.uuidString, "by": "alex, phone",
-        ])) ?? Data()
+        let body = (try? JSONSerialization.data(withJSONObject: fields)) ?? Data()
         do {
             let response = try await client.send(HTTPRequest(
                 method: "POST", path: "/api/decide", headers: ["Content-Type": "application/json"], body: body))

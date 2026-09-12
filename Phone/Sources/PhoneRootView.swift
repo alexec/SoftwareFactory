@@ -168,6 +168,7 @@ struct NetworkPrimer: View {
 struct PhoneEscalationCard: View {
     @Environment(PhoneModel.self) private var model
     var escalation: Escalation
+    @State private var words = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -197,7 +198,9 @@ struct PhoneEscalationCard: View {
                 VStack(spacing: 8) {
                     ForEach(escalation.options) { option in
                         Button {
-                            _Concurrency.Task { await model.decide(escalation, option) }
+                            let note = words
+                            words = ""
+                            _Concurrency.Task { await model.decide(escalation, option, note: note) }
                         } label: {
                             HStack(alignment: .firstTextBaseline, spacing: 10) {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -230,6 +233,23 @@ struct PhoneEscalationCard: View {
                     }
                 }
             }
+            // Typed before tapping an option it rides along as a note; sent on its own
+            // it is the answer, none of the options.
+            HStack(alignment: .bottom, spacing: 8) {
+                TextField("A note for the agent, or your own answer", text: $words, axis: .vertical)
+                    .lineLimit(1...4)
+                    .font(.subheadline)
+                Button("Answer") {
+                    let text = words
+                    words = ""
+                    _Concurrency.Task { await model.answer(escalation, text) }
+                }
+                .buttonStyle(.glass)
+                .disabled(words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 14))
         }
         .padding(16)
         .glassEffect(.regular.tint(.orange.opacity(0.12)), in: .rect(cornerRadius: 20))

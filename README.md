@@ -86,6 +86,10 @@ It shows the newest question and how many more wait. Without a push server it is
 current only while the app is open, so it is marked stale after fifteen minutes.
 Notifications are next.
 
+- **A note with the answer, or your own answer.** Under the options there is one field.
+  Typed before clicking an option it rides along as a note; sent on its own with "Answer
+  with this" it is the answer, none of the options. The agent gets it from
+  `escalation_await` either way. On the phone too.
 - **Answered questions fold away.** A decided question becomes one line in the project
   view, and only the newest three stay; the store keeps them all.
 - **A banner at the Mac.** Each new question is a macOS notification with the options as

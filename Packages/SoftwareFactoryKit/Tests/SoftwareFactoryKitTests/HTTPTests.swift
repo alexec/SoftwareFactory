@@ -95,6 +95,12 @@ import Testing
         #expect(decoded.tasks.count == 1)
         #expect(decoded.escalations.first?.isOpen == false)
 
+        let noted = post(r, "/api/decide", ["escalationID": e.id.uuidString, "optionID": e.options[0].id.uuidString, "note": "after lunch"])
+        #expect(try FileStore.decoder.decode(Escalation.self, from: noted.body).answer == "A. after lunch")
+        let own = post(r, "/api/decide", ["escalationID": e.id.uuidString, "answer": "neither, drop it", "by": "alex, phone"])
+        #expect(own.status == 200)
+        #expect(try FileStore.decoder.decode(Escalation.self, from: own.body).answeredInOwnWords)
+        #expect(post(r, "/api/decide", ["escalationID": e.id.uuidString, "answer": " "]).status == 400)
         #expect(post(r, "/api/decide", ["escalationID": UUID().uuidString, "optionID": UUID().uuidString]).status == 404)
         #expect(r.respond(to: HTTPRequest(method: "GET", path: "/nothing")).status == 404)
     }

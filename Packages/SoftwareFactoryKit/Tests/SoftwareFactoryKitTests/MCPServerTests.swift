@@ -77,6 +77,14 @@ import Testing
         let answer = call(s, "escalation_await", ["escalation_id": escID, "timeout_seconds": 1])
         #expect(answer.text == "Decided by alex: Open-Meteo")
 
+        // A note rides with the choice; an answer in the person's own words comes as such.
+        try decided.decide(decided.options[1], note: "cache it for an hour", by: "alex")
+        try s.store.save(decided)
+        #expect(call(s, "escalation_await", ["escalation_id": escID, "timeout_seconds": 1]).text == "Decided by alex: Open-Meteo\nNote from alex: cache it for an hour")
+        try decided.answer("Neither. Use the phone's own sensor.", by: "alex, phone")
+        try s.store.save(decided)
+        #expect(call(s, "escalation_await", ["escalation_id": escID, "timeout_seconds": 1]).text == "Answered by alex, phone in their own words, none of the options: Neither. Use the phone's own sensor.")
+
         let bye = call(s, "agent_deregister", ["agent_id": agentID])
         #expect(!bye.isError)
         #expect(try s.store.load().agents[0].deregistered != nil)

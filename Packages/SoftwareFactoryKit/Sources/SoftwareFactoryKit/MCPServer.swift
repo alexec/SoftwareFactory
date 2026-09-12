@@ -194,7 +194,7 @@ public struct MCPServer: Sendable {
                                           "required": ["title"]]],
                               "recommended": ["type": "integer", "description": "Index into options of your recommendation, from 0"]],
                  required: ["project", "question", "options"]),
-            Tool(name: "escalation_await", description: "Wait for the person's decision. Returns the chosen option, or 'still open' after timeout_seconds so you can call again.",
+            Tool(name: "escalation_await", description: "Wait for the person's decision. Returns the chosen option, with any note they added for you, or their answer in their own words when none of the options fit; or 'still open' after timeout_seconds so you can call again.",
                  properties: ["escalation_id": str("From escalation_raise"),
                               "timeout_seconds": ["type": "integer", "description": "How long to wait, default 600"]],
                  required: ["escalation_id"]),
@@ -369,7 +369,7 @@ public struct MCPServer: Sendable {
             if let agent = task.agentID.flatMap({ id in snap.agents.first { $0.id == id } }) { lines.append("agent: \(agent.name)") }
             for (n, b) in task.blockers.enumerated() { lines.append("blocker \(n + 1): \(b.kind.rawValue)\(b.id.map { " \($0.uuidString)" } ?? ""): \(b.why)") }
             for e in snap.escalations where e.taskID == task.id {
-                let answer = e.chosen.map { "→ \($0.title), by \(e.decision?.by ?? "someone")" } ?? "open"
+                let answer = e.answer.map { "→ \($0), by \(e.decision?.by ?? "someone")" } ?? "open"
                 lines.append("question \(e.id.uuidString): \(e.question) \(answer)")
             }
             return lines.joined(separator: "\n")
@@ -429,9 +429,13 @@ public struct MCPServer: Sendable {
             let deadline = now().addingTimeInterval(timeout)
             while true {
                 guard let e = store.escalation(id) else { throw ToolError(message: "No escalation \(id.uuidString)") }
-                if let chosen = e.chosen, let d = e.decision {
-                    let detail = chosen.detail.isEmpty ? "" : " (\(chosen.detail))"
-                    return "Decided by \(d.by): \(chosen.title)\(detail)"
+                if let d = e.decision {
+                    if let chosen = e.chosen {
+                        let detail = chosen.detail.isEmpty ? "" : " (\(chosen.detail))"
+                        let note = d.note.isEmpty ? "" : "\nNote from \(d.by): \(d.note)"
+                        return "Decided by \(d.by): \(chosen.title)\(detail)\(note)"
+                    }
+                    return "Answered by \(d.by) in their own words, none of the options: \(d.note)"
                 }
                 if now() >= deadline { return "Still open. Call escalation_await again." }
                 Thread.sleep(forTimeInterval: pollInterval)

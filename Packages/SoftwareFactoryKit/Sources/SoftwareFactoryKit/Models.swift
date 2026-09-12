@@ -234,8 +234,8 @@ public enum Sweep {
             for (index, b) in task.blockers.enumerated() {
                 switch b.kind {
                 case .decision:
-                    if let id = b.id, let e = snapshot.escalations.first(where: { $0.id == id }), let chosen = e.chosen {
-                        cleared.append("decided \(e.question) → \(chosen.title), by \(e.decision?.by ?? "someone")")
+                    if let id = b.id, let e = snapshot.escalations.first(where: { $0.id == id }), let answer = e.answer {
+                        cleared.append("decided \(e.question) → \(answer), by \(e.decision?.by ?? "someone")")
                         // A wait on a person written before this question was the same
                         // gate: the answer clears it too. Rows blocked before task_block
                         // learnt to replace it still carry both.
@@ -299,15 +299,29 @@ public struct Escalation: Codable, Identifiable, Hashable, Sendable {
         }
     }
 
+    /// The person's answer: one of the options, with a note for the agent if they
+    /// added one, or their own words instead of any option. (Alex, 12 Sep 2026.)
     public struct Decision: Codable, Hashable, Sendable {
-        public var optionID: UUID
+        /// Nil when the answer is in the person's own words.
+        public var optionID: UUID?
+        /// A note to go with the option, or the whole answer when there is no option.
+        public var note: String
         public var by: String
         public var at: Date
 
-        public init(optionID: UUID, by: String, at: Date) {
+        public init(optionID: UUID?, note: String = "", by: String, at: Date) {
             self.optionID = optionID
+            self.note = note
             self.by = by
             self.at = at
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            optionID = try c.decodeIfPresent(UUID.self, forKey: .optionID)
+            note = try c.decodeIfPresent(String.self, forKey: .note) ?? ""
+            by = try c.decode(String.self, forKey: .by)
+            at = try c.decode(Date.self, forKey: .at)
         }
     }
 
@@ -344,14 +358,35 @@ public struct Escalation: Codable, Identifiable, Hashable, Sendable {
     public var recommended: Option? { options.first { $0.recommended } }
 
     public var chosen: Option? {
-        guard let decision else { return nil }
-        return options.first { $0.id == decision.optionID }
+        guard let decision, let id = decision.optionID else { return nil }
+        return options.first { $0.id == id }
     }
 
-    /// Records the choice. Choosing again replaces the earlier choice.
-    public mutating func decide(_ option: Option, by: String = "alex", at date: Date = .now) throws(EscalationError) {
+    /// True when the person answered in their own words rather than with an option.
+    public var answeredInOwnWords: Bool { decision != nil && decision?.optionID == nil }
+
+    /// The answer as one line for the agent: the option's title, with the note after
+    /// it, or the person's own words.
+    public var answer: String? {
+        guard let decision else { return nil }
+        if let chosen {
+            return decision.note.isEmpty ? chosen.title : "\(chosen.title). \(decision.note)"
+        }
+        return decision.note
+    }
+
+    /// Records the choice, with a note for the agent if there is one. Choosing again
+    /// replaces the earlier choice.
+    public mutating func decide(_ option: Option, note: String = "", by: String = "alex", at date: Date = .now) throws(EscalationError) {
         guard options.contains(where: { $0.id == option.id }) else { throw .unknownOption }
-        decision = Decision(optionID: option.id, by: by, at: date)
+        decision = Decision(optionID: option.id, note: note.trimmingCharacters(in: .whitespacesAndNewlines), by: by, at: date)
+    }
+
+    /// Records an answer in the person's own words, none of the options.
+    public mutating func answer(_ text: String, by: String = "alex", at date: Date = .now) throws(EscalationError) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { throw .emptyAnswer }
+        decision = Decision(optionID: nil, note: text, by: by, at: date)
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -372,6 +407,7 @@ public struct Escalation: Codable, Identifiable, Hashable, Sendable {
 
 public enum EscalationError: Error, Equatable, Sendable {
     case unknownOption
+    case emptyAnswer
 }
 
 /// Something only so many agents can use at once: a phone, a browser, the Mac itself,

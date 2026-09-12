@@ -252,10 +252,19 @@ final class AppModel {
         return snapshot.agents.first { $0.id == id }?.name
     }
 
-    /// Records the choice. The agent waiting on `escalation_await` sees it within a second.
-    func decide(_ escalation: Escalation, _ option: Escalation.Option, by: String = "alex") {
+    /// Records the choice, with a note for the agent if there is one. The agent waiting
+    /// on `escalation_await` sees it within a second.
+    func decide(_ escalation: Escalation, _ option: Escalation.Option, note: String = "", by: String = "alex") {
         var e = escalation
-        guard (try? e.decide(option, by: by)) != nil else { return }
+        guard (try? e.decide(option, note: note, by: by)) != nil else { return }
+        persist { try $0.save(e) }
+        notifier.withdraw(e.id)
+    }
+
+    /// The answer in the person's own words, none of the options.
+    func answer(_ escalation: Escalation, _ words: String, by: String = "alex") {
+        var e = escalation
+        guard (try? e.answer(words, by: by)) != nil else { return }
         persist { try $0.save(e) }
         notifier.withdraw(e.id)
     }

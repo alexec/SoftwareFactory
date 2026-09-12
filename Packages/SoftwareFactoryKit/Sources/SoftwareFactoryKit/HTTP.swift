@@ -174,20 +174,29 @@ public struct HTTPRouter: Sendable {
         return .json(response)
     }
 
+    /// An option with an optional note, or `answer` alone for the person's own words.
     struct DecideBody: Decodable {
         var escalationID: UUID
-        var optionID: UUID
+        var optionID: UUID?
+        var note: String?
+        var answer: String?
         var by: String?
     }
 
     func decide(_ body: Data) -> HTTPResponse {
         guard let d = try? FileStore.decoder.decode(DecideBody.self, from: body) else {
-            return .text("Body: {escalationID, optionID, by?}", status: 400)
+            return .text("Body: {escalationID, optionID?, note?, answer?, by?}", status: 400)
         }
         guard var e = store.escalation(d.escalationID) else { return .text("No such escalation", status: 404) }
-        guard let option = e.options.first(where: { $0.id == d.optionID }) else { return .text("No such option", status: 404) }
         do {
-            try e.decide(option, by: d.by ?? "phone", at: server.now())
+            if let optionID = d.optionID {
+                guard let option = e.options.first(where: { $0.id == optionID }) else { return .text("No such option", status: 404) }
+                try e.decide(option, note: d.note ?? "", by: d.by ?? "phone", at: server.now())
+            } else if let answer = d.answer, !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                try e.answer(answer, by: d.by ?? "phone", at: server.now())
+            } else {
+                return .text("Body: {escalationID, optionID?, note?, answer?, by?}", status: 400)
+            }
             try store.save(e)
         } catch { return .text("\(error)", status: 500) }
         return .encoded(e)
