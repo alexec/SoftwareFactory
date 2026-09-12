@@ -279,7 +279,7 @@ public struct MCPServer: Sendable {
             let project = try resolveProject(try string("project", args), in: snap, create: false)
             if project.onHold { return "\(project.name) is on hold: stop working on it for the moment. Nothing is handed out from its backlog until the person takes it off hold; task updates and registration still work." }
             guard let t = Backlog.next(for: project.id, in: snap.tasks) else { return "Nothing waiting." }
-            return Self.line(t)
+            return Self.line(t) + Self.noteBlock(t)
 
         case "task_add":
             let project = try resolveProject(try string("project", args), in: snap, create: true)
@@ -311,7 +311,7 @@ public struct MCPServer: Sendable {
             agent.note = task.title
             agent.lastSeen = now()
             try store.save(agent)
-            return "You are on: \(task.title)"
+            return "You are on: \(task.title)" + Self.noteBlock(task)
 
         case "task_status":
             var task = try task(args, in: snap)
@@ -532,6 +532,12 @@ public struct MCPServer: Sendable {
     }
 
     // MARK: Helpers
+
+    /// The whole note, for the agent that is about to act on the task. (Alex, 12 Sep 2026:
+    /// add the note to the agent's message.)
+    static func noteBlock(_ t: FactoryTask) -> String {
+        t.note.isEmpty ? "" : "\nnote: \(t.note)"
+    }
 
     static func line(_ t: FactoryTask) -> String {
         let blocked = t.blockers.isEmpty ? "" : "  [blocked on " + t.blockers.map { "\($0.kind.rawValue): \($0.why)" }.joined(separator: "; ") + "]"

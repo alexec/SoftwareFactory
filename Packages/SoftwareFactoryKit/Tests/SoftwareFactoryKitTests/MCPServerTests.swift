@@ -85,9 +85,10 @@ import Testing
     @Test func tasksRoundTrip() throws {
         let s = try server()
         let agentID = id(after: "", in: call(s, "agent_register", ["name": "a", "project": "/tmp/Where"]).text)
-        let t1 = id(after: "", in: call(s, "task_add", ["project": "Where", "title": "First", "kind": "bug"]).text)
+        let t1 = id(after: "", in: call(s, "task_add", ["project": "Where", "title": "First", "kind": "bug", "note": "the rooms run together\nsplit on pauses"]).text)
         let t2 = id(after: "", in: call(s, "task_add", ["project": "Where", "title": "Second"]).text)
         #expect(call(s, "task_next", ["project": "Where"]).text.contains("First"))
+        #expect(call(s, "task_next", ["project": "Where"]).text.hasSuffix("note: the rooms run together\nsplit on pauses"))
         let t0 = id(after: "", in: call(s, "task_add", ["project": "Where", "title": "Urgent", "position": "top"]).text)
         #expect(call(s, "task_next", ["project": "Where"]).text.contains("Urgent"))
         #expect(call(s, "task_remove", ["task_id": t0, "reason": "a test"]).text.hasPrefix("Removed: Urgent"))
@@ -102,13 +103,13 @@ import Testing
         #expect(call(s, "task_rank", ["task_id": t2, "above_task_id": t1]).text.contains("Second now sits above First"))
         #expect(call(s, "task_next", ["project": "Where"]).text.contains("Second"))
 
-        #expect(call(s, "task_claim", ["task_id": t1, "agent_id": agentID]).text == "You are on: First")
+        #expect(call(s, "task_claim", ["task_id": t1, "agent_id": agentID]).text == "You are on: First\nnote: the rooms run together\nsplit on pauses")
         let list = call(s, "task_list", ["project": "Where"]).text
         #expect(list.split(separator: "\n").first?.contains("inProgress  bug  First") == true)
 
         #expect(call(s, "task_status", ["task_id": t1, "state": "done", "note": "fixed by splitting on pauses"]).text == "First: done")
         let snap = try s.store.load()
-        #expect(snap.tasks.first { $0.title == "First" }?.note == "fixed by splitting on pauses")
+        #expect(snap.tasks.first { $0.title == "First" }?.note.hasSuffix("fixed by splitting on pauses") == true)
 
         #expect(call(s, "task_remove", ["task_id": t2]).text.hasPrefix("Removed: Second"))
         #expect(call(s, "task_next", ["project": "Where"]).text == "Nothing waiting.")
