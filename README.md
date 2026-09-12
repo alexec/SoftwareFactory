@@ -98,6 +98,9 @@ Notifications are next.
   Typed before clicking an option it rides along as a note; sent on its own with "Answer
   with this" it is the answer, none of the options. The agent gets it from
   `escalation_await` either way. On the phone too.
+- **Open and Nudge.** Each agent on the floor says what it runs on and links to its own
+  session, so you can open it and look under the hood. Nudge sends the word "nudge" to
+  the agent with its next reply from the factory.
 - **A word for the agent.** On a project's page, Mac or phone, type a note and send it. It
   waits on the project, and can be taken back, until an agent's next call about that
   project; then it goes out once at the end of that reply, "NOTE FROM ALEX: …", and is

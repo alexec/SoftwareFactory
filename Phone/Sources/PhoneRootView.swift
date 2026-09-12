@@ -142,6 +142,22 @@ struct PhoneRootView: View {
                                 Text(line).font(.subheadline).foregroundStyle(.secondary)
                             }
                         }
+                        Spacer()
+                        if let url = status.agent.url.flatMap(URL.init(string:)) {
+                            Link(destination: url) {
+                                Image(systemName: "arrow.up.forward.app").frame(width: 44, height: 44)
+                            }
+                            .accessibilityLabel("Open the agent's session")
+                        }
+                        if model.source == .factory {
+                            Button {
+                                _Concurrency.Task { await model.nudge(status.agent) }
+                            } label: {
+                                Image(systemName: status.agent.nudged == nil ? "hand.tap" : "hand.tap.fill").frame(width: 44, height: 44)
+                            }
+                            .disabled(status.agent.nudged != nil)
+                            .accessibilityLabel("Nudge")
+                        }
                     }
                     .padding(.vertical, 4)
                 }

@@ -50,7 +50,7 @@ import Testing
 
         // Any call the agent makes about its project carries the note, once.
         let status = call(s, "factory_status", ["agent_id": a]).text
-        #expect(status.hasSuffix("\nNOTE FROM ALEX: Use the new API, not the old one"))
+        #expect(status.contains("\nNOTE FROM ALEX: Use the new API, not the old one"))
         #expect(try s.store.load().projects.first?.notes.isEmpty == true)
         #expect(try s.store.load().projects.first?.sentNoteIDs.count == 1)
         #expect(!call(s, "factory_status", ["agent_id": a]).text.contains("NOTE FROM"))
@@ -73,6 +73,47 @@ import Testing
         cloud.notes = [.init(id: seen, text: "Use the new API, not the old one", by: "Alex"), .init(text: "From the phone", by: "alex, phone")]
         let adopted = Steering.notesToAdopt(local: try #require(try s.store.load().projects.first), cloud: cloud)
         #expect(adopted.notes.map(\.text) == ["From the phone"])
+    }
+
+    @Test func anAgentSaysWhatItRunsOnAndWhereItsSessionIsAndCanBeNudged() throws {
+        let s = try server()
+        _ = call(s, "project_add", ["name": "P"])
+        let a = id(after: "", in: call(s, "agent_register", ["name": "lead", "project": "P"]).text)
+        // Until it says provider and url, every reply asks.
+        let status = call(s, "factory_status", ["agent_id": a]).text
+        #expect(status.contains("Please register again with your provider and the link to your session"))
+        #expect(status.contains("agent_id \(a)"))
+        #expect(call(s, "agent_register", ["name": "lead", "agent_id": a, "provider": "other"]).isError)
+        let again = call(s, "agent_register", ["name": "lead", "agent_id": a, "provider": "claude-code", "url": "claude://code/continue?session=local_1"]).text
+        #expect(again == "Registered. agent_id: \(a)")
+        let agent = try #require(try s.store.load().agents.first)
+        #expect(agent.provider == "claude-code" && agent.url == "claude://code/continue?session=local_1")
+        #expect(try s.store.load().agents.count == 1)
+        #expect(!call(s, "factory_status", ["agent_id": a]).text.contains("Please register again"))
+
+        // A nudge goes out once.
+        var nudged = agent
+        nudged.nudged = .now
+        try s.store.save(nudged)
+        #expect(call(s, "factory_status", ["agent_id": a]).text.contains("NUDGE FROM ALEX: nudge."))
+        #expect(!call(s, "factory_status", ["agent_id": a]).text.contains("NUDGE"))
+    }
+
+    @Test func aNearMissProjectNameIsRefusedRatherThanMadeTwice() throws {
+        let s = try server()
+        _ = call(s, "project_add", ["name": "Sleeper Train"])
+        _ = call(s, "project_add", ["name": "Out of Mind"])
+        #expect(Projects.nearMiss("NightSleeper", in: try s.store.load().projects)?.name == "Sleeper Train")
+        #expect(Projects.nearMiss("sleeper-train", in: try s.store.load().projects) == nil)   // that one is exact
+        #expect(Projects.exact("sleeper-train", in: try s.store.load().projects)?.name == "Sleeper Train")
+        #expect(Projects.nearMiss("Walkist", in: try s.store.load().projects) == nil)
+        let refused = call(s, "agent_register", ["name": "lead", "project": "NightSleeper"])
+        #expect(refused.isError && refused.text.contains("there is Sleeper Train"))
+        #expect(call(s, "task_add", ["project": "Sleeper", "title": "x"]).isError)
+        #expect(call(s, "project_add", ["name": "Sleepers"]).isError)
+        #expect(!call(s, "project_add", ["name": "Sleepers", "force": true]).isError)
+        #expect(!call(s, "agent_register", ["name": "lead", "project": "Walkist"]).isError)
+        #expect(try s.store.load().projects.count == 4)
     }
 
     func call(_ s: MCPServer, _ tool: String, _ args: [String: Any] = [:], id: Int = 1) -> (text: String, isError: Bool) {
@@ -179,10 +220,10 @@ import Testing
         #expect(call(s, "task_rank", ["task_id": t2, "above_task_id": t1]).text.contains("Second now sits above First"))
         #expect(call(s, "task_next", ["project": "Where"]).text.contains("Second"))
 
-        #expect(call(s, "task_claim", ["task_id": t1, "agent_id": agentID]).text == "You are on: First\nnote: the rooms run together\nsplit on pauses")
+        #expect(call(s, "task_claim", ["task_id": t1, "agent_id": agentID]).text.hasPrefix("You are on: First\nnote: the rooms run together\nsplit on pauses"))
         let list = call(s, "task_list", ["project": "Where"]).text
         #expect(list.split(separator: "\n").first?.contains("inProgress  bug  First") == true)
-        #expect(call(s, "task_note", ["task_id": t1, "text": "the tap runs off the main actor", "agent_id": agentID]).text == "Noted on First.")
+        #expect(call(s, "task_note", ["task_id": t1, "text": "the tap runs off the main actor", "agent_id": agentID]).text.hasPrefix("Noted on First."))
         let shownNote = call(s, "task_show", ["task_id": t1]).text
         #expect(shownNote.contains(": the tap runs off the main actor") && shownNote.contains("inProgress"))
 
@@ -209,7 +250,7 @@ import Testing
 
         #expect(call(s, "resource_renew", ["agent_id": a, "resource": "iPhone", "minutes": 10]).text.hasPrefix("iPhone is yours until"))
         #expect(call(s, "resource_renew", ["agent_id": b, "resource": "iPhone"]).isError)
-        #expect(call(s, "resource_release", ["agent_id": a, "resource": "iPhone"]).text == "Released iPhone.")
+        #expect(call(s, "resource_release", ["agent_id": a, "resource": "iPhone"]).text.hasPrefix("Released iPhone."))
         #expect(call(s, "resource_lease", ["agent_id": b, "resource": "iPhone"]).text.hasPrefix("Leased iPhone"))
 
         #expect(call(s, "agent_deregister", ["agent_id": b]).text.contains("released 1 lease"))

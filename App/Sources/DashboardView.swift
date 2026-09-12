@@ -184,6 +184,7 @@ struct EmptyLine: View {
 }
 
 struct AgentRow: View {
+    @Environment(AppModel.self) private var model
     var status: Dashboard.AgentStatus
 
     var body: some View {
@@ -204,6 +205,11 @@ struct AgentRow: View {
                     Text(status.waitingOnYou ? "waiting on you" : (status.isWorking ? "working" : "quiet"))
                         .font(.caption.weight(.medium))
                         .foregroundStyle(status.waitingOnYou ? .orange : .secondary)
+                    if let provider = status.agent.provider {
+                        Text(provider)
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
                 if let line = status.task?.title ?? (status.agent.note.isEmpty ? nil : status.agent.note) {
                     Text(line)
@@ -213,6 +219,18 @@ struct AgentRow: View {
                 }
             }
             Spacer()
+            // Pop the hood: the agent's own session. And a nudge, which it hears on its
+            // next call to the factory. (Alex, 12 Sep 2026.)
+            if let url = status.agent.url.flatMap(URL.init(string:)) {
+                Link("Open", destination: url)
+                    .font(.callout)
+                    .help("Open the agent's session")
+            }
+            Button(status.agent.nudged == nil ? "Nudge" : "Nudged") { model.nudge(status.agent) }
+                .buttonStyle(.borderless)
+                .font(.callout)
+                .disabled(status.agent.nudged != nil)
+                .help("The agent hears \"nudge\" with its next reply from the factory")
             Text(status.agent.lastSeen, format: .relative(presentation: .named))
                 .font(.callout)
                 .foregroundStyle(.tertiary)

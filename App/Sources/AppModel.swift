@@ -157,6 +157,13 @@ final class AppModel {
 
     // MARK: Steering
 
+    /// A nudge: the agent hears "nudge" with its next reply from the factory.
+    func nudge(_ agent: Agent) {
+        var a = agent
+        a.nudged = .now
+        persist { try $0.save(a) }
+    }
+
     /// A word for whoever works on the project next; it goes out on their next call.
     func note(_ text: String, on project: Project) {
         let noted = Steering.note(text, on: project, by: "Alex")

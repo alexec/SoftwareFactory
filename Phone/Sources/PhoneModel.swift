@@ -222,6 +222,19 @@ final class PhoneModel {
 
     /// A word for the agent on a project. Through the factory when near it; through
     /// iCloud otherwise, where the Mac picks it up within its next pull.
+    /// A nudge, near the Mac only for now: the agent hears "nudge" on its next call.
+    func nudge(_ agent: Agent) async {
+        guard source == .factory, let client else { return }
+        let body = (try? JSONSerialization.data(withJSONObject: ["agentID": agent.id.uuidString])) ?? Data()
+        do {
+            let response = try await client.send(HTTPRequest(method: "POST", path: "/api/nudge", headers: ["Content-Type": "application/json"], body: body))
+            guard response.status == 200 else { throw FactoryClient.ClientError.failed("The factory answered \(response.status).") }
+            await poll()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     func note(_ text: String, on project: Project) async {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }

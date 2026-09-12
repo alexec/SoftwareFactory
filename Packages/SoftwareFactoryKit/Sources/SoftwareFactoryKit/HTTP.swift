@@ -149,6 +149,8 @@ public struct HTTPRouter: Sendable {
             return task(request.body)
         case ("POST", "/api/note"):
             return note(request.body)
+        case ("POST", "/api/nudge"):
+            return nudge(request.body)
         case ("GET", "/"):
             return .text("Software Factory. MCP at /mcp; the apps use /api.", status: 200)
         default:
@@ -174,6 +176,23 @@ public struct HTTPRouter: Sendable {
         }
         guard let response = server.handle(one) else { return HTTPResponse(status: 202) }
         return .json(response)
+    }
+
+    struct NudgeBody: Decodable {
+        var agentID: UUID
+    }
+
+    /// The person nudges an agent: it hears "nudge" on its next call.
+    func nudge(_ body: Data) -> HTTPResponse {
+        guard let n = try? FileStore.decoder.decode(NudgeBody.self, from: body) else {
+            return .text("Body: {agentID}", status: 400)
+        }
+        do {
+            guard var agent = try store.load().agents.first(where: { $0.id == n.agentID }) else { return .text("No such agent", status: 404) }
+            agent.nudged = server.now()
+            try store.save(agent)
+            return .encoded(agent)
+        } catch { return .text("\(error)", status: 500) }
     }
 
     struct NoteBody: Decodable {

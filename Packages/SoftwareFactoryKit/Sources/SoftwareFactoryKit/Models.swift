@@ -215,6 +215,19 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
     public var registered: Date
     public var lastSeen: Date
     public var deregistered: Date?
+    /// What the agent runs on. Only "claude-code" today. (Alex, 12 Sep 2026.)
+    public var provider: String?
+    /// A link to the agent's own session, so the person can open it and look under
+    /// the hood: a claude:// link for Claude Code.
+    public var url: String?
+    /// Set when the person nudged the agent; handed over on its next call and cleared.
+    public var nudged: Date?
+
+    public static let providers = ["claude-code"]
+
+    public var hasIntroducedItself: Bool {
+        !(provider ?? "").isEmpty && !(url ?? "").isEmpty
+    }
 
     public init(id: UUID = UUID(), name: String, projectID: String?, registered: Date = .now) {
         self.id = id
@@ -253,6 +266,9 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
         registered = try c.decode(Date.self, forKey: .registered)
         lastSeen = try c.decode(Date.self, forKey: .lastSeen)
         deregistered = try c.decodeIfPresent(Date.self, forKey: .deregistered)
+        provider = try c.decodeIfPresent(String.self, forKey: .provider)
+        url = try c.decodeIfPresent(String.self, forKey: .url)
+        nudged = try c.decodeIfPresent(Date.self, forKey: .nudged)
     }
 
 }

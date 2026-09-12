@@ -50,6 +50,14 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     slot frees), renew, release, heldBy, stale.
   - `CloudRecords`: each record as one CloudKit record (`json`, `updated`); diff for
     pushes; `decisionsToAdopt` for decisions made on another device.
+  - `Projects`: `exact` (letters and digits only, case folded) and `nearMiss` (one name
+    contains the other, a couple of characters apart, or a shared word of five letters:
+    "NightSleeper" is a slip for "Sleeper Train"). `resolveProject` refuses a near miss
+    unless `project_add` is called with `force`.
+  - `Agent.provider` ("claude-code" only), `Agent.url` (a claude://code/continue link to
+    its session; the Floor's Open), `Agent.nudged` (set by Nudge on the Floor or `POST
+    /api/nudge`; handed over once by `steering(after:)`, which also asks an agent that
+    has not given provider and url to register again with its `agent_id`, in place).
   - `Steering`: notes from the person on a project (`Project.notes`); `handOver` gives
     the text to append to a reply and clears them, remembering ids in `sentNoteIDs`;
     `notesToAdopt` merges a copy from iCloud. `MCPServer.steering(after:)` runs after

@@ -134,17 +134,20 @@ public struct MCPServer: Sendable {
         }
 
         public static var all: [Tool] { [
-            Tool(name: "agent_register", description: "Register with the factory. Returns your agent_id; pass it to every other call. Every call you make counts as a sign of life; there is no separate check-in.",
+            Tool(name: "agent_register", description: "Register with the factory. Returns your agent_id; pass it to every other call. Every call you make counts as a sign of life; there is no separate check-in. Say what you run on (provider) and give the link to your own session (url), so the person can open it. To add those later, call again with your agent_id and the registration is updated in place.",
                  properties: ["name": str("Your name, e.g. packed-lead or agent-3"),
-                              "project": str("The project you work on, by name. A new name makes a new project")],
+                              "project": str("The project you work on, by name. A name close to an existing project's is refused; a genuinely new name makes a new project"),
+                              "provider": ["type": "string", "enum": ["claude-code"], "description": "What you run on"],
+                              "url": str("A link that opens your session, e.g. claude://code/continue?session=<your session id>"),
+                              "agent_id": str("Your existing agent_id, to update that registration instead of making a new one")],
                  required: ["name"]),
             Tool(name: "agent_deregister", description: "You are finished. Call this as your last action.",
                  properties: ["agent_id": str("From agent_register")], required: ["agent_id"]),
 
             Tool(name: "project_list", description: "Every project, with what is in progress and who is on it.",
                  properties: [:], required: []),
-            Tool(name: "project_add", description: "Add a project by name: an app, a cross-cutting role such as research, a piece of tooling. A project is a name, not a folder. Returns the project if the name is already taken.",
-                 properties: ["name": str("The project's name")],
+            Tool(name: "project_add", description: "Add a project by name: an app, a cross-cutting role such as research, a piece of tooling. A project is a name, not a folder. Returns the project if the name is already taken. A name close to an existing one is refused unless force is set.",
+                 properties: ["name": str("The project's name"), "force": ["type": "boolean", "description": "Make it even though the name is close to another project's"]],
                  required: ["name"]),
             Tool(name: "project_remove", description: "Take a project out of the factory: a wrong name, a project that is over. Refused while it has tasks in the backlog, in progress or blocked; move or remove those first. Nothing is deleted: the record stays on disk, out of every list, and its done and parked tasks go with it.",
                  properties: ["project": str("Project name"), "reason": str("Why")],
@@ -245,7 +248,21 @@ public struct MCPServer: Sendable {
             let agentName = try string("name", args)
             var project: Project?
             if let ref = args["project"] as? String, !ref.isEmpty { project = try resolveProject(ref, in: snap, create: true) }
-            let agent = Agent(name: agentName, projectID: project?.id, registered: now())
+            var agent: Agent
+            if let existing = (args["agent_id"] as? String).flatMap(UUID.init(uuidString:)).flatMap({ id in snap.agents.first { $0.id == id } }) {
+                agent = existing
+                agent.name = agentName
+                agent.deregistered = nil
+                agent.lastSeen = now()
+                if project != nil { agent.projectID = project?.id }
+            } else {
+                agent = Agent(name: agentName, projectID: project?.id, registered: now())
+            }
+            if let provider = args["provider"] as? String, !provider.isEmpty {
+                guard Agent.providers.contains(provider) else { throw ToolError(message: "provider must be one of: \(Agent.providers.joined(separator: ", "))") }
+                agent.provider = provider
+            }
+            if let url = args["url"] as? String, !url.isEmpty { agent.url = url }
             try store.save(agent)
             return "Registered. agent_id: \(agent.id.uuidString)" + Self.holdWarning(project)
 
@@ -273,7 +290,7 @@ public struct MCPServer: Sendable {
         case "project_add":
             let ref = (args["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? (args["path"] as? String) ?? ""
             guard !ref.isEmpty else { throw ToolError(message: "name is required") }
-            let project = try resolveProject(ref, in: snap, create: true)
+            let project = try resolveProject(ref, in: snap, create: true, force: args["force"] as? Bool ?? false)
             return "\(project.name)  \(project.id)"
 
         case "project_remove":
@@ -628,13 +645,17 @@ public struct MCPServer: Sendable {
     /// folder path: that means the folder's name, and matches a project registered under
     /// that path before names stood alone. An unknown name becomes a project when
     /// `create` is set, so an agent can file against its project without a step first.
-    func resolveProject(_ ref: String, in snap: Snapshot, create: Bool) throws -> Project {
+    func resolveProject(_ ref: String, in snap: Snapshot, create: Bool, force: Bool = false) throws -> Project {
         let ref = ref.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = ref.hasPrefix("/") ? Project.name(fromPath: ref) : ref
         if let p = snap.projects.first(where: { $0.id == ref }) { return p }
-        if let p = snap.projects.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) { return p }
+        if let p = Projects.exact(name, in: snap.projects) { return p }
         guard create, !name.isEmpty else {
             throw ToolError(message: "No project called \(name). Known: \(snap.projects.map(\.name).joined(separator: ", "))")
+        }
+        // A near miss is a slip, not a new project. (Director, 12 Sep 2026.)
+        if !force, let near = Projects.nearMiss(name, in: snap.projects) {
+            throw ToolError(message: "No project called \(name), but there is \(near.name): use that name. If \(name) really is a different project, project_add it with force.")
         }
         let p = Project(name: name, added: now())
         try store.save(p)
@@ -657,9 +678,25 @@ public struct MCPServer: Sendable {
         if project == nil, ["task_next", "task_list"].contains(name), let ref = args["project"] as? String {
             project = try? resolveProject(ref, in: snap, create: false)
         }
-        guard let project, let handed = Steering.handOver(project) else { return "" }
-        try? store.save(handed.project)
-        return handed.text
+        var out = ""
+        if let project, let handed = Steering.handOver(project) {
+            try? store.save(handed.project)
+            out += handed.text
+        }
+        // A nudge from the person goes out once; an agent that never said what it runs
+        // on or where its session is gets asked, every time, until it does.
+        if let id = (args["agent_id"] as? String).flatMap(UUID.init(uuidString:)),
+           var agent = snap.agents.first(where: { $0.id == id }) {
+            if agent.nudged != nil {
+                out += "\nNUDGE FROM ALEX: nudge. He wants your attention now: read the floor, your task and its note, and answer anything open."
+                agent.nudged = nil
+                try? store.save(agent)
+            }
+            if !agent.hasIntroducedItself {
+                out += "\nPlease register again with your provider and the link to your session: agent_register with name, agent_id \(agent.id.uuidString), provider claude-code, and url claude://code/continue?session=<your session id>. Then the person can open your session."
+            }
+        }
+        return out
     }
 
     static func holdWarning(_ project: Project?) -> String {
