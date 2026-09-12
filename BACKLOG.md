@@ -1,36 +1,9 @@
 # Backlog
 
-What's planned, and what will never be built. The first version is the narrowest slice:
-agents register and ask over MCP, the floor shows it, a click answers. Everything below
-arrives on its own, roughly in this order.
-
-1. **Resources.** Each with a number of slots and a longest lease. `resource_list`,
-   `resource_lease` (time-bound; returns a lease or a queue position), `resource_renew`,
-   `resource_release`. An expired lease is taken back. A Resources tab.
-2. **The factory's capacity.** Memory, swap, CPU, compiles running. `factory_status`,
-   `factory_ask` ("can I start a compiler?": yes, wait, or no, and why), the throttle
-   (compile slots, simulators at once, the swap ceiling), set only in the app. A Factory
-   tab.
-3. **Notifications at the Mac.** A macOS notification per question, the options as its
-   actions, primed first. Presence is "screen unlocked and input in the last two minutes".
-4. **iPhone.** The store synced through the person's iCloud (CloudKit, private database).
-   CloudKit pushes a question to the phone when the Mac decides you are not at it, or 90 s
-   after an unanswered Mac notification; the options are the notification's actions. The
-   first version is the questions list and its notifications.
-5. **Dictate a task.** A mic on the add field; words appear as they are recognised
-   (`SFSpeechRecognizer` for feel, `SpeechTranscriber` for the words, the house way).
-6. **Gone agents.** Three missed check-ins and an agent is marked gone without
-   deregistering; its leases expire.
-7. **Agent log.** `agent_checkin` notes kept as a log per agent and per task, shown on the
-   project view.
-8. **Decided questions age out.** The project view shows the last few; the rest are kept.
-9. **Icon.** `Tools/make-icon.swift` drawing it with Core Graphics, a full macOS icon set.
-10. **Store schema version.** A `version` field on every record and a reader that copes
-    with older shapes, before the iPhone makes two writers of different ages.
-11. **Register the server from the app.** A button that writes the Claude Code entry
-    itself, if a supported way appears; today it is a command to copy.
-12. **Raise a bug or a feature from the floor.** A field that files against the right
-    project. Alex asked for this to wait.
+**The backlog lives in the factory itself** since 12 September 2026: open the Mac app and
+click Software Factory in the sidebar, or ask the server with `task_list`. Agents file,
+claim, rank and finish tasks there; so does this file's former list. What stays here is
+the thinking that does not fit a task row.
 
 ## Won't build
 
@@ -43,6 +16,20 @@ arrives on its own, roughly in this order.
   and never auto-applied after a timeout.
 - **A dot in a tool name.** MCP clients disagree on what a name may contain; underscores
   work everywhere.
+- **The server as a separate process.** It ran as an embedded executable for an hour on
+  12 September and moved into the app on a port the same day: one address every client
+  shares, and the factory is open exactly while the app is.
+- **A kind picker on task rows.** Alex, 12 September 2026: not needed in the MVP, and
+  the icon beside it went with it. Tasks still carry a kind for agents to set.
+
+## Decisions worth keeping
+
+- **The phone talks to the factory over the local network first**, through Bonjour and
+  the same port, speaking the package's own HTTP over a Network connection rather than a
+  URL (a link-local IPv6 address with a scope defeats URLSession). CloudKit is the way
+  off the Wi‑Fi and is on the backlog in Alex's words.
+- **`Task` is called `FactoryTask` in Swift** because `Task` is Swift's. It is a task
+  everywhere a person reads it.
 
 ## Minor review findings
 

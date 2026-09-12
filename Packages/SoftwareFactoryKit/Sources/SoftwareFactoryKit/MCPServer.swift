@@ -11,7 +11,7 @@ public struct MCPServer: Sendable {
     /// How `escalation_await` sleeps between looks at the store.
     public var pollInterval: TimeInterval
 
-    public static let name = "foreman"
+    public static let name = "software-factory"
     public static let version = "0.1.0"
     public static let protocolVersion = "2025-06-18"
 
@@ -25,7 +25,7 @@ public struct MCPServer: Sendable {
 
     /// Reads one JSON-RPC message per line from stdin until it closes.
     public func serve() {
-        FileHandle.standardError.write(Data("foreman mcp: store \(store.root.path)\n".utf8))
+        FileHandle.standardError.write(Data("software-factory mcp: store \(store.root.path)\n".utf8))
         while let line = readLine(strippingNewline: true) {
             guard !line.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
             guard let data = line.data(using: .utf8),

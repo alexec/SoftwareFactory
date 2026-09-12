@@ -1,5 +1,5 @@
 import SwiftUI
-import ForemanKit
+import SoftwareFactoryKit
 
 enum Destination: Hashable {
     case floor

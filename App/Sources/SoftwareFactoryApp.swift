@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct ForemanApp: App {
+struct SoftwareFactoryApp: App {
     @State private var model = AppModel()
 
     var body: some Scene {

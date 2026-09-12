@@ -1,6 +1,6 @@
 import AppKit
 import SwiftUI
-import ForemanKit
+import SoftwareFactoryKit
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
@@ -14,7 +14,8 @@ struct SettingsView: View {
             }
 
             Section("Agents") {
-                Text("Agents reach the factory through its MCP server, which ships inside this app. Register it with Claude Code once:")
+                LabeledContent("Factory", value: model.serverState)
+                Text("Agents reach the factory over MCP on this port while the app is running. Register it with Claude Code once:")
                     .foregroundStyle(.secondary)
                 HStack(alignment: .top) {
                     Text(AppModel.registerCommand)
@@ -32,7 +33,7 @@ struct SettingsView: View {
             Section("Store") {
                 if let store = model.store {
                     LabeledContent("Folder", value: store.root.path)
-                    Text("The server writes here too. Every project, task, agent and question is one JSON file.")
+                    Text("Every project, task, agent and question is one JSON file.")
                         .foregroundStyle(.secondary)
                 } else if let error = model.storeError {
                     Text(error).foregroundStyle(.red)

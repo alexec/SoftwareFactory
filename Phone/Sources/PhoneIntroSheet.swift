@@ -1,9 +1,8 @@
 import SwiftUI
 
 /// Shown once on first launch, and again from "How it works" at the top of Settings.
-/// The words are Alex's. Three sections, one button.
-struct IntroSheet: View {
-    @Environment(AppModel.self) private var model
+struct PhoneIntroSheet: View {
+    @Environment(PhoneModel.self) private var model
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -13,41 +12,36 @@ struct IntroSheet: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Software Factory")
                             .font(.system(.largeTitle, design: .rounded).weight(.bold))
-                        Text("The floor of a factory where coding agents do the work and you make the calls.")
+                        Text("The factory in your pocket. Agents on your Mac ask; you answer from wherever you are.")
                     }
-
                     VStack(alignment: .leading, spacing: 8) {
                         Text("How you use it")
                             .font(.headline)
-                        step("Register the factory's MCP server with your agent, once. Settings has the command.")
-                        step("Agents check in, pick up tasks, and ask when they cannot decide.")
-                        step("Answer a question by clicking one of the options the agent offered. The agent carries on.")
-                        step("Keep each project's backlog in order: features, bugs and chores, top to bottom.")
+                        step("Open it on the same Wi‑Fi as the Mac running Software Factory. It finds the factory on its own.")
+                        step("Read what needs you.")
+                        step("Tap the option you choose. The agent carries on.")
                     }
-
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Why this one")
                             .font(.headline)
-                        Text("Agents ask; you decide. The factory does not care what an agent runs on, and nothing leaves this Mac. Private and free forever.")
+                        Text("One tap answers a question that would otherwise wait for you at the desk. Private and free forever.")
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(28)
+                .padding(24)
             }
-
             Button {
                 model.hasSeenIntro = true
                 dismiss()
             } label: {
-                Text("Open the floor").frame(maxWidth: .infinity)
+                Text("Open the floor").frame(maxWidth: .infinity, minHeight: 32)
             }
             .buttonStyle(.glassProminent)
             .controlSize(.large)
-            .keyboardShortcut(.defaultAction)
-            .padding(.horizontal, 28)
-            .padding(.bottom, 24)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 16)
         }
-        .frame(width: 440, height: 480)
+        .interactiveDismissDisabled()
     }
 
     private func step(_ text: String) -> some View {

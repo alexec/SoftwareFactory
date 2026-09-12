@@ -1,7 +1,7 @@
 import Foundation
 
 /// Everything in the store, read in one go.
-public struct Snapshot: Sendable, Equatable {
+public struct Snapshot: Codable, Sendable, Equatable {
     public var projects: [Project]
     public var tasks: [FactoryTask]
     public var escalations: [Escalation]
@@ -26,7 +26,7 @@ public struct Snapshot: Sendable, Equatable {
 ///     <root>/escalations/<uuid>.json
 ///     <root>/agents/<uuid>.json
 public struct FileStore: Sendable {
-    public static let appGroup = "6T4RVD5724.com.alexecollins.foreman"
+    public static let appGroup = "6T4RVD5724.com.alexecollins.softwarefactory"
 
     public let root: URL
 
@@ -40,9 +40,9 @@ public struct FileStore: Sendable {
 
     /// Where the store lives when nothing says otherwise: the app group container, which
     /// the sandboxed app and the unsandboxed server both resolve to the same folder.
-    /// `FOREMAN_STORE` in the environment overrides it.
+    /// `SOFTWARE_FACTORY_STORE` in the environment overrides it.
     public static func defaultRoot(home: URL? = nil) -> URL {
-        if let override = ProcessInfo.processInfo.environment["FOREMAN_STORE"], !override.isEmpty {
+        if let override = ProcessInfo.processInfo.environment["SOFTWARE_FACTORY_STORE"], !override.isEmpty {
             return URL(fileURLWithPath: override, isDirectory: true)
         }
         let home = home ?? realHomeDirectory()
@@ -54,10 +54,12 @@ public struct FileStore: Sendable {
 
     /// The user's home even from inside a sandbox, where `NSHomeDirectory` is the container.
     public static func realHomeDirectory() -> URL {
+        #if os(macOS)
         if let pw = getpwuid(getuid()), let dir = pw.pointee.pw_dir {
             return URL(fileURLWithPath: String(cString: dir), isDirectory: true)
         }
-        return FileManager.default.homeDirectoryForCurrentUser
+        #endif
+        return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
     }
 
     // MARK: Reading

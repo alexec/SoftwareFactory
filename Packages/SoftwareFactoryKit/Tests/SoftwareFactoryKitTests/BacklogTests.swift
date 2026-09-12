@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ForemanKit
+@testable import SoftwareFactoryKit
 
 @Suite struct BacklogTests {
     let p = "/p"

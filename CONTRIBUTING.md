@@ -19,14 +19,16 @@
 
 ## Where things go
 
-- **Rules in the package.** `Packages/ForemanKit` is Foundation only and holds every rule:
+- **Rules in the package.** `Packages/SoftwareFactoryKit` is Foundation only and holds every rule:
   the records, the store, the backlog order, the floor derivation, and the MCP server's
   tools. It is tested with `swift test`. If a view is deciding something, move the
   decision into the package and write the test.
 - **Plumbing in the app.** `App/Sources` is a thin SwiftUI shell: the model that refreshes,
   the views, the command that registers the server.
-- **The server** in `Packages/ForemanKit/Sources/foreman` is `foreman mcp`, built twice:
-  by SwiftPM for `swift test` and the shell, and by Xcode into the app bundle.
+- **The server** is the app: `FactoryServer` listens on the port and hands each request to
+  `HTTPRouter` in the package, which is where MCP and the phone's API are answered and tested.
+  `Packages/SoftwareFactoryKit/Sources/software-factory` is the same server over stdio, for scripts.
+- **The phone** in `Phone/Sources` is a client of the factory's API and shares the package.
 
 ## Style
 

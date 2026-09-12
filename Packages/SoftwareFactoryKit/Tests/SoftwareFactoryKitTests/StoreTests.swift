@@ -1,10 +1,10 @@
 import Foundation
 import Testing
-@testable import ForemanKit
+@testable import SoftwareFactoryKit
 
 func temporaryStore() throws -> FileStore {
     let root = FileManager.default.temporaryDirectory
-        .appending(path: "ForemanKitTests-\(UUID().uuidString)")
+        .appending(path: "SoftwareFactoryKitTests-\(UUID().uuidString)")
     return try FileStore(root: root)
 }
 
@@ -68,7 +68,7 @@ func wholeSecond() -> Date {
     @Test func storeRootHonoursTheEnvironment() {
         let home = URL(fileURLWithPath: "/Users/someone")
         let root = FileStore.defaultRoot(home: home)
-        if ProcessInfo.processInfo.environment["FOREMAN_STORE"] == nil {
+        if ProcessInfo.processInfo.environment["SOFTWARE_FACTORY_STORE"] == nil {
             #expect(root.path == "/Users/someone/Library/Group Containers/\(FileStore.appGroup)/Store")
         }
     }

@@ -1,14 +1,14 @@
-// foreman: the factory's MCP server, plus a few commands for a person at a shell.
+// software-factory: the factory's MCP server, plus a few commands for a person at a shell.
 //
-//   foreman mcp                       run the MCP server on stdio (what Claude Code launches)
-//   foreman status                    the floor, as text
-//   foreman tools                     the tool names and what they do
-//   foreman decide <escalation-id-prefix> <option-number>
+//   software-factory mcp                       run the MCP server on stdio (what Claude Code launches)
+//   software-factory status                    the floor, as text
+//   software-factory tools                     the tool names and what they do
+//   software-factory decide <escalation-id-prefix> <option-number>
 //
-// The store is $FOREMAN_STORE or the app group container; `foreman status` prints where.
+// The store is $SOFTWARE_FACTORY_STORE or the app group container; `software-factory status` prints where.
 
 import Foundation
-import ForemanKit
+import SoftwareFactoryKit
 
 func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data((message + "\n").utf8))
@@ -54,7 +54,7 @@ case "tools":
     for t in MCPServer.Tool.all { print("\(t.name.padding(toLength: 20, withPad: " ", startingAt: 0)) \(t.description)") }
 
 case "decide":
-    guard args.count >= 3, let n = Int(args[2]) else { fail("foreman decide <escalation-id-prefix> <option-number>") }
+    guard args.count >= 3, let n = Int(args[2]) else { fail("software-factory decide <escalation-id-prefix> <option-number>") }
     let snap = (try? store.load()) ?? Snapshot()
     let matches = snap.escalations.filter { $0.id.uuidString.lowercased().hasPrefix(args[1].lowercased()) }
     guard matches.count == 1, var e = matches.first else { fail("\(matches.count) escalations match \(args[1])") }
@@ -66,5 +66,5 @@ case "decide":
     print("\(e.question) → \(e.options[n - 1].title)")
 
 default:
-    fail("foreman mcp|status|tools|decide")
+    fail("software-factory mcp|status|tools|decide")
 }

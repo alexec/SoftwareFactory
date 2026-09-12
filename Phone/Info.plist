@@ -24,9 +24,22 @@
 	<false/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
-	<key>LSMinimumSystemVersion</key>
-	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_softwarefactory._tcp</string>
+	</array>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Alex Collins</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Software Factory looks for the factory running on your Mac, on the same network, so you can answer its questions from here.</string>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
 </dict>
 </plist>

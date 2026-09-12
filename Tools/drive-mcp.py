@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Drive the factory's MCP server the way a client does, over stdio.
 
-    python3 Tools/drive-mcp.py <path-to-foreman> [project-path]
+    python3 Tools/drive-mcp.py <path-to-software-factory> [project-path]
 
 Registers an agent, files a task, raises a question, then blocks on escalation_await
 until someone decides in the app (or two minutes pass). Prints each response.
@@ -9,7 +9,7 @@ until someone decides in the app (or two minutes pass). Prints each response.
 import json, subprocess, sys, time
 
 server = sys.argv[1]
-project = sys.argv[2] if len(sys.argv) > 2 else "/Users/alexcollins/Foreman"
+project = sys.argv[2] if len(sys.argv) > 2 else "/Users/alexcollins/SoftwareFactory"
 p = subprocess.Popen([server, "mcp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
 n = 0
 

@@ -1,8 +1,9 @@
-name: Foreman
+name: SoftwareFactory
 options:
   bundleIdPrefix: com.alexecollins
   deploymentTarget:
     macOS: "26.0"
+    iOS: "26.0"
   xcodeVersion: "26.0"
   createIntermediateGroups: true
   groupSortPosition: top
@@ -34,38 +35,33 @@ settings:
       SWIFT_OPTIMIZATION_LEVEL: -O
       VALIDATE_PRODUCT: YES
 packages:
-  ForemanKit:
-    path: Packages/ForemanKit
+  SoftwareFactoryKit:
+    path: Packages/SoftwareFactoryKit
 targets:
-  Foreman:
+  SoftwareFactory:
     type: application
     platform: macOS
     sources:
       - path: App/Sources
       - path: App/Resources
     dependencies:
-      - package: ForemanKit
-        product: ForemanKit
-      # The MCP server ships inside the app, at Contents/MacOS/foreman-mcp, so the register
-      # command in Settings points at something that moves with the app.
-      - target: ForemanServer
-        embed: true
-        codeSign: true
-        copy:
-          destination: executables
+      - package: SoftwareFactoryKit
+        product: SoftwareFactoryKit
     # Sandboxed from day one, because the sandbox decides where the shared store lives:
-    # the app group container, which the unsandboxed server reaches by plain path.
+    # the app group container.
     entitlements:
-      path: App/Foreman.entitlements
+      path: App/SoftwareFactory.entitlements
       properties:
         com.apple.security.app-sandbox: true
+        # The factory listens on a port: MCP for agents, a small API for the phone.
+        com.apple.security.network.server: true
         com.apple.security.application-groups:
-          - 6T4RVD5724.com.alexecollins.foreman
+          - 6T4RVD5724.com.alexecollins.softwarefactory
     info:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: Software Factory
-        CFBundleName: Foreman
+        CFBundleName: Software Factory
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         LSApplicationCategoryType: public.app-category.developer-tools
@@ -74,33 +70,60 @@ targets:
         NSHumanReadableCopyright: © 2026 Alex Collins
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.alexecollins.foreman
-        PRODUCT_NAME: Foreman
+        PRODUCT_BUNDLE_IDENTIFIER: com.alexecollins.softwarefactory
+        PRODUCT_NAME: Software Factory
         GENERATE_INFOPLIST_FILE: NO
         ENABLE_HARDENED_RUNTIME: YES
         COMBINE_HIDPI_IMAGES: YES
-  ForemanServer:
-    type: tool
-    platform: macOS
+  SoftwareFactoryPhone:
+    type: application
+    supportedDestinations: [iOS]
     sources:
-      - path: Packages/ForemanKit/Sources/foreman
+      - path: Phone/Sources
+      - path: Phone/Resources
     dependencies:
-      - package: ForemanKit
-        product: ForemanKit
+      - package: SoftwareFactoryKit
+        product: SoftwareFactoryKit
+    info:
+      path: Phone/Info.plist
+      properties:
+        CFBundleDisplayName: Software Factory
+        CFBundleName: Software Factory
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        LSApplicationCategoryType: public.app-category.developer-tools
+        ITSAppUsesNonExemptEncryption: false
+        NSHumanReadableCopyright: © 2026 Alex Collins
+        NSLocalNetworkUsageDescription: Software Factory looks for the factory running on your Mac, on the same network, so you can answer its questions from here.
+        NSBonjourServices: [_softwarefactory._tcp]
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
     settings:
       base:
-        PRODUCT_NAME: foreman-mcp
-        PRODUCT_BUNDLE_IDENTIFIER: com.alexecollins.foreman.server
-        ENABLE_HARDENED_RUNTIME: YES
-        SKIP_INSTALL: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.alexecollins.softwarefactory
+        PRODUCT_NAME: Software Factory
+        SDKROOT: iphoneos
+        SUPPORTED_PLATFORMS: iphoneos iphonesimulator
+        IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        GENERATE_INFOPLIST_FILE: NO
 schemes:
-  Foreman:
+  SoftwareFactoryPhone:
     build:
       targets:
-        Foreman: all
+        SoftwareFactoryPhone: all
+    run:
+      config: Debug
+  SoftwareFactory:
+    build:
+      targets:
+        SoftwareFactory: all
     run:
       config: Debug
     test:
       config: Debug
       targets:
-        - package: ForemanKit/ForemanKitTests
+        - package: SoftwareFactoryKit/SoftwareFactoryKitTests

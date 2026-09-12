@@ -1,5 +1,5 @@
 import SwiftUI
-import ForemanKit
+import SoftwareFactoryKit
 
 /// One project: who is on it and what they are on, its questions, and its backlog in order.
 struct ProjectView: View {
@@ -7,7 +7,6 @@ struct ProjectView: View {
     var project: Project
 
     @State private var newTitle = ""
-    @State private var newKind: FactoryTask.Kind = .feature
 
     private var tasks: [FactoryTask] { model.tasks(for: project.id) }
     private var escalations: [Escalation] { model.escalations(for: project.id) }
@@ -30,13 +29,6 @@ struct ProjectView: View {
 
             Section("Backlog") {
                 HStack(spacing: 8) {
-                    Picker("Kind", selection: $newKind) {
-                        ForEach(FactoryTask.Kind.allCases, id: \.self) { kind in
-                            Label(kind.word, systemImage: kind.symbol).tag(kind)
-                        }
-                    }
-                    .labelsHidden()
-                    .fixedSize()
                     TextField("Add a task", text: $newTitle)
                         .textFieldStyle(.plain)
                         .onSubmit(add)
@@ -93,7 +85,7 @@ struct ProjectView: View {
     }
 
     private func add() {
-        model.addTask(to: project.id, title: newTitle, kind: newKind)
+        model.addTask(to: project.id, title: newTitle, kind: .feature)
         newTitle = ""
     }
 }
@@ -104,10 +96,6 @@ struct TaskRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: task.kind.symbol)
-                .foregroundStyle(task.kind == .bug ? .red : .secondary)
-                .frame(width: 18)
-                .help(task.kind.word)
             Text(task.title)
                 .strikethrough(task.state == .done)
                 .foregroundStyle(task.state == .done ? .secondary : .primary)
@@ -125,10 +113,6 @@ struct TaskRow: View {
                         .disabled(state == task.state)
                 }
                 Divider()
-                Picker("Kind", selection: Binding(get: { task.kind }, set: { model.set(task, kind: $0) })) {
-                    ForEach(FactoryTask.Kind.allCases, id: \.self) { Text($0.word).tag($0) }
-                }
-                Divider()
                 Button("Delete", role: .destructive) { model.delete(task) }
             } label: {
                 Text(task.state.word)
@@ -140,24 +124,6 @@ struct TaskRow: View {
             .fixedSize()
         }
         .padding(.vertical, 2)
-    }
-}
-
-extension FactoryTask.Kind {
-    var word: String {
-        switch self {
-        case .feature: "Feature"
-        case .bug: "Bug"
-        case .chore: "Chore"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .feature: "sparkles"
-        case .bug: "ladybug"
-        case .chore: "wrench.and.screwdriver"
-        }
     }
 }
 

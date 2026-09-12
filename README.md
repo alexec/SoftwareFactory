@@ -1,6 +1,6 @@
 # Software Factory
 
-Working title; code name Foreman. A Mac app that is the floor of a software factory:
+A Mac app that is the floor of a software factory:
 coding agents do the work, and you make the calls.
 
 The factory is this Mac. Agents of any kind register with it over MCP, pick up tasks
@@ -22,7 +22,7 @@ something themselves. You see all of it in one window and answer the questions w
 1. **The app knows nothing about what an agent runs on.** Claude Code, another CLI, a
    script: if it speaks MCP it is an agent. Nothing here reads another tool's files.
 2. **One store, many writers.** Every project, task, agent and question is one JSON file in
-   `~/Library/Group Containers/6T4RVD5724.com.alexecollins.foreman/Store`. The app and
+   `~/Library/Group Containers/6T4RVD5724.com.alexecollins.softwarefactory/Store`. The app and
    the server both read and write it; writes are atomic and one file per record, so a
    half-written file is never read.
 3. **A project is a folder.** Its path is its identity. Projects appear when an agent names
@@ -34,11 +34,11 @@ something themselves. You see all of it in one window and answer the questions w
 
 ## Connecting an agent
 
-The MCP server is the `foreman-mcp` executable inside the app (the same program as `foreman`, named so it cannot collide with the app binary on a case-insensitive disk). Settings shows the command,
-which is:
+The MCP server runs inside the app, on port 4747, while the app is open. Register it with
+Claude Code once (Settings has the command with a Copy button):
 
 ```bash
-claude mcp add --scope user foreman -- "/Applications/Software Factory.app/Contents/MacOS/foreman-mcp" mcp
+claude mcp add --transport http --scope user software-factory http://127.0.0.1:4747/mcp
 ```
 
 The tools: `agent_register`, `agent_checkin`, `agent_deregister`, `project_list`,
@@ -47,14 +47,21 @@ The tools: `agent_register`, `agent_checkin`, `agent_deregister`, `project_list`
 The server's instructions tell an agent to register first, check in as it goes, raise
 and await when stuck, and deregister when done.
 
-`foreman status` prints the floor as text; `foreman tools` lists the tools;
-`FOREMAN_STORE=/some/folder` points both the app and the server at another store.
+`Packages/SoftwareFactoryKit` also builds `software-factory`, a shell tool: `status` prints the floor as
+text, `tools` lists the tools, `mcp` is the same server over stdio for scripts.
+`SOFTWARE_FACTORY_STORE=/some/folder` points the app and the tool at another store.
+
+## The iPhone
+
+The same questions, on the phone, on the same Wi‑Fi as the Mac. The phone finds the factory
+over Bonjour, reads the store through the factory's `/api`, and a tap records the decision.
+Away from the network it shows the last thing it saw. iCloud sync and notifications are next.
 
 ## Later, not now
 
 Resources with slots and time-bound leases. The factory's own capacity: memory, CPU,
 compile slots, a verdict agents ask before starting anything heavy, and a throttle.
 Notifications that find you at the Mac or on the iPhone, answerable from the notification.
-The iPhone app. Dictating a task. Each arrives on its own.
+iCloud sync so the phone works away from home. Dictating a task. Each arrives on its own.
 
 MIT licence. © 2026 Alex Collins.

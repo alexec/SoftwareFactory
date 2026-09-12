@@ -1,6 +1,6 @@
 import AppKit
 import SwiftUI
-import ForemanKit
+import SoftwareFactoryKit
 
 /// The floor: what needs you, then who is on the floor.
 struct FloorView: View {

@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ForemanKit
+@testable import SoftwareFactoryKit
 
 @Suite struct MCPServerTests {
     func server() throws -> MCPServer {
@@ -25,7 +25,7 @@ import Testing
                               "params": ["protocolVersion": "2025-03-26", "capabilities": [:]]])!
         let result = init_["result"] as! [String: Any]
         #expect(result["protocolVersion"] as? String == "2025-03-26")
-        #expect((result["serverInfo"] as? [String: Any])?["name"] as? String == "foreman")
+        #expect((result["serverInfo"] as? [String: Any])?["name"] as? String == "software-factory")
 
         #expect(s.handle(["jsonrpc": "2.0", "method": "notifications/initialized"]) == nil)
 

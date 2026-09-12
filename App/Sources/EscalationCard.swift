@@ -1,5 +1,5 @@
 import SwiftUI
-import ForemanKit
+import SoftwareFactoryKit
 
 /// One question from an agent, its options, and the decision once it is made. Clicking
 /// an option records it; clicking another changes the record.

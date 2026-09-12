@@ -6,7 +6,9 @@
 	<true/>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>6T4RVD5724.com.alexecollins.foreman</string>
+		<string>6T4RVD5724.com.alexecollins.softwarefactory</string>
 	</array>
+	<key>com.apple.security.network.server</key>
+	<true/>
 </dict>
 </plist>

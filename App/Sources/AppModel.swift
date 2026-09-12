@@ -1,8 +1,8 @@
 import Foundation
 import Observation
-import ForemanKit
+import SoftwareFactoryKit
 
-/// Owns the store and the floor built from it. Every rule lives in ForemanKit; this is
+/// Owns the store and the floor built from it. Every rule lives in SoftwareFactoryKit; this is
 /// the plumbing that keeps the window current.
 @Observable
 @MainActor
@@ -13,6 +13,8 @@ final class AppModel {
     private(set) var storeError: String?
 
     let store: FileStore?
+    private(set) var serverState = "Starting"
+    @ObservationIgnored private var server: FactoryServer?
 
     var hasSeenIntro: Bool {
         didSet { UserDefaults.standard.set(hasSeenIntro, forKey: Self.introKey) }
@@ -32,12 +34,19 @@ final class AppModel {
             storeError = error.localizedDescription
         }
         start()
+        if let store {
+            let server = FactoryServer(router: HTTPRouter(server: MCPServer(store: store)), port: Self.port) { state in
+                _Concurrency.Task { @MainActor [weak self] in self?.serverState = state }
+            }
+            server.start()
+            self.server = server
+        }
     }
 
     /// The app group container when the sandbox gives us one, the plain path otherwise
     /// (the same folder, reached without the sandbox's help).
     static func storeRoot() -> URL {
-        if ProcessInfo.processInfo.environment["FOREMAN_STORE"] == nil,
+        if ProcessInfo.processInfo.environment["SOFTWARE_FACTORY_STORE"] == nil,
            let container = FileManager.default.containerURL(
                forSecurityApplicationGroupIdentifier: FileStore.appGroup) {
             return container.appending(path: "Store", directoryHint: .isDirectory)
@@ -45,14 +54,12 @@ final class AppModel {
         return FileStore.defaultRoot()
     }
 
-    /// The command that registers the MCP server with a client. The server is the
-    /// `foreman` executable inside the app bundle, so it moves with the app.
-    static var serverPath: String {
-        Bundle.main.url(forAuxiliaryExecutable: "foreman-mcp")?.path ?? "foreman-mcp"
-    }
+    /// One port, one address, every client. The factory is open while the app is running.
+    static let port = FactoryServer.defaultPort
+    static var endpoint: String { "http://127.0.0.1:\(port)/mcp" }
 
     static var registerCommand: String {
-        "claude mcp add --scope user foreman -- \"\(serverPath)\" mcp"
+        "claude mcp add --transport http --scope user software-factory \(endpoint)"
     }
 
     // MARK: Refreshing
@@ -119,13 +126,6 @@ final class AppModel {
 
     func set(_ task: FactoryTask, to state: FactoryTask.State) {
         persist { try $0.save(Backlog.set(task, to: state)) }
-    }
-
-    func set(_ task: FactoryTask, kind: FactoryTask.Kind) {
-        var task = task
-        task.kind = kind
-        task.updated = .now
-        persist { try $0.save(task) }
     }
 
     func delete(_ task: FactoryTask) {
