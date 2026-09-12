@@ -31,3 +31,17 @@ devices:
   mac: this Mac
   iphone: his iPhone 15 Pro Max                 # `xcrun devicectl list devices`; the id stays out of the repo
 keep_installed: true                              # he is using it; never uninstall
+
+archive:
+  ios:
+    scheme: SoftwareFactoryPhone
+    export_plist: AppStore/ExportOptions-iOS.plist          # destination export; -upload.plist uploads
+    path: build/SoftwareFactoryPhone.xcarchive
+  macos:
+    scheme: SoftwareFactory
+    export_plist: AppStore/ExportOptions-macOS.plist
+    path: build/SoftwareFactory.xcarchive
+  build_number_key: CURRENT_PROJECT_VERSION                 # in project.yml; build 1 has never been uploaded
+asc_api_key: ~/.private_keys/asc.env                       # proved 12 Sep 2026: doctor, builds, testers all answer
+store:
+  record: none yet                                          # Alex creates it: Apps > + > New App, iOS + macOS, name Software Factory, SKU SoftwareFactory, English (U.S.) - his standing rule, apps are USA not UK; corrected 12 Sep 2026, this card had it wrong as U.K.
