@@ -15,8 +15,11 @@ focus: >
   remote on Wi‑Fi. Next in the factory's own backlog: CloudKit so the phone works away
   from home, then resources and capacity. (Alex, 2026-09-12)
 
-stages: [survey, land, tidy-repo, test, devices, tidy-build, report]
-# archive-upload and testflight are closed until Alex says the app is ready for others.
+stages: [survey, land, tidy-repo, test, devices, tidy-build, report, archive-upload, testflight]
+# OPENED 12 Sep 2026: Alex asked directly to get the app into TestFlight so he can test
+# and install it there instead of a manual devicectl install. This is TestFlight for
+# Alex himself as internal tester, not a release to anyone else - do not add external
+# testers or submit for external-testing review without asking him again.
 
 git:
   repo: true
