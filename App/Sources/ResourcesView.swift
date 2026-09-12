@@ -62,7 +62,7 @@ struct ResourceRow: View {
                 HStack(spacing: 4) {
                     ForEach(0..<status.resource.slots, id: \.self) { i in
                         RoundedRectangle(cornerRadius: 3)
-                            .fill(i < status.held.count ? Color.orange : Color.secondary.opacity(0.18))
+                            .fill(i < status.held.count ? (status.held[i].isOverdue ? Color.red : Color.orange) : Color.secondary.opacity(0.18))
                             .frame(width: 12, height: 12)
                     }
                 }
@@ -86,9 +86,9 @@ struct ResourceRow: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Text("until \(holding.lease.until, format: .dateTime.hour().minute())")
+                    Text(holding.isOverdue ? "overdue since \(holding.lease.until, format: .dateTime.hour().minute())" : "until \(holding.lease.until, format: .dateTime.hour().minute())")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(holding.isOverdue ? .red : .secondary)
                     Button("Take back") { model.end(holding.lease) }
                         .buttonStyle(.borderless)
                         .font(.callout)

@@ -42,6 +42,9 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
 public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
     public enum Kind: String, Codable, CaseIterable, Sendable {
         case feature, bug, chore
+        /// A UX review, a luxury audit, an App Store compliance pass: work that produces
+        /// findings rather than a change. (Alex, 12 September 2026.)
+        case review
     }
 
     public enum State: String, Codable, CaseIterable, Sendable {
@@ -81,10 +84,37 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
     public var note: String
     /// The agent on it, when one is.
     public var agentID: UUID?
-    /// Set while the state is `blocked`.
-    public var blocker: Blocker?
+    /// Everything the task waits on while the state is `blocked`. It clears when the
+    /// last one does; one on a person or "other" clears only by hand.
+    public var blockers: [Blocker] = []
     public var created: Date
     public var updated: Date
+
+    /// The first blocker, for a one-line view.
+    public var blocker: Blocker? { blockers.first }
+    /// Every reason, as one line.
+    public var blockedWhy: String { blockers.map(\.why).joined(separator: "; ") }
+
+    enum CodingKeys: String, CodingKey {
+        case version, id, projectID, title, kind, state, rank, note, agentID, blockers, created, updated
+        case legacyBlocker = "blocker"
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(version, forKey: .version)
+        try c.encode(id, forKey: .id)
+        try c.encode(projectID, forKey: .projectID)
+        try c.encode(title, forKey: .title)
+        try c.encode(kind, forKey: .kind)
+        try c.encode(state, forKey: .state)
+        try c.encode(rank, forKey: .rank)
+        try c.encode(note, forKey: .note)
+        try c.encodeIfPresent(agentID, forKey: .agentID)
+        if !blockers.isEmpty { try c.encode(blockers, forKey: .blockers) }
+        try c.encode(created, forKey: .created)
+        try c.encode(updated, forKey: .updated)
+    }
 
     public init(
         id: UUID = UUID(), projectID: String, title: String, kind: Kind = .feature,
@@ -113,7 +143,9 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         rank = try c.decode(Int.self, forKey: .rank)
         note = try c.decode(String.self, forKey: .note)
         agentID = try c.decodeIfPresent(UUID.self, forKey: .agentID)
-        blocker = try c.decodeIfPresent(Blocker.self, forKey: .blocker)
+        // Version 1 wrote one `blocker`; it reads as a list of one.
+        blockers = try c.decodeIfPresent([Blocker].self, forKey: .blockers)
+            ?? (try c.decodeIfPresent(Blocker.self, forKey: .legacyBlocker)).map { [$0] } ?? []
         created = try c.decode(Date.self, forKey: .created)
         updated = try c.decode(Date.self, forKey: .updated)
     }
@@ -186,24 +218,33 @@ public enum Sweep {
     /// done. They go back to the backlog with a line saying so.
     public static func unblocked(in snapshot: Snapshot, now: Date) -> [FactoryTask] {
         snapshot.tasks.compactMap { task in
-            guard task.state == .blocked, let b = task.blocker else { return nil }
-            let cleared: String?
-            switch b.kind {
-            case .decision:
-                if let id = b.id, let e = snapshot.escalations.first(where: { $0.id == id }), let chosen = e.chosen {
-                    cleared = "decided: \(chosen.title)"
-                } else { cleared = nil }
-            case .task:
-                if let id = b.id, let t = snapshot.tasks.first(where: { $0.id == id }), t.state == .done {
-                    cleared = "\(t.title) is done"
-                } else { cleared = nil }
-            case .person, .other:
-                cleared = nil
+            guard task.state == .blocked, !task.blockers.isEmpty else { return nil }
+            var remaining: [FactoryTask.Blocker] = []
+            var cleared: [String] = []
+            for b in task.blockers {
+                switch b.kind {
+                case .decision:
+                    if let id = b.id, let e = snapshot.escalations.first(where: { $0.id == id }), let chosen = e.chosen {
+                        cleared.append("decided: \(chosen.title)")
+                    } else { remaining.append(b) }
+                case .task:
+                    if let id = b.id, let t = snapshot.tasks.first(where: { $0.id == id }), t.state == .done {
+                        cleared.append("\(t.title) is done")
+                    } else { remaining.append(b) }
+                case .person, .other:
+                    remaining.append(b)
+                }
             }
-            guard let cleared else { return nil }
-            var t = Backlog.set(task, to: .backlog, at: now)
-            t.blocker = nil
-            t.note = t.note.isEmpty ? "unblocked, \(cleared)" : t.note + "\nunblocked, \(cleared)"
+            guard !cleared.isEmpty else { return nil }
+            let line = (remaining.isEmpty ? "unblocked, " : "cleared, ") + cleared.joined(separator: "; ")
+            var t = task
+            if remaining.isEmpty {
+                t = Backlog.set(task, to: .backlog, at: now)
+            } else {
+                t.blockers = remaining
+                t.updated = now
+            }
+            t.note = t.note.isEmpty ? line : t.note + "\n" + line
             return t
         }
     }
@@ -259,13 +300,15 @@ public struct Escalation: Codable, Identifiable, Hashable, Sendable {
     public var context: String
     public var options: [Option]
     public var agentID: UUID?
+    /// The task this question stops, when it came from one.
+    public var taskID: UUID?
     public var raisedBy: String
     public var raised: Date
     public var decision: Decision?
 
     public init(
         id: UUID = UUID(), projectID: String, question: String, context: String = "",
-        options: [Option], agentID: UUID? = nil, raisedBy: String = "agent", raised: Date = .now
+        options: [Option], agentID: UUID? = nil, taskID: UUID? = nil, raisedBy: String = "agent", raised: Date = .now
     ) {
         self.id = id
         self.projectID = projectID
@@ -273,6 +316,7 @@ public struct Escalation: Codable, Identifiable, Hashable, Sendable {
         self.context = context
         self.options = options
         self.agentID = agentID
+        self.taskID = taskID
         self.raisedBy = raisedBy
         self.raised = raised
     }
@@ -300,6 +344,7 @@ public struct Escalation: Codable, Identifiable, Hashable, Sendable {
         context = try c.decode(String.self, forKey: .context)
         options = try c.decode([Option].self, forKey: .options)
         agentID = try c.decodeIfPresent(UUID.self, forKey: .agentID)
+        taskID = try c.decodeIfPresent(UUID.self, forKey: .taskID)
         raisedBy = try c.decode(String.self, forKey: .raisedBy)
         raised = try c.decode(Date.self, forKey: .raised)
         decision = try c.decodeIfPresent(Decision.self, forKey: .decision)

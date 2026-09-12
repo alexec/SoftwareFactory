@@ -35,6 +35,12 @@ struct EscalationCard: View {
                 .font(.headline)
                 .fixedSize(horizontal: false, vertical: true)
 
+            if let task = escalation.taskID.flatMap({ id in model.snapshot.tasks.first { $0.id == id } }) {
+                Label("Stops: \(task.title)", systemImage: "arrow.turn.down.right")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
             if !escalation.context.isEmpty {
                 Text(escalation.context)
                     .font(.callout)

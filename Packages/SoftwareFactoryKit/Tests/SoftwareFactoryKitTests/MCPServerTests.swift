@@ -136,6 +136,30 @@ import Testing
         #expect(call(s, "resource_lease", ["agent_id": a, "resource": "Nothing"]).isError)
     }
 
+    @Test func aQuestionFromATaskBlocksItUntilAnswered() throws {
+        let s = try server()
+        let a = id(after: "", in: call(s, "agent_register", ["name": "lead", "project": "/tmp/P"]).text)
+        let t = id(after: "", in: call(s, "task_add", ["project": "P", "title": "Name the app", "kind": "review"]).text)
+        let raised = call(s, "escalation_raise", ["agent_id": a, "project": "P", "task_id": t, "question": "Which name?",
+                                                  "options": [["title": "A"], ["title": "B"]]])
+        #expect(raised.text.contains("Name the app is blocked on it"))
+        let escID = id(after: "", in: raised.text)
+        var snap = try s.store.load()
+        #expect(snap.tasks[0].state == .blocked)
+        #expect(snap.tasks[0].blockers.first?.kind == .decision)
+        #expect(snap.escalations[0].taskID == snap.tasks[0].id)
+        #expect(call(s, "escalation_list", ["project": "P"]).text.contains("stops: Name the app"))
+        #expect(call(s, "task_list", ["project": "P"]).text.contains("review"))
+
+        var e = try #require(s.store.escalation(UUID(uuidString: escID)!))
+        try e.decide(e.options[0], by: "alex")
+        try s.store.save(e)
+        snap = try s.store.load()
+        let cleared = Sweep.unblocked(in: snap, now: .now)
+        #expect(cleared.map(\.title) == ["Name the app"])
+        #expect(cleared[0].note.contains("decided: A"))
+    }
+
     @Test func blockingATaskSaysWhatIsNext() throws {
         let s = try server()
         let a = id(after: "", in: call(s, "agent_register", ["name": "a", "project": "/tmp/P"]).text)
@@ -143,9 +167,10 @@ import Testing
         _ = call(s, "task_add", ["project": "P", "title": "Free"])
         #expect(call(s, "task_block", ["task_id": t1, "on": "decision", "why": "x"]).isError)
         let blocked = call(s, "task_block", ["task_id": t1, "on": "person", "why": "register the container"])
-        #expect(blocked.text.hasPrefix("Needs Alex is blocked. Next on the backlog: Free"))
+        #expect(blocked.text.hasPrefix("Needs Alex is blocked on 1 thing. Next on the backlog: Free"))
+        #expect(call(s, "task_block", ["task_id": t1, "on": "other", "why": "the measurement"]).text.hasPrefix("Needs Alex is blocked on 2 things."))
         #expect(call(s, "task_next", ["project": "P"]).text.contains("Free"))
-        #expect(call(s, "task_list", ["project": "P"]).text.contains("[blocked on person: register the container]"))
+        #expect(call(s, "task_list", ["project": "P"]).text.contains("blocked on person: register the container; other: the measurement"))
         _ = a
     }
 

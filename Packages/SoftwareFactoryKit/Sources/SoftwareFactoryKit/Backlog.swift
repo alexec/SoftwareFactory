@@ -117,16 +117,18 @@ public enum Backlog {
         task.updated = date
         if let agentID { task.agentID = agentID }
         if state == .backlog || state == .parked { task.agentID = nil }
-        if state != .blocked { task.blocker = nil }
+        if state != .blocked { task.blockers = [] }
         return task
     }
 
-    /// Marks a task blocked on something. The agent keeps its name on it, so the floor
-    /// still says who was on it when it clears.
+    /// Marks a task blocked on one more thing. The agent keeps its name on it, so the
+    /// floor still says who was on it when it clears. The same thing twice is once.
     public static func block(_ task: FactoryTask, on blocker: FactoryTask.Blocker, at date: Date = .now) -> FactoryTask {
         var task = task
         task.state = .blocked
-        task.blocker = blocker
+        if !task.blockers.contains(where: { $0.kind == blocker.kind && $0.id == blocker.id && $0.why == blocker.why }) {
+            task.blockers.append(blocker)
+        }
         task.updated = date
         return task
     }

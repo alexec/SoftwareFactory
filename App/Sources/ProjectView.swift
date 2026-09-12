@@ -221,8 +221,8 @@ struct TaskRow: View {
                 Text(task.title)
                     .strikethrough(task.state == .done)
                     .foregroundStyle(task.state == .done || task.state == .parked ? .secondary : .primary)
-                if task.state == .blocked, let why = task.blocker?.why {
-                    Text(why)
+                if task.state == .blocked, !task.blockers.isEmpty {
+                    Text(task.blockedWhy)
                         .font(.caption)
                         .foregroundStyle(.orange)
                         .lineLimit(2)
@@ -241,7 +241,7 @@ struct TaskRow: View {
                     .background(.green.opacity(0.2), in: .capsule)
             }
             if task.state == .blocked, let b = task.blocker {
-                Text("Blocked on \(word(for: b))")
+                Text(task.blockers.count > 1 ? "Blocked on \(task.blockers.count) things" : "Blocked on \(word(for: b))")
                     .font(.caption.weight(.medium))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -279,7 +279,7 @@ struct TaskRow: View {
     private func word(for b: FactoryTask.Blocker) -> String {
         switch b.kind {
         case .person: "you: \(b.why)"
-        case .decision: "a decision: \(b.why)"
+        case .decision: "your answer: \(b.why)"
         case .task: "another task: \(b.why)"
         case .other: b.why
         }

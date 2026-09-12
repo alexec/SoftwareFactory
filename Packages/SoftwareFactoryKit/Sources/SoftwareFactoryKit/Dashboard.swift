@@ -42,6 +42,8 @@ public struct Dashboard: Sendable, Equatable {
     public struct Holding: Identifiable, Sendable, Equatable {
         public var lease: Lease
         public var agentName: String
+        /// Past its time, holder still on the floor.
+        public var isOverdue: Bool
 
         public var id: UUID { lease.id }
     }
@@ -106,8 +108,8 @@ public struct Dashboard: Sendable, Equatable {
 
         let names = Dictionary(uniqueKeysWithValues: snapshot.agents.map { ($0.id, $0.name) })
         let resources = snapshot.resources.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }.map { r in
-            ResourceStatus(resource: r, held: Leases.active(for: r.id, in: snapshot.leases, now: now).map {
-                Holding(lease: $0, agentName: names[$0.agentID] ?? "someone")
+            ResourceStatus(resource: r, held: Leases.held(for: r.id, in: snapshot.leases, agents: snapshot.agents, now: now).map {
+                Holding(lease: $0, agentName: names[$0.agentID] ?? "someone", isOverdue: $0.until <= now)
             })
         }
 

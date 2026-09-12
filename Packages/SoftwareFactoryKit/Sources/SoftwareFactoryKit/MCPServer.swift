@@ -154,7 +154,7 @@ public struct MCPServer: Sendable {
                  properties: ["project": str("Folder path or project name")], required: ["project"]),
             Tool(name: "task_add", description: "File a task on a project's backlog: at the bottom, at the top, or directly above another task.",
                  properties: ["project": str("Folder path or project name"), "title": str("The task, in one line"),
-                              "kind": ["type": "string", "enum": ["feature", "bug", "chore"], "description": "Defaults to feature"],
+                              "kind": ["type": "string", "enum": ["feature", "bug", "chore", "review"], "description": "Defaults to feature. review is a UX review, a luxury audit or a compliance pass: findings, not a change."],
                               "position": ["type": "string", "enum": ["top", "bottom"], "description": "Defaults to bottom"],
                               "above_task_id": str("Put it directly above this task instead"),
                               "note": str("Why, and anything the next reader needs")],
@@ -166,7 +166,7 @@ public struct MCPServer: Sendable {
                               "state": ["type": "string", "enum": ["backlog", "inProgress", "done", "parked"]],
                               "note": str("What happened")],
                  required: ["task_id", "state"]),
-            Tool(name: "task_block", description: "This task is blocked: say what it waits on, then move on to the next task. A block on a decision or a task clears on its own when the decision lands or the task is done; a block on a person clears when they say so.",
+            Tool(name: "task_block", description: "This task is blocked: say what it waits on, then move on to the next task. Call it once per thing it waits on; the task clears only when the last one does. A block on a decision or a task clears on its own when the decision lands or the task is done; a block on a person clears when they say so.",
                  properties: ["task_id": str("The task"),
                               "on": ["type": "string", "enum": ["decision", "task", "person", "other"], "description": "What it waits on"],
                               "id": str("The escalation_id or task_id it waits on, for decision or task"),
@@ -178,8 +178,9 @@ public struct MCPServer: Sendable {
             Tool(name: "task_remove", description: "Take a task off the backlog for good.",
                  properties: ["task_id": str("The task"), "reason": str("Why")], required: ["task_id"]),
 
-            Tool(name: "escalation_raise", description: "Ask the person to decide something. Give two or more options and say which you recommend. Returns the escalation_id; then call escalation_await.",
+            Tool(name: "escalation_raise", description: "Ask the person to decide something. Give two or more options and say which you recommend. Returns the escalation_id; then call escalation_await. Give task_id when the question stops a task: the task is marked blocked on the decision and unblocks itself when the answer lands.",
                  properties: ["agent_id": str("From agent_register"), "project": str("Folder path or project name"),
+                              "task_id": str("The task this question stops, if any"),
                               "question": str("The question, in one line"), "context": str("What the person needs to know to choose"),
                               "options": ["type": "array", "minItems": 2, "items": ["type": "object",
                                           "properties": ["title": str("Short name"), "detail": str("What it means")],
@@ -324,9 +325,11 @@ public struct MCPServer: Sendable {
             }
             let id = (args["id"] as? String).flatMap(UUID.init(uuidString:))
             if kind == .decision || kind == .task, id == nil { throw ToolError(message: "id is needed for a block on a \(kind.rawValue)") }
-            try store.save(Backlog.block(task, on: .init(kind: kind, id: id, why: try string("why", args)), at: now()))
+            let blocked = Backlog.block(task, on: .init(kind: kind, id: id, why: try string("why", args)), at: now())
+            try store.save(blocked)
             let next = Backlog.next(for: task.projectID, in: snap.tasks.filter { $0.id != task.id }).map { " Next on the backlog: \($0.title) (\($0.id.uuidString))." } ?? " Nothing else is waiting on this backlog."
-            return "\(task.title) is blocked.\(next)"
+            let count = blocked.blockers.count
+            return "\(task.title) is blocked on \(count) thing\(count == 1 ? "" : "s").\(next)"
 
         case "task_rank":
             let task = try task(args, in: snap)
@@ -354,11 +357,17 @@ public struct MCPServer: Sendable {
             }
             var agent: Agent?
             if args["agent_id"] != nil { agent = try self.agent(args, in: snap) }
+            var task: FactoryTask?
+            if let ref = args["task_id"] as? String, !ref.isEmpty { task = try self.task(args, in: snap) }
             let escalation = Escalation(
                 projectID: project.id, question: try string("question", args),
                 context: args["context"] as? String ?? "", options: options,
-                agentID: agent?.id, raisedBy: agent?.name ?? "agent", raised: now())
+                agentID: agent?.id, taskID: task?.id, raisedBy: agent?.name ?? "agent", raised: now())
             try store.save(escalation)
+            if let task {
+                try store.save(Backlog.block(task, on: .init(kind: .decision, id: escalation.id, why: escalation.question), at: now()))
+                return "Raised. escalation_id: \(escalation.id.uuidString). \(task.title) is blocked on it and unblocks when the answer lands; pick up task_next meanwhile, or call escalation_await."
+            }
             return "Raised. escalation_id: \(escalation.id.uuidString). Now call escalation_await."
 
         case "escalation_await":
@@ -387,17 +396,19 @@ public struct MCPServer: Sendable {
             return open.map { e in
                 let project = snap.projects.first { $0.id == e.projectID }?.name ?? e.projectID
                 let opts = e.options.map { "\($0.title)\($0.recommended ? " (recommended)" : "")" }.joined(separator: " | ")
-                return "\(e.id.uuidString)  [\(project)] \(e.question)  \(opts)"
+                let stops = e.taskID.flatMap { id in snap.tasks.first { $0.id == id } }.map { "  stops: \($0.title)" } ?? ""
+                return "\(e.id.uuidString)  [\(project)] \(e.question)  \(opts)\(stops)"
             }.joined(separator: "\n")
 
         case "resource_list":
             if snap.resources.isEmpty { return "No resources defined. resource_add makes one." }
             return snap.resources.sorted { $0.name < $1.name }.map { r in
-                let held = Leases.active(for: r.id, in: snap.leases, now: now())
+                let held = Leases.held(for: r.id, in: snap.leases, agents: snap.agents, now: now())
                 let free = r.slots - held.count
                 let holders = held.map { l in
                     let who = snap.agents.first { $0.id == l.agentID }?.name ?? "someone"
-                    return "\(who) until \(Self.clock(l.until))\(l.why.isEmpty ? "" : " (\(l.why))")"
+                    let when = l.until <= now() ? "OVERDUE since \(Self.clock(l.until))" : "until \(Self.clock(l.until))"
+                    return "\(who) \(when)\(l.why.isEmpty ? "" : " (\(l.why))")"
                 }.joined(separator: ", ")
                 return "\(r.name)  \(free) of \(r.slots) free  max \(Int(r.maxLease / 60)) min\(holders.isEmpty ? "" : "  held by \(holders)")"
             }.joined(separator: "\n")
@@ -417,19 +428,23 @@ public struct MCPServer: Sendable {
             let agent = try agent(args, in: snap)
             let resource = try resource(args, in: snap)
             let minutes = TimeInterval(args["minutes"] as? Int ?? Int(resource.maxLease / 60))
-            switch Leases.lease(resource, for: agent.id, wanting: minutes * 60, why: args["why"] as? String ?? "", in: snap.leases, now: now()) {
+            switch Leases.lease(resource, for: agent.id, wanting: minutes * 60, why: args["why"] as? String ?? "", in: snap.leases, agents: snap.agents, now: now()) {
             case .leased(let lease):
                 try store.save(lease)
-                return "Leased \(resource.name) until \(Self.clock(lease.until)). Release it when you are done."
+                return "Leased \(resource.name) until \(Self.clock(lease.until)). Renew it (resource_renew) if the job runs long; release it when you are done."
             case .full(let nextFree, let held):
-                let who = held.map { l in snap.agents.first { $0.id == l.agentID }?.name ?? "someone" }.joined(separator: ", ")
-                return "\(resource.name) is full (held by \(who)). A slot frees at \(Self.clock(nextFree)). Do something else and ask again."
+                let who = held.map { l in
+                    let name = snap.agents.first { $0.id == l.agentID }?.name ?? "someone"
+                    return l.until <= now() ? "\(name), overdue since \(Self.clock(l.until)) and still on the floor" : name
+                }.joined(separator: ", ")
+                let frees = nextFree > now() ? "A slot frees at \(Self.clock(nextFree))." : "No slot has a known end: the holder's job outlived its lease."
+                return "\(resource.name) is full (held by \(who)). \(frees) Do something else and ask again."
             }
 
         case "resource_renew":
             let agent = try agent(args, in: snap)
             let resource = try resource(args, in: snap)
-            guard let mine = Leases.active(for: resource.id, in: snap.leases, now: now()).first(where: { $0.agentID == agent.id }) else {
+            guard let mine = Leases.held(for: resource.id, in: snap.leases, agents: snap.agents, now: now()).first(where: { $0.agentID == agent.id }) else {
                 throw ToolError(message: "You do not hold \(resource.name).")
             }
             let minutes = TimeInterval(args["minutes"] as? Int ?? Int(resource.maxLease / 60))
@@ -440,7 +455,7 @@ public struct MCPServer: Sendable {
         case "resource_release":
             let agent = try agent(args, in: snap)
             let resource = try resource(args, in: snap)
-            guard let mine = Leases.active(for: resource.id, in: snap.leases, now: now()).first(where: { $0.agentID == agent.id }) else {
+            guard let mine = Leases.held(for: resource.id, in: snap.leases, agents: snap.agents, now: now()).first(where: { $0.agentID == agent.id }) else {
                 return "You were not holding \(resource.name)."
             }
             try store.save(try Leases.release(mine, for: agent.id, now: now()))
@@ -480,7 +495,7 @@ public struct MCPServer: Sendable {
     // MARK: Helpers
 
     static func line(_ t: FactoryTask) -> String {
-        let blocked = t.blocker.map { "  [blocked on \($0.kind.rawValue): \($0.why)]" } ?? ""
+        let blocked = t.blockers.isEmpty ? "" : "  [blocked on " + t.blockers.map { "\($0.kind.rawValue): \($0.why)" }.joined(separator: "; ") + "]"
         return "\(t.id.uuidString)  \(t.state.rawValue)  \(t.kind.rawValue)  \(t.title)\(blocked)"
     }
 

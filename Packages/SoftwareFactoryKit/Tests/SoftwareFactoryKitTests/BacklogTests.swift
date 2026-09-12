@@ -62,7 +62,7 @@ import Testing
         var cleared = Sweep.unblocked(in: Snapshot(tasks: all, escalations: [e]), now: Date(timeIntervalSince1970: 9))
         #expect(cleared.map(\.title) == ["after"])
         #expect(cleared[0].state == .backlog)
-        #expect(cleared[0].blocker == nil)
+        #expect(cleared[0].blockers.isEmpty)
         #expect(cleared[0].note.contains("unblocked, first do this is done"))
 
         try e.decide(e.options[1])
@@ -71,7 +71,36 @@ import Testing
         #expect(cleared.first { $0.title == "waiting" }?.note.contains("decided: B") == true)
         // A person clears it by hand, never the sweep.
         #expect(!cleared.contains { $0.title == "on alex" })
-        #expect(Backlog.set(onAlex, to: .backlog).blocker == nil)
+        #expect(Backlog.set(onAlex, to: .backlog).blockers.isEmpty)
+    }
+
+    @Test func aTaskWaitingOnTwoThingsClearsWhenTheLastDoes() throws {
+        var e = Escalation(projectID: p, question: "?", options: [.init(title: "A")])
+        var two = Backlog.block(task("two", rank: 0), on: .init(kind: .decision, id: e.id, why: "the answer"))
+        two = Backlog.block(two, on: .init(kind: .person, why: "the stand-down lifts"))
+        two = Backlog.block(two, on: .init(kind: .person, why: "the stand-down lifts"))   // twice is once
+        #expect(two.blockers.count == 2)
+        #expect(two.blockedWhy == "the answer; the stand-down lifts")
+
+        try e.decide(e.options[0])
+        let swept = Sweep.unblocked(in: Snapshot(tasks: [two], escalations: [e]), now: .now)
+        #expect(swept.count == 1)
+        #expect(swept[0].state == .blocked)                       // still waiting on the person
+        #expect(swept[0].blockers.map(\.why) == ["the stand-down lifts"])
+        #expect(swept[0].note.contains("cleared, decided: A"))
+        // Nothing left to clear on its own: the sweep leaves it alone now.
+        #expect(Sweep.unblocked(in: Snapshot(tasks: swept, escalations: [e]), now: .now).isEmpty)
+    }
+
+    @Test func aVersionOneBlockerStillReads() throws {
+        let json = """
+        {"version":1,"id":"\(UUID().uuidString)","projectID":"/p","title":"old","kind":"feature","state":"blocked","rank":0,"note":"",
+         "blocker":{"kind":"person","why":"alex"},"created":"2026-09-12T10:00:00Z","updated":"2026-09-12T10:00:00Z"}
+        """
+        let t = try FileStore.decoder.decode(FactoryTask.self, from: Data(json.utf8))
+        #expect(t.blockers.map(\.why) == ["alex"])
+        let again = try FileStore.decoder.decode(FactoryTask.self, from: FileStore.encoder.encode(t))
+        #expect(again.blockers == t.blockers)
     }
 
     @Test func nextRankFollowsTheProject() {

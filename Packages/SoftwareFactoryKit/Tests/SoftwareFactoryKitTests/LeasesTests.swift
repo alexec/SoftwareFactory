@@ -28,10 +28,27 @@ import Testing
         #expect(held.count == 2)
     }
 
-    @Test func anExpiredLeaseFreesTheSlot() {
-        let old = Lease(resourceID: phone.id, agentID: a, why: "", since: now.addingTimeInterval(-9000), until: now.addingTimeInterval(-1))
-        #expect(Leases.freeSlots(of: phone, in: [old], now: now) == 1)
-        guard case .leased = Leases.lease(phone, for: b, wanting: 60, why: "", in: [old], now: now) else {
+    @Test func anExpiredLeaseFreesTheSlotOnlyWhenTheHolderHasGone() throws {
+        let old = Lease(resourceID: phone.id, agentID: a, why: "a long run", since: now.addingTimeInterval(-9000), until: now.addingTimeInterval(-1))
+        var holder = Agent(name: "holder", projectID: nil, registered: now.addingTimeInterval(-9000))
+        holder.id = a
+        holder.lastSeen = now
+
+        // The holder is still on the floor: the lease is overdue, not free.
+        #expect(Leases.overdue(for: phone.id, in: [old], agents: [holder], now: now).map(\.id) == [old.id])
+        #expect(Leases.freeSlots(of: phone, in: [old], agents: [holder], now: now) == 0)
+        guard case .full(let nextFree, let held) = Leases.lease(phone, for: b, wanting: 60, why: "", in: [old], agents: [holder], now: now) else {
+            Issue.record("expected full"); return
+        }
+        #expect(held.map(\.id) == [old.id])
+        #expect(nextFree == now)
+        // The holder may renew it, and leasing again renews it too.
+        #expect(try Leases.renew(old, of: phone, for: a, wanting: 600, now: now).until == now.addingTimeInterval(600))
+
+        // The holder has gone: the slot is free.
+        holder.deregistered = now
+        #expect(Leases.freeSlots(of: phone, in: [old], agents: [holder], now: now) == 1)
+        guard case .leased = Leases.lease(phone, for: b, wanting: 60, why: "", in: [old], agents: [holder], now: now) else {
             Issue.record("expected a lease"); return
         }
     }
@@ -51,7 +68,8 @@ import Testing
         let renewed = try Leases.renew(mine, of: phone, for: a, wanting: 60, now: now)
         #expect(renewed.until == now.addingTimeInterval(60))
         #expect(throws: Leases.LeaseError.notHeldByAgent) { try Leases.renew(mine, of: phone, for: b, wanting: 60, now: now) }
-        let gone = Lease(resourceID: phone.id, agentID: a, why: "", since: now, until: now.addingTimeInterval(-5))
+        var gone = Lease(resourceID: phone.id, agentID: a, why: "", since: now, until: now.addingTimeInterval(-5))
+        gone.released = now.addingTimeInterval(-4)
         #expect(throws: Leases.LeaseError.expired) { try Leases.renew(gone, of: phone, for: a, wanting: 60, now: now) }
         let released = try Leases.release(mine, for: a, now: now)
         #expect(!released.isActive(now: now))

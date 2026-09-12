@@ -98,8 +98,8 @@ struct PhoneBacklogView: View {
                                 .font(.caption.weight(.medium))
                                 .foregroundStyle(task.state == .inProgress ? .green : (task.state == .blocked ? .orange : .secondary))
                         }
-                        if task.state == .blocked, let why = task.blocker?.why {
-                            Text(why).font(.caption).foregroundStyle(.orange).lineLimit(2)
+                        if task.state == .blocked, !task.blockers.isEmpty {
+                            Text(task.blockedWhy).font(.caption).foregroundStyle(.orange).lineLimit(2)
                         } else if let ending = task.note.split(whereSeparator: \.isNewline).last, !ending.isEmpty {
                             Text(ending)
                                 .font(.caption)
