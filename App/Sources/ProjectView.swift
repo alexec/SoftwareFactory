@@ -8,7 +8,6 @@ struct ProjectView: View {
 
     @State private var newTitle = ""
     @State private var recording = false
-    @State private var confirmingRemoval = false
     @State private var steer = ""
 
     private var tasks: [FactoryTask] { model.tasks(for: project.id) }
@@ -157,22 +156,8 @@ struct ProjectView: View {
                 .controlSize(.small)
                 .help("Off puts the project on hold: nothing is handed out from its backlog")
             steering
-            HStack(spacing: 10) {
-                Button("Remove project…") { confirmingRemoval = true }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
-                    .disabled(!model.openTasks(in: project).isEmpty)
-                    .help(model.openTasks(in: project).isEmpty
-                          ? "Take this project out of the factory. Its record is kept."
-                          : "Move or delete its open tasks first")
-            }
         }
         .padding(.vertical, 4)
-        .confirmationDialog("Remove \(project.name) from the factory?", isPresented: $confirmingRemoval) {
-            Button("Remove", role: .destructive) { model.removeProject(project) }
-        } message: {
-            Text("It leaves every list, with its done and parked tasks. Nothing is deleted from disk.")
-        }
     }
 
     /// A word for the agent. It waits here until the agent's next call about this

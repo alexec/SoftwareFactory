@@ -11,6 +11,9 @@ enum Destination: Hashable {
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @State private var selection: Destination? = .floor
+    // The macOS place for this is a right-click on the row, not a button on its own
+    // page. (Alex, 12 Sep 2026.)
+    @State private var removing: Project?
 
     var body: some View {
         NavigationSplitView {
@@ -41,10 +44,23 @@ struct RootView: View {
                             }
                         }
                         .tag(Destination.project(status.id))
+                        .contextMenu {
+                            Button("Remove project…", role: .destructive) { removing = status.project }
+                                .disabled(!model.openTasks(in: status.project).isEmpty)
+                        }
                     }
                 }
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 220)
+            .confirmationDialog("Remove \(removing?.name ?? "") from the factory?",
+                                 isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
+                Button("Remove", role: .destructive) {
+                    if let removing { model.removeProject(removing) }
+                    removing = nil
+                }
+            } message: {
+                Text("It leaves every list, with its done and parked tasks. Nothing is deleted from disk.")
+            }
         } detail: {
             switch selection {
             case .resources:
