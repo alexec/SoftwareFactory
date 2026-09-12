@@ -1,0 +1,27 @@
+app: Foreman
+scheme: Foreman
+bundle_id: com.alexecollins.foreman
+platforms: [macos]                # Mac first; the iPhone app comes later
+
+# A new app starts in dev at tier 5: the agents test it themselves on this Mac, and
+# nothing is archived or uploaded until Alex has tried it and said so.
+phase: dev                # dev | devtest | test | review | live — see the sdlc skill; only Alex moves it
+phase_history:
+  - dev 2026-09-12          # scaffolded: dashboard, shared store, Claude Code scan, CLI
+tier: 5
+focus: >
+  The thinnest dashboard: what is in progress, what each project is on, what needs a
+  decision, and each project's backlog. Features arrive one at a time after that.
+  (Alex, 2026-09-12)
+
+stages: [survey, land, tidy-repo, test, devices, tidy-build, report]
+# archive-upload and testflight are closed until Alex says the app is ready for others.
+
+git:
+  repo: true
+  remote: none
+  workflow: main-only
+  branch_prefix: claude/
+
+devices:
+  mac: this Mac                   # the only device; `sim-slot.sh claim-device mac` first

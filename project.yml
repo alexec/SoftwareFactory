@@ -1,0 +1,88 @@
+name: Foreman
+options:
+  bundleIdPrefix: com.alexecollins
+  deploymentTarget:
+    macOS: "26.0"
+  xcodeVersion: "26.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_TEAM: 6T4RVD5724
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_STRICT_CONCURRENCY: complete
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+  # This xcodegen install has no bundled setting presets, so the per-configuration
+  # settings are spelled out. DEBUG gates the Developer section of Settings; release
+  # builds must not define it.
+  configs:
+    Debug:
+      DEBUG_INFORMATION_FORMAT: dwarf
+      ENABLE_TESTABILITY: YES
+      GCC_OPTIMIZATION_LEVEL: 0
+      GCC_PREPROCESSOR_DEFINITIONS: ["DEBUG=1", "$(inherited)"]
+      ONLY_ACTIVE_ARCH: YES
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+      SWIFT_OPTIMIZATION_LEVEL: -Onone
+    Release:
+      DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
+      ENABLE_NS_ASSERTIONS: NO
+      SWIFT_COMPILATION_MODE: wholemodule
+      SWIFT_OPTIMIZATION_LEVEL: -O
+      VALIDATE_PRODUCT: YES
+packages:
+  ForemanKit:
+    path: Packages/ForemanKit
+targets:
+  Foreman:
+    type: application
+    supportedDestinations: [macOS]
+    sources:
+      - path: App/Sources
+      - path: App/Resources
+    dependencies:
+      - package: ForemanKit
+        product: ForemanKit
+    # Sandboxed from day one, because the sandbox decides where the shared store lives
+    # (the app group container) and how Claude Code's folder is reached (a folder the
+    # person chooses once, kept as a bookmark).
+    entitlements:
+      path: App/Foreman.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.files.user-selected.read-only: true
+        com.apple.security.files.bookmarks.app-scope: true
+        com.apple.security.application-groups:
+          - 6T4RVD5724.com.alexecollins.foreman
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Foreman
+        CFBundleName: Foreman
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        LSApplicationCategoryType: public.app-category.developer-tools
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        ITSAppUsesNonExemptEncryption: false
+        NSHumanReadableCopyright: © 2026 Alex Collins
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.alexecollins.foreman
+        PRODUCT_NAME: Foreman
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        COMBINE_HIDPI_IMAGES: YES
+schemes:
+  Foreman:
+    build:
+      targets:
+        Foreman: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - package: ForemanKit/ForemanKitTests
