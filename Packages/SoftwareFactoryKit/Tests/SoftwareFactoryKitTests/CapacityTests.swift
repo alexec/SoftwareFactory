@@ -40,6 +40,18 @@ import Testing
         if case .no = Capacity.ask(.model, reading(free: 0.25, swap: 0.05), throttle: t) {} else { Issue.record("expected no") }
     }
 
+    @Test func headroomSaysWhatCouldStart() {
+        let h = Capacity.headroom(reading(free: 0.6, swap: 0.2, compiles: 2, simulators: 1), throttle: t)
+        #expect(h.compiles == 3)
+        #expect(h.simulators == 3)
+        #expect(abs(Int64(h.swapFree) - Int64(0.8 * 4 * Double(gb))) <= 1)
+        // Tight: no more compiles, simulators still allowed; over: nothing.
+        #expect(Capacity.headroom(reading(free: 0.6, swap: 0.5, compiles: 2), throttle: t).compiles == 0)
+        #expect(Capacity.headroom(reading(free: 0.6, swap: 0.5, compiles: 2), throttle: t).simulators == 4)
+        let over = Capacity.headroom(reading(free: 0.1, swap: 0.9), throttle: t)
+        #expect(over.compiles == 0 && over.simulators == 0)
+    }
+
     @Test func reasonsNameTheCause() {
         #expect(Capacity.reason(reading(free: 0.6, swap: 0.2), throttle: t) == "Room to spare.")
         let why = Capacity.reason(reading(free: 0.2, swap: 0.6, compiles: 5), throttle: t)

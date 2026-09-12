@@ -10,9 +10,13 @@ struct FactoryView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 if let r = model.machine {
+                    capacity(r)
                     gauges(r)
-                    verdict(r)
-                    throttle
+                    DisclosureGroup("Throttle") {
+                        throttle
+                            .padding(.top, 8)
+                    }
+                    .font(.title2.weight(.semibold))
                 } else {
                     EmptyLine(text: "Reading the Mac.", symbol: "gauge.with.dots.needle.33percent")
                 }
@@ -40,10 +44,12 @@ struct FactoryView: View {
         }
     }
 
-    private func verdict(_ r: MachineReading) -> some View {
+    /// What could start now. The verdict and the reason, then the room in numbers.
+    private func capacity(_ r: MachineReading) -> some View {
         let t = model.throttle
         let v = Capacity.verdict(r, throttle: t)
-        return VStack(alignment: .leading, spacing: 10) {
+        let h = Capacity.headroom(r, throttle: t)
+        return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Circle().fill(color(v)).frame(width: 10, height: 10)
                 Text(word(v))
@@ -51,6 +57,22 @@ struct FactoryView: View {
             }
             Text(Capacity.reason(r, throttle: t))
                 .foregroundStyle(.secondary)
+            HStack(spacing: 24) {
+                Room(number: h.compiles, label: h.compiles == 1 ? "more compile" : "more compiles", ok: h.compiles > 0)
+                Room(number: h.simulators, label: h.simulators == 1 ? "more simulator" : "more simulators", ok: h.simulators > 0)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(gigabytes(h.memoryFree))
+                        .font(.system(.title, design: .rounded).weight(.semibold))
+                        .monospacedDigit()
+                    Text("memory free").font(.callout).foregroundStyle(.secondary)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(gigabytes(h.swapFree))
+                        .font(.system(.title, design: .rounded).weight(.semibold))
+                        .monospacedDigit()
+                    Text("swap free").font(.callout).foregroundStyle(.secondary)
+                }
+            }
             HStack(spacing: 14) {
                 ForEach(Capacity.Work.allCases, id: \.self) { work in
                     let a = Capacity.ask(work, r, throttle: t)
@@ -115,6 +137,22 @@ struct FactoryView: View {
 
     private func percent(_ f: Double) -> String { "\(Int((f * 100).rounded()))%" }
     private func gigabytes(_ b: UInt64) -> String { String(format: "%.1f GB", Double(b) / 1_073_741_824) }
+}
+
+private struct Room: View {
+    var number: Int
+    var label: String
+    var ok: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(number, format: .number)
+                .font(.system(.title, design: .rounded).weight(.semibold))
+                .foregroundStyle(ok ? Color.primary : Color.orange)
+                .contentTransition(.numericText())
+            Text(label).font(.callout).foregroundStyle(.secondary)
+        }
+    }
 }
 
 private struct Gauge: View {

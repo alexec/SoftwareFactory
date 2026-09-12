@@ -122,6 +122,24 @@ public enum Capacity {
         }
     }
 
+    /// What is left: how many more of each kind of work could start now, by the verdict
+    /// and the throttle. This is what the Factory screen leads with; the throttle is how
+    /// the person changes it.
+    public struct Headroom: Equatable, Sendable {
+        public var compiles: Int
+        public var simulators: Int
+        public var memoryFree: UInt64
+        public var swapFree: UInt64
+    }
+
+    public static func headroom(_ r: MachineReading, throttle t: Throttle) -> Headroom {
+        let v = verdict(r, throttle: t)
+        let compiles = v == .under ? max(0, t.compileSlots - r.compiles) : 0
+        let simulators = v == .over ? 0 : max(0, t.simulatorSlots - r.simulators)
+        return Headroom(compiles: compiles, simulators: simulators, memoryFree: r.memoryFree,
+                        swapFree: r.swapTotal > r.swapUsed ? r.swapTotal - r.swapUsed : 0)
+    }
+
     static func percent(_ f: Double) -> String { "\(Int((f * 100).rounded()))%" }
     static func gigabytes(_ bytes: UInt64) -> String { String(format: "%.1f GB", Double(bytes) / 1_073_741_824) }
 }
