@@ -153,8 +153,10 @@ final class PhoneModel {
     func addTask(to project: Project, title: String, at position: Backlog.Position) async {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, source == .factory, let client else { return }
+        let drafted = await TaskTitler.draft(from: title)
         let body = (try? JSONSerialization.data(withJSONObject: [
-            "project": project.id, "title": title, "position": position.rawValue,
+            "project": project.id, "title": drafted.title, "kind": drafted.kind.rawValue,
+            "note": drafted.note, "position": position.rawValue,
         ])) ?? Data()
         do {
             let response = try await client.send(HTTPRequest(

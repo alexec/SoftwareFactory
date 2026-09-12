@@ -173,6 +173,13 @@ final class AppModel {
         persist { try $0.save(task) }
     }
 
+    /// What was typed or dictated becomes a titled task: Apple Intelligence shortens a
+    /// long sentence to a title and keeps the rest as the note; a short one is the title.
+    func addTask(to projectID: String, from text: String, at position: Backlog.Position) async {
+        let drafted = await TaskTitler.draft(from: text)
+        addTask(to: projectID, title: drafted.title, kind: drafted.kind, at: position, note: drafted.note)
+    }
+
     func set(_ task: FactoryTask, to state: FactoryTask.State) {
         persist { try $0.save(Backlog.set(task, to: state)) }
     }

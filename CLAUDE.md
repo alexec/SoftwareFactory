@@ -55,6 +55,9 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
   - `SampleData`: records for a Debug build to look at.
   - `Shared/CloudSync.swift` (both apps, not the package): the CloudKit calls. Container
     `iCloud.com.alexecollins.softwarefactory`, private database, query on `updated`.
+  - `Shared/Dictation.swift`: `SpeechAnalyzer` on device; `volatile` and `settled` text.
+  - `Shared/TaskTitler.swift`: Apple Intelligence turns a long sentence into a title, a
+    kind and a note; short text is the title as it is.
   - `software-factory` executable: `mcp` (the server over stdio), `status`, `tools`, `decide`.
 - `App/Sources`:
   - `AppModel`: `@Observable @MainActor`; reloads the store every 2 s; every write goes
@@ -62,7 +65,8 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
   - `FactoryServer`: `NWListener` on the port, one queue per connection (a request can
     block for minutes), Bonjour `_softwarefactory._tcp`.
   - `RootView` (split view: Floor, Resources, Factory, projects), `FactoryView` (gauges,
-    verdict, what each kind of work would be told, the throttle sliders), `FloorView` (stat tiles, Needs
+    verdict, what each kind of work would be told, the throttle sliders), `Notifier`
+    (one banner per new question, options as actions; `Presence.isAtTheMac`), `FloorView` (stat tiles, Needs
     you as a horizontal strip, On the floor), `EscalationCard`, `ProjectView` (backlog
     with add, drag reorder, state menu, notes under rows), `ResourcesView` (add, slots,
     holders, Take back), `IntroSheet`, `SettingsView` (How it works on top, the register
@@ -71,6 +75,7 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
   package's HTTP over the Bonjour endpoint, polling `/api/snapshot` every 3 s and posting
   `/api/decide`; when the factory is out of reach it reads and decides through
   `CloudSync`), `PhoneRootView` (network primer in place, Needs you, On the floor),
+  `PhoneBacklogView` (a project's backlog; add with the mic, near the Mac only),
   `PhoneIntroSheet`, `PhoneSettingsView`. Same bundle id as the Mac app.
 - `Tools/make-icon.swift` draws both icon sets; `Tools/drive-mcp.py` drives the stdio server.
 

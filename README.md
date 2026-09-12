@@ -70,9 +70,15 @@ pulls and pushes decisions. That needs the iCloud container
 `iCloud.com.alexecollins.softwarefactory` registered in the developer account once.
 Notifications are next.
 
+- **A banner at the Mac.** Each new question is a macOS notification with the options as
+  its actions. Asked for once, in place, before the system alert.
+- **Dictate a task.** A mic on the add field, on the Mac and the phone. Words appear as
+  they are recognised, on the device. A long sentence becomes a short title with the rest
+  as the note, through Apple Intelligence where it is available.
+
 ## Later, not now
 
-Notifications that find you at the Mac or on the iPhone, answerable from the
-notification. Dictating a task. Each arrives on its own; the order is the backlog in the app.
+A notification on the phone when a question arrives away from the Mac. Adding a task from
+the phone away from the Mac. Each arrives on its own; the order is the backlog in the app.
 
 MIT licence. © 2026 Alex Collins.

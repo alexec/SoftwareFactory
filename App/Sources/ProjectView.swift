@@ -140,9 +140,10 @@ struct ProjectView: View {
     }
 
     private func add(at position: Backlog.Position) {
-        model.addTask(to: project.id, title: newTitle, kind: .feature, at: position)
+        let text = newTitle
         newTitle = ""
         model.dictation.clear()
+        _Concurrency.Task { await model.addTask(to: project.id, from: text, at: position) }
     }
 
     private func toggleDictation() {
