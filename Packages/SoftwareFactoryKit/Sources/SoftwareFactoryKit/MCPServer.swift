@@ -103,7 +103,9 @@ public struct MCPServer: Sendable {
 
     public static let instructions = """
         You are working in a software factory. Register first (agent_register) and keep the id it \
-        returns; pass it to every other call; every call you make is your heartbeat. Claim the task \
+        returns; pass it to every other call; every call you make is your heartbeat. Work from the \
+        backlog: task_next hands you the top task nobody is on, and never a parked one — parked is \
+        set aside on purpose, not yours to start on your own. Claim the task \
         you are on (task_claim) and say when it is done (task_status). If a reply says a project is \
         on hold, finish what you are on and start nothing new on it. When you cannot decide \
         something yourself, raise it \

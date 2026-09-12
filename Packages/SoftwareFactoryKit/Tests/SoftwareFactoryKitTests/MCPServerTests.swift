@@ -142,6 +142,9 @@ import Testing
         let result = init_["result"] as! [String: Any]
         #expect(result["protocolVersion"] as? String == "2025-03-26")
         #expect((result["serverInfo"] as? [String: Any])?["name"] as? String == "software-factory")
+        // The one thing task_next and task_claim don't make obvious on their own: a
+        // parked task is set aside on purpose, not an agent's to start.
+        #expect((result["instructions"] as? String ?? "").contains("parked"))
 
         #expect(s.handle(["jsonrpc": "2.0", "method": "notifications/initialized"]) == nil)
 

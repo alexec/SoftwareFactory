@@ -65,9 +65,10 @@ The tools: `agent_register`, `agent_checkin`, `agent_deregister`, `project_list`
 `resource_list`, `resource_add`, `resource_lease`, `resource_renew`, `resource_release`,
 `factory_status`, `factory_ask`, `task_block`, `task_unblock`, `task_move`, `task_show`, `task_note`, `task_number`, `project_remove`. Task kinds: feature, bug, chore, review, ship.
 There is no check-in: every call an agent makes counts as a sign of life. The server's
-instructions tell an agent to register first, claim what it is on, lease what it shares,
-ask the factory before anything heavy, raise and await when stuck, stop when a project is
-on hold, and deregister when done, which also releases whatever it held.
+instructions tell an agent to register first, work from the backlog and never a parked
+task, claim what it is on, lease what it shares, ask the factory before anything heavy,
+raise and await when stuck, stop when a project is on hold, and deregister when done,
+which also releases whatever it held.
 
 `Packages/SoftwareFactoryKit` also builds `software-factory`, a shell tool: `status` prints the floor as
 text, `tools` lists the tools, `mcp` is the same server over stdio for scripts.
