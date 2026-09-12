@@ -41,23 +41,45 @@ struct ProjectView: View {
                     Section("Backlog") {
                         ForEach(group) { task in
                             TaskRow(task: task)
+                                .draggable(task.id.uuidString)
                         }
                         .onMove { source, destination in
                             model.move(in: project.id, from: source, to: destination)
                         }
                         addRow
                     }
-                } else if !group.isEmpty {
+                    // A parked task dropped here comes back to the backlog, same as its
+                    // row menu's "Back to the backlog".
+                    .dropDestination(for: String.self) { ids, _ in drop(ids, into: .backlog) }
+                } else if !group.isEmpty || state == .parked {
                     Section(state.word) {
                         ForEach(group) { task in
                             TaskRow(task: task)
+                                .draggable(task.id.uuidString)
                         }
+                    }
+                    .dropDestination(for: String.self) { ids, _ in
+                        state == .parked ? drop(ids, into: .parked) : false
                     }
                 }
             }
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
+    }
+
+    /// A row dragged from the backlog to parked, or back, by its id.
+    @discardableResult
+    private func drop(_ ids: [String], into state: FactoryTask.State) -> Bool {
+        var moved = false
+        for id in ids {
+            guard let uuid = UUID(uuidString: id), let task = tasks.first(where: { $0.id == uuid }),
+                  task.state == (state == .parked ? .backlog : .parked)
+            else { continue }
+            model.set(task, to: state)
+            moved = true
+        }
+        return moved
     }
 
     private var addRow: some View {
