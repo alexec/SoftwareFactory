@@ -111,7 +111,7 @@ final class AppModel {
     // MARK: Backlog
 
     func tasks(for projectID: String) -> [FactoryTask] {
-        Backlog.tasks(for: projectID, in: snapshot.tasks)
+        Backlog.visible(for: projectID, in: snapshot.tasks)
     }
 
     func addTask(to projectID: String, title: String, kind: FactoryTask.Kind) {

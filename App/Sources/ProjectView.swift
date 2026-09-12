@@ -95,10 +95,18 @@ struct TaskRow: View {
     var task: FactoryTask
 
     var body: some View {
-        HStack(spacing: 10) {
-            Text(task.title)
-                .strikethrough(task.state == .done)
-                .foregroundStyle(task.state == .done ? .secondary : .primary)
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.title)
+                    .strikethrough(task.state == .done)
+                    .foregroundStyle(task.state == .done ? .secondary : .primary)
+                if let ending = task.note.split(whereSeparator: \.isNewline).last, !ending.isEmpty {
+                    Text(ending)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
             if task.state == .inProgress {
                 Text(model.agentName(task.agentID).map { "\($0) is on it" } ?? "in progress")
                     .font(.caption.weight(.medium))

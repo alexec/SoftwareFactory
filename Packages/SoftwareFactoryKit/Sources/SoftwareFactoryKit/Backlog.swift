@@ -23,6 +23,17 @@ public enum Backlog {
         }
     }
 
+    /// What the project view shows: everything open, then only the newest few done, so a
+    /// long-lived project's list does not fill with what is finished.
+    public static func visible(for projectID: String, in all: [FactoryTask], recentDone: Int = 5) -> [FactoryTask] {
+        var shown = 0
+        return tasks(for: projectID, in: all).filter { task in
+            guard task.state == .done else { return true }
+            shown += 1
+            return shown <= recentDone
+        }
+    }
+
     /// The rank a new task gets: after everything already on that project.
     public static func nextRank(for projectID: String, in all: [FactoryTask]) -> Int {
         (all.filter { $0.projectID == projectID }.map(\.rank).max() ?? -1) + 1

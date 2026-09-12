@@ -24,6 +24,13 @@ import Testing
         #expect(Backlog.next(for: p, in: all)?.title == "first")
     }
 
+    @Test func visibleKeepsOnlyTheNewestDone() {
+        var all = [task("open", rank: 0), task("now", rank: 1, state: .inProgress)]
+        for n in 0..<8 { all.append(task("done \(n)", rank: 9, state: .done, updated: TimeInterval(n))) }
+        let shown = Backlog.visible(for: p, in: all, recentDone: 3)
+        #expect(shown.map(\.title) == ["now", "open", "done 7", "done 6", "done 5"])
+    }
+
     @Test func nextRankFollowsTheProject() {
         let all = [task("a", rank: 4), FactoryTask(projectID: "/other", title: "b", rank: 99)]
         #expect(Backlog.nextRank(for: p, in: all) == 5)
