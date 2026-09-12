@@ -10,7 +10,11 @@
 //
 // The picture: a factory roofline, three sawtooth teeth and a chimney, cut in warm white
 // out of a night-blue ground, with one lit window in the amber the app uses for
-// "needs you". The roof reads at 16 px; the window is the detail that rewards 512.
+// "needs you". Below it, three status dots — green, amber, grey — the same colours the
+// app's own ActivityDot draws next to an agent's name, so the icon reads as agents on
+// the floor, not just a building. (Alex, 12 Sep 2026: make it clear this is a software
+// factory for agents.) The roof reads at 16 px; the dots hold down to 32; the window and
+// the chimney's glow are the detail that rewards 512.
 
 import CoreGraphics
 import Foundation
@@ -73,6 +77,24 @@ func draw(size: Int, squircle: Bool) -> CGImage {
         let w = CGRect(x: left + toothWidth * 1.36, y: floor + s * 0.08, width: toothWidth * 0.28, height: s * 0.11)
         ctx.setFillColor(amber)
         ctx.fill(w)
+    }
+
+    // Three agents on the floor: the same status dots the app itself draws next to an
+    // agent's name — working (green), waiting (amber), quiet (grey) — so the icon reads
+    // as agents in the factory, not just the building. Reads down to 16 px, where the
+    // building alone would read as any factory.
+    let dotColors = [
+        CGColor(red: 0.20, green: 0.78, blue: 0.35, alpha: 1),
+        CGColor(red: 1.0, green: 0.62, blue: 0.04, alpha: 1),
+        CGColor(red: 0.55, green: 0.58, blue: 0.65, alpha: 1),
+    ]
+    let dotRadius = s * 0.048
+    let dotY = floor * 0.42
+    let dotSpan = right - left
+    for (i, color) in dotColors.enumerated() {
+        let dotX = left + dotSpan * (CGFloat(i) + 0.5) / CGFloat(dotColors.count)
+        ctx.setFillColor(color)
+        ctx.fillEllipse(in: CGRect(x: dotX - dotRadius, y: dotY - dotRadius, width: dotRadius * 2, height: dotRadius * 2))
     }
 
     // A faint glow from the chimney at the large sizes, nothing at the small ones.
