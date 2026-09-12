@@ -38,6 +38,35 @@ import Testing
         #expect(shown.map(\.title) == ["now", "open", "done 7", "done 6", "done 5"])
     }
 
+    @Test func blockedIsNotNextAndClearsOnItsOwn() throws {
+        var e = Escalation(projectID: p, question: "?", options: [.init(title: "A"), .init(title: "B")])
+        let waiting = Backlog.block(task("waiting", rank: 0), on: .init(kind: .decision, id: e.id, why: "which one"))
+        let other = task("other", rank: 1)
+        let prerequisite = task("first do this", rank: 2, state: .done, updated: 5)
+        let after = Backlog.block(task("after", rank: 3), on: .init(kind: .task, id: prerequisite.id, why: "needs the first"))
+        let onAlex = Backlog.block(task("on alex", rank: 4), on: .init(kind: .person, why: "register the container"))
+        let all = [waiting, other, prerequisite, after, onAlex]
+
+        #expect(Backlog.next(for: p, in: all)?.title == "other")
+        #expect(Backlog.tasks(for: p, in: all).map(\.title) == ["waiting", "after", "on alex", "other", "first do this"])
+        #expect(!Backlog.move(in: Backlog.tasks(for: p, in: all), from: IndexSet(integer: 0), to: 1).contains { $0.state == .blocked })
+
+        // Nothing has cleared yet except the task block.
+        var cleared = Sweep.unblocked(in: Snapshot(tasks: all, escalations: [e]), now: Date(timeIntervalSince1970: 9))
+        #expect(cleared.map(\.title) == ["after"])
+        #expect(cleared[0].state == .backlog)
+        #expect(cleared[0].blocker == nil)
+        #expect(cleared[0].note.contains("unblocked, first do this is done"))
+
+        try e.decide(e.options[1])
+        cleared = Sweep.unblocked(in: Snapshot(tasks: all, escalations: [e]), now: Date(timeIntervalSince1970: 9))
+        #expect(Set(cleared.map(\.title)) == ["waiting", "after"])
+        #expect(cleared.first { $0.title == "waiting" }?.note.contains("decided: B") == true)
+        // A person clears it by hand, never the sweep.
+        #expect(!cleared.contains { $0.title == "on alex" })
+        #expect(Backlog.set(onAlex, to: .backlog).blocker == nil)
+    }
+
     @Test func nextRankFollowsTheProject() {
         let all = [task("a", rank: 4), FactoryTask(projectID: "/other", title: "b", rank: 99)]
         #expect(Backlog.nextRank(for: p, in: all) == 5)

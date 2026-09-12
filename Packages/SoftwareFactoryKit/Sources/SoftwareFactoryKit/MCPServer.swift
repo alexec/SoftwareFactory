@@ -105,7 +105,9 @@ public struct MCPServer: Sendable {
         You are working in a software factory. Register first (agent_register) and keep the id it \
         returns; pass it to every other call. Check in (agent_checkin) every few minutes with what you \
         are on. When you cannot decide something yourself, raise it (escalation_raise) with two or more \
-        options and your recommendation, then wait for the answer (escalation_await). Before using \
+        options and your recommendation, then wait for the answer (escalation_await). If a task is \
+        blocked (waiting on a decision, another task, or a person), mark it (task_block) and pick up \
+        the next one (task_next); the factory unblocks it when the wait is over. Before using \
         anything shared (a phone, a simulator, the browser, the whole Mac) lease it (resource_lease) and \
         release it after. Before starting anything heavy, ask the factory (factory_ask): a compile, a \
         simulator, a model. Deregister (agent_deregister) when you are finished.
@@ -164,6 +166,12 @@ public struct MCPServer: Sendable {
                               "state": ["type": "string", "enum": ["backlog", "inProgress", "done", "parked"]],
                               "note": str("What happened")],
                  required: ["task_id", "state"]),
+            Tool(name: "task_block", description: "This task is blocked: say what it waits on, then move on to the next task. A block on a decision or a task clears on its own when the decision lands or the task is done; a block on a person clears when they say so.",
+                 properties: ["task_id": str("The task"),
+                              "on": ["type": "string", "enum": ["decision", "task", "person", "other"], "description": "What it waits on"],
+                              "id": str("The escalation_id or task_id it waits on, for decision or task"),
+                              "why": str("In one line, what has to happen")],
+                 required: ["task_id", "on", "why"]),
             Tool(name: "task_rank", description: "Move a task directly above another on the same backlog.",
                  properties: ["task_id": str("The task to move"), "above_task_id": str("The task it should sit above")],
                  required: ["task_id", "above_task_id"]),
@@ -308,6 +316,17 @@ public struct MCPServer: Sendable {
             }
             try store.save(Backlog.set(task, to: state, at: now()))
             return "\(task.title): \(state.rawValue)"
+
+        case "task_block":
+            let task = try task(args, in: snap)
+            guard let kind = FactoryTask.Blocker.Kind(rawValue: try string("on", args)) else {
+                throw ToolError(message: "on must be decision, task, person or other")
+            }
+            let id = (args["id"] as? String).flatMap(UUID.init(uuidString:))
+            if kind == .decision || kind == .task, id == nil { throw ToolError(message: "id is needed for a block on a \(kind.rawValue)") }
+            try store.save(Backlog.block(task, on: .init(kind: kind, id: id, why: try string("why", args)), at: now()))
+            let next = Backlog.next(for: task.projectID, in: snap.tasks.filter { $0.id != task.id }).map { " Next on the backlog: \($0.title) (\($0.id.uuidString))." } ?? " Nothing else is waiting on this backlog."
+            return "\(task.title) is blocked.\(next)"
 
         case "task_rank":
             let task = try task(args, in: snap)
@@ -461,7 +480,8 @@ public struct MCPServer: Sendable {
     // MARK: Helpers
 
     static func line(_ t: FactoryTask) -> String {
-        "\(t.id.uuidString)  \(t.state.rawValue)  \(t.kind.rawValue)  \(t.title)"
+        let blocked = t.blocker.map { "  [blocked on \($0.kind.rawValue): \($0.why)]" } ?? ""
+        return "\(t.id.uuidString)  \(t.state.rawValue)  \(t.kind.rawValue)  \(t.title)\(blocked)"
     }
 
     func string(_ key: String, _ args: [String: Any]) throws -> String {

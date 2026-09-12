@@ -90,11 +90,13 @@ struct PhoneBacklogView: View {
                                 .strikethrough(task.state == .done)
                                 .foregroundStyle(task.state == .done || task.state == .parked ? .secondary : .primary)
                             Spacer()
-                            Text(task.state == .inProgress ? "In progress" : (task.state == .done ? "Done" : (task.state == .parked ? "Parked" : "")))
+                            Text(task.state == .inProgress ? "In progress" : (task.state == .done ? "Done" : (task.state == .parked ? "Parked" : (task.state == .blocked ? "Blocked" : ""))))
                                 .font(.caption.weight(.medium))
-                                .foregroundStyle(task.state == .inProgress ? .green : .secondary)
+                                .foregroundStyle(task.state == .inProgress ? .green : (task.state == .blocked ? .orange : .secondary))
                         }
-                        if let ending = task.note.split(whereSeparator: \.isNewline).last, !ending.isEmpty {
+                        if task.state == .blocked, let why = task.blocker?.why {
+                            Text(why).font(.caption).foregroundStyle(.orange).lineLimit(2)
+                        } else if let ending = task.note.split(whereSeparator: \.isNewline).last, !ending.isEmpty {
                             Text(ending)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)

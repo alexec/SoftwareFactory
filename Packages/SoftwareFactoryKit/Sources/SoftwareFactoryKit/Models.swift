@@ -48,6 +48,26 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         case backlog, inProgress, done
         /// Seen by the person and set aside: not next, not done, not forgotten.
         case parked
+        /// Waiting on something named in `blocker`. Not next; an agent moves on.
+        case blocked
+    }
+
+    /// What a blocked task waits on. A decision or a task clears on its own; a person or
+    /// anything else clears when someone says so.
+    public struct Blocker: Codable, Hashable, Sendable {
+        public enum Kind: String, Codable, Sendable {
+            case decision, task, person, other
+        }
+
+        public var kind: Kind
+        public var id: UUID?
+        public var why: String
+
+        public init(kind: Kind, id: UUID? = nil, why: String) {
+            self.kind = kind
+            self.id = id
+            self.why = why
+        }
     }
 
     public var version = Records.version
@@ -61,6 +81,8 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
     public var note: String
     /// The agent on it, when one is.
     public var agentID: UUID?
+    /// Set while the state is `blocked`.
+    public var blocker: Blocker?
     public var created: Date
     public var updated: Date
 
@@ -91,6 +113,7 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         rank = try c.decode(Int.self, forKey: .rank)
         note = try c.decode(String.self, forKey: .note)
         agentID = try c.decodeIfPresent(UUID.self, forKey: .agentID)
+        blocker = try c.decodeIfPresent(Blocker.self, forKey: .blocker)
         created = try c.decode(Date.self, forKey: .created)
         updated = try c.decode(Date.self, forKey: .updated)
     }
@@ -157,6 +180,32 @@ public enum Sweep {
         public var leases: [Lease]
 
         public var isEmpty: Bool { agents.isEmpty && leases.isEmpty }
+    }
+
+    /// Blocked tasks whose blocker has cleared: the decision was made, or the task is
+    /// done. They go back to the backlog with a line saying so.
+    public static func unblocked(in snapshot: Snapshot, now: Date) -> [FactoryTask] {
+        snapshot.tasks.compactMap { task in
+            guard task.state == .blocked, let b = task.blocker else { return nil }
+            let cleared: String?
+            switch b.kind {
+            case .decision:
+                if let id = b.id, let e = snapshot.escalations.first(where: { $0.id == id }), let chosen = e.chosen {
+                    cleared = "decided: \(chosen.title)"
+                } else { cleared = nil }
+            case .task:
+                if let id = b.id, let t = snapshot.tasks.first(where: { $0.id == id }), t.state == .done {
+                    cleared = "\(t.title) is done"
+                } else { cleared = nil }
+            case .person, .other:
+                cleared = nil
+            }
+            guard let cleared else { return nil }
+            var t = Backlog.set(task, to: .backlog, at: now)
+            t.blocker = nil
+            t.note = t.note.isEmpty ? "unblocked, \(cleared)" : t.note + "\nunblocked, \(cleared)"
+            return t
+        }
     }
 
     public static func goneAgents(in snapshot: Snapshot, now: Date) -> Changes {

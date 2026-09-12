@@ -29,7 +29,8 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
 
 - `Packages/SoftwareFactoryKit` (Foundation only, `swift test`):
   - `Models`: `Project` (id is the folder path), `FactoryTask` (a task; named so because
-    `Task` is Swift's; feature/bug/chore; backlog/inProgress/done/parked; rank), `Agent` (name,
+    `Task` is Swift's; feature/bug/chore; backlog/inProgress/done/parked/blocked with a
+    `Blocker` saying what on; rank), `Agent` (name,
     project, task, lastSeen, deregistered; working within 2 min of a check-in),
     `Escalation` (options, one recommended; `decide(_:by:)` records a `Decision`),
     `Resource` (slots, maxLease), `Lease` (one slot, one agent, until; `isActive(now:)`).
@@ -46,6 +47,8 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     pushes; `decisionsToAdopt` for decisions made on another device.
   - `Escalations.visible`: open questions in full, the newest three answered ones.
   - `Sweep.goneAgents`: fifteen silent minutes and an agent is marked gone, leases released.
+  - `Sweep.unblocked`: a task blocked on a decision now made, or a task now done, goes
+    back to the backlog with a line saying so. A block on a person clears by hand.
   - `Records.version` on every record; a decoder reads an older shape without it.
   - `Capacity`: `MachineReading` (`sample()` on macOS reads memory, swap, load, compiles,
     simulators through sysctl and Mach), `Throttle` (one file, `throttle.json`), the

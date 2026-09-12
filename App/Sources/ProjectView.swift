@@ -207,7 +207,12 @@ struct TaskRow: View {
                 Text(task.title)
                     .strikethrough(task.state == .done)
                     .foregroundStyle(task.state == .done || task.state == .parked ? .secondary : .primary)
-                if let ending = task.note.split(whereSeparator: \.isNewline).last, !ending.isEmpty {
+                if task.state == .blocked, let why = task.blocker?.why {
+                    Text(why)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .lineLimit(2)
+                } else if let ending = task.note.split(whereSeparator: \.isNewline).last, !ending.isEmpty {
                     Text(ending)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -221,12 +226,20 @@ struct TaskRow: View {
                     .padding(.vertical, 2)
                     .background(.green.opacity(0.2), in: .capsule)
             }
+            if task.state == .blocked, let b = task.blocker {
+                Text("Blocked on \(word(for: b))")
+                    .font(.caption.weight(.medium))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.orange.opacity(0.2), in: .capsule)
+                    .help(b.why)
+            }
             Spacer()
             // The person's menu: park, unpark, move, delete. Whether a task is in
             // progress or done is the agent's to say, so those are not here.
             Menu {
-                if task.state == .parked {
-                    Button("Back to the backlog") { model.set(task, to: .backlog) }
+                if task.state == .parked || task.state == .blocked {
+                    Button(task.state == .blocked ? "Unblock, back to the backlog" : "Back to the backlog") { model.set(task, to: .backlog) }
                 } else if task.state != .done {
                     Button("Park") { model.set(task, to: .parked) }
                 }
@@ -248,6 +261,15 @@ struct TaskRow: View {
         }
         .padding(.vertical, 2)
     }
+
+    private func word(for b: FactoryTask.Blocker) -> String {
+        switch b.kind {
+        case .person: "you: \(b.why)"
+        case .decision: "a decision: \(b.why)"
+        case .task: "another task: \(b.why)"
+        case .other: b.why
+        }
+    }
 }
 
 extension FactoryTask.State {
@@ -257,6 +279,7 @@ extension FactoryTask.State {
         case .inProgress: "In progress"
         case .done: "Done"
         case .parked: "Parked"
+        case .blocked: "Blocked"
         }
     }
 }

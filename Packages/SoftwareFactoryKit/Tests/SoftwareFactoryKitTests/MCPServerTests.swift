@@ -136,6 +136,19 @@ import Testing
         #expect(call(s, "resource_lease", ["agent_id": a, "resource": "Nothing"]).isError)
     }
 
+    @Test func blockingATaskSaysWhatIsNext() throws {
+        let s = try server()
+        let a = id(after: "", in: call(s, "agent_register", ["name": "a", "project": "/tmp/P"]).text)
+        let t1 = id(after: "", in: call(s, "task_add", ["project": "P", "title": "Needs Alex"]).text)
+        _ = call(s, "task_add", ["project": "P", "title": "Free"])
+        #expect(call(s, "task_block", ["task_id": t1, "on": "decision", "why": "x"]).isError)
+        let blocked = call(s, "task_block", ["task_id": t1, "on": "person", "why": "register the container"])
+        #expect(blocked.text.hasPrefix("Needs Alex is blocked. Next on the backlog: Free"))
+        #expect(call(s, "task_next", ["project": "P"]).text.contains("Free"))
+        #expect(call(s, "task_list", ["project": "P"]).text.contains("[blocked on person: register the container]"))
+        _ = a
+    }
+
     @Test func factoryStatusAndAsk() throws {
         let gb: UInt64 = 1_073_741_824
         let busy = MachineReading(memoryTotal: 32 * gb, memoryFree: 6 * gb, swapUsed: 3 * gb, swapTotal: 4 * gb, load: 2, cores: 10, compiles: 1, simulators: 0)

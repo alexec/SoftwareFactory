@@ -43,6 +43,10 @@ something themselves. You see all of it in one window and answer the questions w
    again changes the record.
 6. **A task's progress is the agent's word.** You add, rank, park and delete. An agent
    claims, and says done. (Alex, 12 September 2026.)
+7. **A blocked task says what it waits on, and nobody waits with it.** An agent marks the
+   block (a decision, another task, a person) and picks up the next task. The factory
+   unblocks it when the decision lands or the task is done; a block on a person clears
+   when they say so.
 
 ## Connecting an agent
 

@@ -18,9 +18,10 @@ public enum Backlog {
     private static func stateOrder(_ s: FactoryTask.State) -> Int {
         switch s {
         case .inProgress: 0
-        case .backlog: 1
-        case .parked: 2
-        case .done: 3
+        case .blocked: 1
+        case .backlog: 2
+        case .parked: 3
+        case .done: 4
         }
     }
 
@@ -63,7 +64,7 @@ public enum Backlog {
     public static func move(
         in tasks: [FactoryTask], from source: IndexSet, to destination: Int, at date: Date = .now
     ) -> [FactoryTask] {
-        let open = tasks.filter { $0.state != .done && $0.state != .parked }.sorted(by: order)
+        let open = tasks.filter { $0.state == .backlog || $0.state == .inProgress }.sorted(by: order)
         // The same semantics as SwiftUI's onMove: the moved tasks land before the task
         // that was at `destination` in the unmoved list.
         let moving = source.map { open[$0] }
@@ -78,7 +79,7 @@ public enum Backlog {
         _ task: FactoryTask, above other: FactoryTask, in tasks: [FactoryTask], at date: Date = .now
     ) -> [FactoryTask] {
         guard task.id != other.id else { return [] }
-        var open = tasks.filter { $0.state != .done && $0.state != .parked && $0.id != task.id }.sorted(by: order)
+        var open = tasks.filter { ($0.state == .backlog || $0.state == .inProgress) && $0.id != task.id }.sorted(by: order)
         let at = open.firstIndex { $0.id == other.id } ?? open.count
         open.insert(task, at: at)
         return renumber(open, at: date)
@@ -103,6 +104,17 @@ public enum Backlog {
         task.updated = date
         if let agentID { task.agentID = agentID }
         if state == .backlog || state == .parked { task.agentID = nil }
+        if state != .blocked { task.blocker = nil }
+        return task
+    }
+
+    /// Marks a task blocked on something. The agent keeps its name on it, so the floor
+    /// still says who was on it when it clears.
+    public static func block(_ task: FactoryTask, on blocker: FactoryTask.Blocker, at date: Date = .now) -> FactoryTask {
+        var task = task
+        task.state = .blocked
+        task.blocker = blocker
+        task.updated = date
         return task
     }
 
