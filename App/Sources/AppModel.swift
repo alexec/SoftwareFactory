@@ -231,7 +231,7 @@ final class AppModel {
         guard !title.isEmpty else { return }
         ensureStored(projectID)
         var task = FactoryTask(
-            projectID: projectID, title: title, kind: kind,
+            projectID: projectID, title: title, kind: kind, state: Backlog.state(for: position),
             rank: Backlog.rank(for: position, projectID: projectID, in: snapshot.tasks), note: note)
         persist { store in
             task.number = Backlog.nextNumber(in: (try? store.loadEveryTask()) ?? snapshot.tasks)
@@ -241,6 +241,7 @@ final class AppModel {
 
     /// What was typed or dictated becomes a titled task: Apple Intelligence shortens a
     /// long sentence to a title and keeps the rest as the note; a short one is the title.
+    /// `position: .parked` lands it seen and set aside, never on the backlog.
     func addTask(to projectID: String, from text: String, at position: Backlog.Position) async {
         let drafted = await TaskTitler.draft(from: text)
         addTask(to: projectID, title: drafted.title, kind: drafted.kind, at: position, note: drafted.note)

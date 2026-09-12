@@ -7,6 +7,13 @@ import Testing
         MCPServer(store: try temporaryStore(), pollInterval: 0.01)
     }
 
+    @Test func addingWithPositionParkedSkipsTheBacklogEntirely() throws {
+        let s = try server()
+        _ = call(s, "task_add", ["project": "Parked Test", "title": "Set aside", "position": "parked"])
+        #expect(call(s, "task_list", ["project": "Parked Test"]).text.contains(" parked "))
+        #expect(call(s, "task_next", ["project": "Parked Test"]).text.hasPrefix("Nothing waiting."))
+    }
+
     @Test func numbersAreShortUniqueAndUsableAsIds() throws {
         let s = try server()
         let first = call(s, "task_add", ["project": "/tmp/N", "title": "First"]).text

@@ -94,6 +94,7 @@ struct PhoneBacklogView: View {
                         Menu {
                             Button("Add to the top") { add(at: .top) }
                             Button("Add to the bottom") { add(at: .bottom) }
+                            Button("Add to parked") { add(at: .parked) }
                         } label: {
                             Text("Add")
                         } primaryAction: {

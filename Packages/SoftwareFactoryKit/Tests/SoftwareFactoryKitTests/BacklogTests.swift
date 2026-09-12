@@ -173,6 +173,12 @@ import Testing
         #expect(Backlog.tasks(for: p, in: all + [first]).first?.title == "new")
     }
 
+    @Test func stateForPositionIsParkedOnlyWhenAskedForParked() {
+        #expect(Backlog.state(for: .top) == .backlog)
+        #expect(Backlog.state(for: .bottom) == .backlog)
+        #expect(Backlog.state(for: .parked) == .parked)
+    }
+
     @Test func moveRenumbersOnlyWhatChanged() {
         let all = [task("a", rank: 0), task("b", rank: 1), task("c", rank: 2), task("done", rank: 3, state: .done)]
         let changed = Backlog.move(in: all, from: IndexSet(integer: 2), to: 0)

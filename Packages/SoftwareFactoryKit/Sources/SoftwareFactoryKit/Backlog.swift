@@ -75,11 +75,17 @@ public enum Backlog {
     }
 
     public enum Position: String, Codable, Sendable {
-        case top, bottom
+        /// Added straight to parked: seen and set aside without ever sitting on the backlog.
+        case top, bottom, parked
     }
 
     public static func rank(for position: Position, projectID: String, in all: [FactoryTask]) -> Int {
         position == .top ? topRank(for: projectID, in: all) : nextRank(for: projectID, in: all)
+    }
+
+    /// The state a newly added task starts in: parked if asked for that, backlog otherwise.
+    public static func state(for position: Position) -> FactoryTask.State {
+        position == .parked ? .parked : .backlog
     }
 
     /// The top task nobody is on.

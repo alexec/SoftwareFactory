@@ -260,9 +260,11 @@ public struct HTTPRouter: Sendable {
         do {
             let snap = try store.load()
             let project = try server.resolveProject(t.project, in: snap, create: true)
+            let position = t.position ?? .bottom
             let task = FactoryTask(number: Backlog.nextNumber(in: (try? store.loadEveryTask()) ?? snap.tasks),
                                    projectID: project.id, title: t.title, kind: t.kind ?? .feature,
-                                   rank: Backlog.rank(for: t.position ?? .bottom, projectID: project.id, in: snap.tasks),
+                                   state: Backlog.state(for: position),
+                                   rank: Backlog.rank(for: position, projectID: project.id, in: snap.tasks),
                                    note: t.note ?? "", created: server.now())
             try store.save(task)
             return .encoded(task)

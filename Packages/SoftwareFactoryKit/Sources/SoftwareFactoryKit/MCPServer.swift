@@ -160,7 +160,7 @@ public struct MCPServer: Sendable {
             Tool(name: "task_add", description: "File a task on a project's backlog: at the bottom, at the top, or directly above another task.",
                  properties: ["project": str("Project name"), "title": str("The task, in one line"),
                               "kind": ["type": "string", "enum": ["feature", "bug", "chore", "review", "ship"], "description": "Defaults to feature. review is a UX review, a luxury audit or a compliance pass: findings, not a change. ship is closing-out work on the store record: listing, privacy and support pages, build attached, repo visibility."],
-                              "position": ["type": "string", "enum": ["top", "bottom"], "description": "Defaults to bottom"],
+                              "position": ["type": "string", "enum": ["top", "bottom", "parked"], "description": "Defaults to bottom"],
                               "above_task_id": str("Put it directly above this task instead"),
                               "note": str("Why, and anything the next reader needs"),
                               "number": ["type": "integer", "description": "A short number of your choosing (T509), to match a number already in use elsewhere; otherwise the next free one is given"]],
@@ -327,6 +327,7 @@ public struct MCPServer: Sendable {
                 number = wanted
             }
             var task = FactoryTask(number: number, projectID: project.id, title: try string("title", args), kind: kind,
+                                   state: Backlog.state(for: position),
                                    rank: Backlog.rank(for: position, projectID: project.id, in: snap.tasks),
                                    note: args["note"] as? String ?? "", created: now())
             if let aboveRef = args["above_task_id"] as? String, !aboveRef.isEmpty {
