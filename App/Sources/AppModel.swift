@@ -14,6 +14,8 @@ final class AppModel {
 
     let store: FileStore?
     private(set) var serverState = "Starting"
+    private(set) var machine: MachineReading?
+    private(set) var throttle = Throttle.default
     @ObservationIgnored private var server: FactoryServer?
     let cloud = CloudSync()
     @ObservationIgnored private var lastCloudPull: Date?
@@ -87,8 +89,17 @@ final class AppModel {
             storeError = error.localizedDescription
         }
         dashboard = Dashboard.make(snapshot: snapshot)
+        throttle = store.throttle()
+        machine = MachineReading.sample()
         lastRefresh = .now
         _Concurrency.Task { await sync() }
+    }
+
+    func setThrottle(_ change: (inout Throttle) -> Void) {
+        var t = throttle
+        change(&t)
+        throttle = t
+        persist { try $0.save(t) }
     }
 
     /// The Mac's half of iCloud: every change goes up; decisions made on the phone come down.

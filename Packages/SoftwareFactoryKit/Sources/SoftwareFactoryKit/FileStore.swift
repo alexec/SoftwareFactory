@@ -93,6 +93,17 @@ public struct FileStore: Sendable {
         )
     }
 
+    /// The throttle is one file, `throttle.json`, and the default when there is none.
+    public func throttle() -> Throttle {
+        let url = root.appending(path: "throttle.json")
+        guard let data = try? Data(contentsOf: url), let t = try? Self.decoder.decode(Throttle.self, from: data) else { return .default }
+        return t
+    }
+
+    public func save(_ throttle: Throttle) throws {
+        try Self.encoder.encode(throttle).write(to: root.appending(path: "throttle.json"), options: .atomic)
+    }
+
     public func escalation(_ id: UUID) -> Escalation? {
         let url = root.appending(path: "escalations").appending(path: id.uuidString + ".json")
         guard let data = try? Data(contentsOf: url) else { return nil }

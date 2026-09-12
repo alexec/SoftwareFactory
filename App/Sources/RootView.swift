@@ -4,6 +4,7 @@ import SoftwareFactoryKit
 enum Destination: Hashable {
     case floor
     case resources
+    case factory
     case project(String)
 }
 
@@ -18,6 +19,8 @@ struct RootView: View {
                     .tag(Destination.floor)
                 Label("Resources", systemImage: "lock.rectangle.stack")
                     .tag(Destination.resources)
+                Label("Factory", systemImage: "building.2")
+                    .tag(Destination.factory)
 
                 Section("Projects") {
                     ForEach(model.dashboard.projects) { status in
@@ -42,6 +45,8 @@ struct RootView: View {
             switch selection {
             case .resources:
                 ResourcesView()
+            case .factory:
+                FactoryView()
             case .project(let id):
                 if let project = model.project(for: id) {
                     ProjectView(project: project)
@@ -61,6 +66,7 @@ struct RootView: View {
     private var title: String {
         if case .project(let id) = selection, let p = model.project(for: id) { return p.name }
         if case .resources = selection { return "Resources" }
+        if case .factory = selection { return "Factory" }
         return "Software Factory"
     }
 }

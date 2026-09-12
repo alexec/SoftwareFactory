@@ -20,6 +20,10 @@ something themselves. You see all of it in one window and answer the questions w
   browser, the whole Mac. Each has slots and a longest lease. An agent leases a slot,
   saying why and for how long, and gives it back; a lease that runs out is over on its
   own. You can take one back.
+- **The factory.** This Mac: memory, swap, load, compiles and simulators running, and a
+  verdict (under capacity, tight, over). An agent asks before starting anything heavy and
+  is told yes, wait or no, with the reason. The throttle (compiles at once, simulators at
+  once, the swap ceiling, the memory floor) is set only in the app.
 
 ## The rules
 
@@ -48,10 +52,10 @@ claude mcp add --transport http --scope user software-factory http://127.0.0.1:4
 The tools: `agent_register`, `agent_checkin`, `agent_deregister`, `project_list`,
 `project_add`, `task_list`, `task_next`, `task_add`, `task_claim`, `task_status`,
 `task_rank`, `task_remove`, `escalation_raise`, `escalation_await`, `escalation_list`,
-`resource_list`, `resource_add`, `resource_lease`, `resource_renew`, `resource_release`.
-The server's instructions tell an agent to register first, check in as it goes, lease
-what it shares, raise and await when stuck, and deregister when done, which also
-releases whatever it held.
+`resource_list`, `resource_add`, `resource_lease`, `resource_renew`, `resource_release`,
+`factory_status`, `factory_ask`. The server's instructions tell an agent to register
+first, check in as it goes, lease what it shares, ask the factory before anything heavy,
+raise and await when stuck, and deregister when done, which also releases whatever it held.
 
 `Packages/SoftwareFactoryKit` also builds `software-factory`, a shell tool: `status` prints the floor as
 text, `tools` lists the tools, `mcp` is the same server over stdio for scripts.
@@ -68,9 +72,7 @@ Notifications are next.
 
 ## Later, not now
 
-The factory's own capacity: memory, CPU, compiles running, a verdict agents ask before
-starting anything heavy, and a throttle. Notifications that find you at the Mac or on the
-iPhone, answerable from the notification. Dictating a task. Each arrives on its own; the
-order is the backlog in the app.
+Notifications that find you at the Mac or on the iPhone, answerable from the
+notification. Dictating a task. Each arrives on its own; the order is the backlog in the app.
 
 MIT licence. © 2026 Alex Collins.

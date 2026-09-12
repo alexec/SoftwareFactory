@@ -127,6 +127,24 @@ import Testing
         #expect(call(s, "resource_lease", ["agent_id": a, "resource": "Nothing"]).isError)
     }
 
+    @Test func factoryStatusAndAsk() throws {
+        let gb: UInt64 = 1_073_741_824
+        let busy = MachineReading(memoryTotal: 32 * gb, memoryFree: 6 * gb, swapUsed: 3 * gb, swapTotal: 4 * gb, load: 2, cores: 10, compiles: 1, simulators: 0)
+        let s = MCPServer(store: try temporaryStore(), pollInterval: 0.01, machine: { busy })
+        let status = call(s, "factory_status").text
+        #expect(status.hasPrefix("Over capacity."))
+        #expect(status.contains("Compiles 1 of 5"))
+        #expect(call(s, "factory_ask", ["work": "compile"]).text.hasPrefix("No:"))
+        #expect(call(s, "factory_ask", ["work": "nothing"]).isError)
+
+        try s.store.save(Throttle(compileSlots: 1, swapCeiling: 0.9, memoryFloor: 0.05))
+        #expect(call(s, "factory_ask", ["work": "compile"]).text.hasPrefix("Wait: 1 of 1 compile slots"))
+        #expect(call(s, "factory_ask", ["work": "simulator"]).text == "Yes.")
+
+        let blind = MCPServer(store: try temporaryStore(), pollInterval: 0.01, machine: { nil })
+        #expect(call(blind, "factory_status").isError)
+    }
+
     @Test func errorsAreToolErrorsNotProtocolErrors() throws {
         let s = try server()
         let r = call(s, "agent_checkin", ["agent_id": "not-an-id"])

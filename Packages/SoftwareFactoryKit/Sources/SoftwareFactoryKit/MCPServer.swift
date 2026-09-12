@@ -10,15 +10,27 @@ public struct MCPServer: Sendable {
     public var now: @Sendable () -> Date
     /// How `escalation_await` sleeps between looks at the store.
     public var pollInterval: TimeInterval
+    /// A fresh look at the machine, from whoever hosts the server. Nil where it cannot look.
+    public var machine: @Sendable () -> MachineReading?
 
     public static let name = "software-factory"
     public static let version = "0.1.0"
     public static let protocolVersion = "2025-06-18"
 
-    public init(store: FileStore, now: @escaping @Sendable () -> Date = { .now }, pollInterval: TimeInterval = 1) {
+    public init(store: FileStore, now: @escaping @Sendable () -> Date = { .now }, pollInterval: TimeInterval = 1,
+                machine: @escaping @Sendable () -> MachineReading? = MCPServer.readMachine) {
         self.store = store
         self.now = now
         self.pollInterval = pollInterval
+        self.machine = machine
+    }
+
+    public static let readMachine: @Sendable () -> MachineReading? = {
+        #if os(macOS)
+        MachineReading.sample()
+        #else
+        nil
+        #endif
     }
 
     // MARK: The stdio loop
@@ -95,7 +107,8 @@ public struct MCPServer: Sendable {
         are on. When you cannot decide something yourself, raise it (escalation_raise) with two or more \
         options and your recommendation, then wait for the answer (escalation_await). Before using \
         anything shared (a phone, a simulator, the browser, the whole Mac) lease it (resource_lease) and \
-        release it after. Deregister (agent_deregister) when you are finished.
+        release it after. Before starting anything heavy, ask the factory (factory_ask): a compile, a \
+        simulator, a model. Deregister (agent_deregister) when you are finished.
         """
 
     // MARK: Tools
@@ -187,6 +200,11 @@ public struct MCPServer: Sendable {
             Tool(name: "resource_release", description: "Give a resource back early. Deregistering releases everything you hold.",
                  properties: ["agent_id": str("From agent_register"), "resource": str("Resource name or id")],
                  required: ["agent_id", "resource"]),
+
+            Tool(name: "factory_status", description: "The factory right now: memory, swap, load, compiles and simulators running, the throttle, and the verdict: under, tight or over capacity.",
+                 properties: [:], required: []),
+            Tool(name: "factory_ask", description: "Ask before starting anything heavy: can I start a compile, a simulator, or a model? Answers yes, wait or no, with the reason. A model is the whole machine.",
+                 properties: ["work": ["type": "string", "enum": ["compile", "simulator", "model"]]], required: ["work"]),
         ] }
 
         static func str(_ description: String) -> [String: Any] {
@@ -396,6 +414,21 @@ public struct MCPServer: Sendable {
             }
             try store.save(try Leases.release(mine, for: agent.id, now: now()))
             return "Released \(resource.name)."
+
+        case "factory_status":
+            guard let r = machine() else { throw ToolError(message: "This server cannot see the machine.") }
+            let t = store.throttle()
+            let verdict = Capacity.verdict(r, throttle: t)
+            return """
+                \(verdict.rawValue.capitalized) capacity. \(Capacity.reason(r, throttle: t))
+                Memory \(Capacity.percent(r.memoryFreeFraction)) free of \(Capacity.gigabytes(r.memoryTotal)); swap \(Capacity.gigabytes(r.swapUsed)) of \(Capacity.gigabytes(r.swapTotal)); load \(String(format: "%.1f", r.load)) on \(r.cores) cores.
+                Compiles \(r.compiles) of \(t.compileSlots); simulators \(r.simulators) of \(t.simulatorSlots). Nothing new starts above \(Capacity.percent(t.swapCeiling)) swap or below \(Capacity.percent(t.memoryFloor)) free.
+                """
+
+        case "factory_ask":
+            guard let work = Capacity.Work(rawValue: try string("work", args)) else { throw ToolError(message: "work must be compile, simulator or model") }
+            guard let r = machine() else { throw ToolError(message: "This server cannot see the machine.") }
+            return Capacity.ask(work, r, throttle: store.throttle()).text
 
         default:
             throw ToolError(message: "Unknown tool: \(name)")

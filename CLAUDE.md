@@ -43,6 +43,9 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     slot frees), renew, release, heldBy, stale.
   - `CloudRecords`: each record as one CloudKit record (`json`, `updated`); diff for
     pushes; `decisionsToAdopt` for decisions made on another device.
+  - `Capacity`: `MachineReading` (`sample()` on macOS reads memory, swap, load, compiles,
+    simulators through sysctl and Mach), `Throttle` (one file, `throttle.json`), the
+    verdict, the reason, and `ask(work:)` for compile, simulator, model.
   - `Dashboard.make(snapshot:now:)`: counts, one `ProjectStatus` per project, one
     `AgentStatus` per agent on the floor.
   - `MCPServer`: JSON-RPC 2.0, `handle(_:)` is pure per request; `Tool.all` is the
@@ -58,7 +61,8 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     through `persist`; starts `FactoryServer` on port 4747.
   - `FactoryServer`: `NWListener` on the port, one queue per connection (a request can
     block for minutes), Bonjour `_softwarefactory._tcp`.
-  - `RootView` (split view: Floor, Resources, projects), `FloorView` (stat tiles, Needs
+  - `RootView` (split view: Floor, Resources, Factory, projects), `FactoryView` (gauges,
+    verdict, what each kind of work would be told, the throttle sliders), `FloorView` (stat tiles, Needs
     you as a horizontal strip, On the floor), `EscalationCard`, `ProjectView` (backlog
     with add, drag reorder, state menu, notes under rows), `ResourcesView` (add, slots,
     holders, Take back), `IntroSheet`, `SettingsView` (How it works on top, the register
