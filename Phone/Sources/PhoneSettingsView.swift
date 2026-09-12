@@ -32,6 +32,11 @@ struct PhoneSettingsView: View {
                     }
                 }
 
+                Section("Lock Screen") {
+                    Text("While a question is open, it sits on the Lock Screen with its options, so you answer without unlocking. It is kept current while Software Factory is open.")
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("iCloud") {
                     LabeledContent("Sync", value: model.cloud.summary)
                     Text("Away from the Mac's network, questions arrive and answers go back through your own iCloud.")

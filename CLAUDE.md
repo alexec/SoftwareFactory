@@ -83,7 +83,15 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
   `/api/decide`; when the factory is out of reach it reads and decides through
   `CloudSync`), `PhoneRootView` (network primer in place, Needs you, On the floor),
   `PhoneBacklogView` (a project's backlog; add with the mic, near the Mac only),
-  `PhoneIntroSheet`, `PhoneSettingsView`. Same bundle id as the Mac app.
+  `PhoneIntroSheet`, `PhoneSettingsView`, `LockScreen` (one Live Activity while a
+  question is open; newest question, options as buttons; ended when none is open). Same
+  bundle id as the Mac app.
+- `Phone/Activity`: `FactoryActivityAttributes` and `DecideIntent`, compiled into both the
+  app and the widget extension. The intent runs in the app and answers through
+  `LockScreenDecider.handler`, which `PhoneModel.shared` installs.
+- `Phone/Widgets`: the `SoftwareFactoryPhoneWidgets` extension (bundle id
+  `com.alexecollins.softwarefactory.widgets`): the Lock Screen and Dynamic Island views.
+  The Lock Screen gives an activity 160 points; the layout is sized for that.
 - `Tools/make-icon.swift` draws both icon sets; `Tools/drive-mcp.py` drives the stdio server.
 
 ## Rules for changes

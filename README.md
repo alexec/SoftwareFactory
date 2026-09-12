@@ -79,6 +79,11 @@ Bonjour and reads it live. Anywhere else it reads and answers through your own i
 the Mac pushes every change to the private database and pulls decisions back; the phone
 pulls and pushes decisions. That needs the iCloud container
 `iCloud.com.alexecollins.softwarefactory` registered in the developer account once.
+
+**On the Lock Screen.** While a question is open it sits on the Lock Screen and in the
+Dynamic Island as a Live Activity, with its options as buttons: answer without unlocking.
+It shows the newest question and how many more wait. Without a push server it is kept
+current only while the app is open, so it is marked stale after fifteen minutes.
 Notifications are next.
 
 - **Answered questions fold away.** A decided question becomes one line in the project

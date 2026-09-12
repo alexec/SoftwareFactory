@@ -24,6 +24,10 @@ final class PhoneModel {
     private(set) var source: Source = .none
     let cloud = CloudSync()
     let dictation = Dictation()
+    let lockScreen = LockScreen()
+
+    /// One model for the app and for the Lock Screen's buttons, which run in the app.
+    static let shared = PhoneModel()
 
     enum Source: Equatable {
         case none
@@ -47,9 +51,12 @@ final class PhoneModel {
     @ObservationIgnored private var client: FactoryClient?
     @ObservationIgnored private var poller: _Concurrency.Task<Void, Never>?
 
-    init() {
+    private init() {
         hasSeenIntro = UserDefaults.standard.bool(forKey: Self.introKey)
         hasPrimedNetwork = UserDefaults.standard.bool(forKey: Self.primedKey)
+        LockScreenDecider.handler = { escalationID, optionID in
+            await PhoneModel.shared.decide(escalationID: escalationID, optionID: optionID)
+        }
         _Concurrency.Task {
             await cloud.prepare()
             if !hasPrimedNetwork { startPolling() }
@@ -112,6 +119,7 @@ final class PhoneModel {
                 source = .factory
                 lastError = nil
                 if case .connected = link {} else { link = .connected(name: factoryName ?? "the Mac") }
+                await lockScreen.reflect(dashboard, factory: factoryName ?? "the Mac")
                 return
             } catch {
                 lastError = error.localizedDescription
@@ -122,6 +130,20 @@ final class PhoneModel {
         snapshot = pulled
         dashboard = Dashboard.make(snapshot: snapshot)
         source = .cloud
+        await lockScreen.reflect(dashboard, factory: factoryName ?? "the Mac")
+    }
+
+    /// From a Lock Screen button. The question is in the last snapshot when the app has
+    /// been running; after a cold start it is fetched from iCloud, or the factory if near.
+    func decide(escalationID: UUID, optionID: UUID) async {
+        if snapshot.escalations.isEmpty { await poll() }
+        var found = snapshot.escalations.first { $0.id == escalationID }
+        if found == nil, let pulled = await cloud.pullEscalations() {
+            found = pulled.first { $0.id == escalationID }
+        }
+        guard let escalation = found, let option = escalation.options.first(where: { $0.id == optionID }) else { return }
+        await decide(escalation, option)
+        await lockScreen.reflect(dashboard, factory: factoryName ?? "the Mac")
     }
 
     func decide(_ escalation: Escalation, _ option: Escalation.Option) async {
@@ -132,6 +154,7 @@ final class PhoneModel {
             if let i = snapshot.escalations.firstIndex(where: { $0.id == e.id }) {
                 snapshot.escalations[i] = e
                 dashboard = Dashboard.make(snapshot: snapshot)
+                await lockScreen.reflect(dashboard, factory: factoryName ?? "the Mac")
             }
             return
         }

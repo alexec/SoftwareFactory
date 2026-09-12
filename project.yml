@@ -93,6 +93,7 @@ targets:
     sources:
       - path: Phone/Sources
       - path: Phone/Resources
+      - path: Phone/Activity
       - path: Shared
     entitlements:
       path: Phone/SoftwareFactoryPhone.entitlements
@@ -103,6 +104,7 @@ targets:
     dependencies:
       - package: SoftwareFactoryKit
         product: SoftwareFactoryKit
+      - target: SoftwareFactoryPhoneWidgets
     info:
       path: Phone/Info.plist
       properties:
@@ -114,6 +116,7 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         NSHumanReadableCopyright: © 2026 Alex Collins
         CFBundleIconName: AppIcon
+        NSSupportsLiveActivities: true
         NSLocalNetworkUsageDescription: Software Factory looks for the factory running on your Mac, on the same network, so you can answer its questions from here.
         NSMicrophoneUsageDescription: Software Factory listens while you dictate a task. The words are recognised on this phone and nothing is recorded.
         NSBonjourServices: [_softwarefactory._tcp]
@@ -132,6 +135,32 @@ targets:
         SUPPORTS_MACCATALYST: NO
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         GENERATE_INFOPLIST_FILE: NO
+  SoftwareFactoryPhoneWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Phone/Widgets
+      - path: Phone/Activity
+    info:
+      path: Phone/Widgets/Info.plist
+      properties:
+        CFBundleDisplayName: Software Factory
+        CFBundleName: Software Factory Widgets
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        NSHumanReadableCopyright: © 2026 Alex Collins
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.alexecollins.softwarefactory.widgets
+        PRODUCT_NAME: SoftwareFactoryWidgets
+        SDKROOT: iphoneos
+        SUPPORTED_PLATFORMS: iphoneos iphonesimulator
+        IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES
 schemes:
   SoftwareFactoryPhone:
     build:
