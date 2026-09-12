@@ -231,6 +231,15 @@ import Testing
         #expect(seen2 == seen1)
     }
 
+    @Test func anOldCheckInStillCounts() throws {
+        let s = try server()
+        let a = id(after: "", in: call(s, "agent_register", ["name": "old"]).text)
+        let r = call(s, "agent_checkin", ["agent_id": a])
+        #expect(!r.isError)
+        #expect(r.text.hasPrefix("Noted."))
+        #expect(!call(s, "agent_checkin", ["agent_id": "nope"]).isError == false)
+    }
+
     @Test func factoryStatusAndAsk() throws {
         let gb: UInt64 = 1_073_741_824
         let busy = MachineReading(memoryTotal: 32 * gb, memoryFree: 6 * gb, swapUsed: 3 * gb, swapTotal: 4 * gb, load: 2, cores: 10, compiles: 1, simulators: 0)

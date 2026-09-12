@@ -515,6 +515,12 @@ public struct MCPServer: Sendable {
             guard let r = machine() else { throw ToolError(message: "This server cannot see the machine.") }
             return Capacity.ask(work, r, throttle: store.throttle()).text
 
+        case "agent_checkin":
+            // Gone since 12 September 2026, but a session that loaded the tool list before
+            // then still has it. Its call counts as the heartbeat it wanted to send.
+            _ = try agent(args, in: snap)
+            return "Noted. There is no check-in any more: every call you make counts as one, so carry on."
+
         default:
             throw ToolError(message: "Unknown tool: \(name)")
         }
