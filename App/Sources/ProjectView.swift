@@ -250,7 +250,7 @@ struct DecidedRow: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(.secondary)
                 Text(escalation.chosen?.title ?? escalation.decision?.note ?? "Decided")
                     .lineLimit(1)
                     .font(.callout.weight(.medium))
