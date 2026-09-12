@@ -7,7 +7,7 @@ struct PhoneBacklogView: View {
     var project: Project
 
     @State private var newTitle = ""
-    @State private var showingMicPrimer = false
+    @State private var recording = false
 
     private var tasks: [FactoryTask] { Backlog.visible(for: project.id, in: model.snapshot.tasks) }
 
@@ -51,19 +51,21 @@ struct PhoneBacklogView: View {
                         TextField("Add a task", text: $newTitle, axis: .vertical)
                             .lineLimit(1...5)
                             .onSubmit { add(at: .bottom) }
-                        if model.dictation.isListening, !model.dictation.volatile.isEmpty {
-                            Text(model.dictation.volatile)
-                                .foregroundStyle(.tertiary)
-                                .lineLimit(1)
-                        }
                         Button {
-                            toggleDictation()
+                            recording = true
                         } label: {
-                            Image(systemName: model.dictation.isListening ? "stop.circle.fill" : "mic")
-                                .foregroundStyle(model.dictation.isListening ? .red : .secondary)
+                            Image(systemName: "mic")
+                                .foregroundStyle(.secondary)
                                 .frame(width: 44, height: 44)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Dictate a task")
+                        .sheet(isPresented: $recording) {
+                            RecordOverlay(dictation: model.dictation) { words in
+                                _Concurrency.Task { await model.addTask(to: project, title: words, at: .bottom) }
+                            }
+                            .presentationDetents([.medium])
+                        }
                         Menu {
                             Button("Add to the top") { add(at: .top) }
                             Button("Add to the bottom") { add(at: .bottom) }
@@ -73,34 +75,6 @@ struct PhoneBacklogView: View {
                             add(at: .bottom)
                         }
                         .disabled(newTitle.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
-                    .onChange(of: model.dictation.settled) { _, settled in
-                        if model.dictation.isListening { newTitle = settled }
-                    }
-                    if showingMicPrimer, model.dictation.standing == .notAsked {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Software Factory listens while you dictate a task. The words are recognised on this phone as you say them, and nothing is recorded.")
-                                .fixedSize(horizontal: false, vertical: true)
-                            Button {
-                                _Concurrency.Task {
-                                    await model.dictation.ask()
-                                    showingMicPrimer = false
-                                    if model.dictation.standing == .allowed { await model.dictation.start() }
-                                }
-                            } label: {
-                                Text("Continue").frame(maxWidth: .infinity, minHeight: 32)
-                            }
-                            .buttonStyle(.glassProminent)
-                        }
-                        .padding(.vertical, 6)
-                    }
-                    if case .denied = model.dictation.standing {
-                        Text("Dictation needs the microphone, which can be turned on for Software Factory in the iOS Settings app.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                    if case .unavailable(let why) = model.dictation.standing {
-                        Text(why).font(.callout).foregroundStyle(.secondary)
                     }
                 }
             } else {
@@ -119,25 +93,7 @@ struct PhoneBacklogView: View {
     private func add(at position: Backlog.Position) {
         let title = newTitle
         newTitle = ""
-        model.dictation.clear()
         _Concurrency.Task { await model.addTask(to: project, title: title, at: position) }
-    }
-
-    private func toggleDictation() {
-        switch model.dictation.standing {
-        case .notAsked:
-            showingMicPrimer = true
-        case .allowed:
-            _Concurrency.Task {
-                if model.dictation.isListening {
-                    newTitle = await model.dictation.stop()
-                } else {
-                    await model.dictation.start()
-                }
-            }
-        default:
-            break
-        }
     }
 }
 

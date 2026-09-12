@@ -63,6 +63,11 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
   - `Shared/CloudSync.swift` (both apps, not the package): the CloudKit calls. Container
     `iCloud.com.alexecollins.softwarefactory`, private database, query on `updated`.
   - `Shared/Dictation.swift`: `SpeechAnalyzer` on device; `volatile` and `settled` text.
+  - `Shared/RecordOverlay.swift`: the dictation sheet on both platforms. Hold to record
+    (a zero-distance drag gesture), release to add; the mic primer and the denied and
+    unavailable states live in it. Nothing is dictated into the text field any more.
+  - `Shared/TaskTitler.swift`: Apple Intelligence gives a verb-led title and a kind; the
+    words as said are the note, whole.
   - `Shared/TaskTitler.swift`: Apple Intelligence turns a long sentence into a title, a
     kind and a note; short text is the title as it is.
   - `software-factory` executable: `mcp` (the server over stdio), `status`, `tools`, `decide`.
@@ -82,7 +87,7 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
   package's HTTP over the Bonjour endpoint, polling `/api/snapshot` every 3 s and posting
   `/api/decide`; when the factory is out of reach it reads and decides through
   `CloudSync`), `PhoneRootView` (network primer in place, Needs you, On the floor),
-  `PhoneBacklogView` (a project's backlog; add with the mic, near the Mac only),
+  `PhoneBacklogView` (a project's backlog; type or hold the mic to add, near the Mac only),
   `PhoneIntroSheet`, `PhoneSettingsView`, `LockScreen` (one Live Activity while a
   question is open; newest question, options as buttons; ended when none is open). Same
   bundle id as the Mac app.

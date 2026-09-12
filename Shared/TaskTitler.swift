@@ -2,9 +2,10 @@ import Foundation
 import FoundationModels
 import SoftwareFactoryKit
 
-/// Turns what was typed or dictated into a task: a short title, the kind, and the rest
-/// as the note. Apple Intelligence, on device; when it is not available the words are
-/// the title, which is what they were before.
+/// Turns what was typed or dictated into a task: a short title and the kind, with the
+/// words kept whole and unedited as the note. Apple Intelligence, on device; when it is
+/// not available the words are the title, which is what they were before. (Alex, 12 Sep
+/// 2026: the title comes from the text; the text itself stays as said.)
 enum TaskTitler {
     @Generable(description: "A task for a software project's backlog.")
     struct Drafted {
@@ -12,8 +13,6 @@ enum TaskTitler {
         var title: String
         @Guide(description: "feature, bug or chore")
         var kind: String
-        @Guide(description: "Anything said that the title does not carry, or empty.")
-        var note: String
     }
 
     struct Result: Equatable {
@@ -28,8 +27,8 @@ enum TaskTitler {
         verb, so that someone who reads only the title knows the whole task: never a single \
         word, never a label, never a summary that drops the point. Use the person's own \
         words; never introduce a name, a term or jargon they did not say. Say whether it is \
-        a feature (something new), a bug (something wrong) or a chore (upkeep). Keep in the \
-        note only what the title leaves out, or nothing. Do not invent anything.
+        a feature (something new), a bug (something wrong) or a chore (upkeep). Do not \
+        invent anything.
         """
 
     static var isAvailable: Bool {
@@ -48,8 +47,9 @@ enum TaskTitler {
             let d = response.content
             let title = d.title.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "."))
             guard !title.isEmpty else { return plain }
+            // The words as said are the note, whole; the title only points at them.
             return Result(title: title, kind: FactoryTask.Kind(rawValue: d.kind.lowercased()) ?? .feature,
-                          note: d.note.trimmingCharacters(in: .whitespacesAndNewlines))
+                          note: title == text ? "" : text)
         } catch {
             return plain
         }

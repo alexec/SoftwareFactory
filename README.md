@@ -94,9 +94,10 @@ Notifications are next.
   view, and only the newest three stay; the store keeps them all.
 - **A banner at the Mac.** Each new question is a macOS notification with the options as
   its actions. Asked for once, in place, before the system alert.
-- **Dictate a task.** A mic on the add field, on the Mac and the phone. Words appear as
-  they are recognised, on the device. A long sentence becomes a short title with the rest
-  as the note, through Apple Intelligence where it is available.
+- **Dictate a task.** The mic on the add row opens a small sheet: hold the button, say
+  the task, let go, and it is on the backlog. Recognised on the device as you speak;
+  nothing is recorded. Apple Intelligence gives it a short title and keeps your words
+  whole as the note.
 
 ## Later, not now
 
