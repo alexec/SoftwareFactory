@@ -42,11 +42,16 @@ archive:
     export_plist: AppStore/ExportOptions-macOS.plist
     path: build/SoftwareFactory.xcarchive
   build_number_key: CURRENT_PROJECT_VERSION                 # in project.yml; build 2 uploaded 13 Sep 2026, iOS only
-  macos_blocked: >
-    The Mac app is not sandboxed on purpose, so it can start an agent in Alex's own
-    environment. App Store Connect refuses an unsandboxed Mac build, so macOS cannot go
-    to TestFlight as it stands: archive and upload the iPhone only. Build 1 predates the
-    sandbox coming off, which is why that one was accepted. Filed as T160.
+  macos_configs: >
+    The Mac app ships twice from one set of sources (T163, 13 Sep 2026). Release is the
+    direct download: not sandboxed, so it can start an agent in Alex's own environment,
+    Developer ID signed and notarised, exported with ExportOptions-macOS-direct.plist.
+    Release-AppStore is the store build: the same sources sandboxed, which is the only
+    kind the Mac App Store takes, exported with ExportOptions-macOS.plist or
+    -macOS-upload.plist. Sandboxed the app cannot launch an agent and does not pretend
+    to: it puts the command on the clipboard. ARCHIVE the Mac app with
+    -configuration Release-AppStore for anything going to Apple. Build 2 was iPhone only;
+    no macOS build has gone up since the sandbox came off.
 asc_api_key: ~/.private_keys/asc.env                       # proved 12 Sep 2026: doctor, builds, testers all answer
 store:
   record: "Taktu: Software Factory"                         # created 12 Sep 2026, iOS + macOS

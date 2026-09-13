@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The App Store build. The same app as App/SoftwareFactory.entitlements with the sandbox
+  on, because the Mac App Store takes nothing else.
+
+  Sandboxed, the app cannot start an agent: a child inherits the sandbox and loses
+  ~/.claude, the keychain, git, node and Xcode. It does not pretend otherwise.
+  AgentLauncher.isSandboxed is true, and every launch point puts the command on the
+  clipboard for you to paste into a window of your own. Everything else is the same app:
+  the floor, the MCP server on 4747, the backlogs, the questions, the phone.
+
+  Hand-written, not generated: xcodegen writes the other file from project.yml and only
+  manages one per target. Add an entitlement there and add it here too.
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.com.alexecollins.softwarefactory</string>
+	</array>
+	<key>com.apple.developer.icloud-services</key>
+	<array>
+		<string>CloudKit</string>
+	</array>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>6T4RVD5724.com.alexecollins.softwarefactory</string>
+	</array>
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<key>com.apple.security.network.server</key>
+	<true/>
+</dict>
+</plist>

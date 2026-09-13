@@ -7,6 +7,12 @@ options:
   xcodeVersion: "26.0"
   createIntermediateGroups: true
   groupSortPosition: top
+# Three configurations, not two: the Mac app ships twice, once for the store and once
+# for direct download. See the note on the Release-AppStore settings below.
+configs:
+  Debug: debug
+  Release: release
+  Release-AppStore: release
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -19,6 +25,12 @@ settings:
   # This xcodegen install has no bundled setting presets, so the per-configuration
   # settings are spelled out. DEBUG gates the Developer section of Settings; release
   # builds must not define it.
+  #
+  # Release builds the Mac app for direct download: not sandboxed, so it can start an
+  # agent in your own environment. Release-AppStore builds the same source sandboxed,
+  # because the Mac App Store takes nothing else; there the app puts the launch command
+  # on the clipboard instead. The iPhone app is the same either way and archives from
+  # Release. (T163, 13 Sep 2026.)
   configs:
     Debug:
       DEBUG_INFORMATION_FORMAT: dwarf
@@ -29,6 +41,12 @@ settings:
       SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
       SWIFT_OPTIMIZATION_LEVEL: -Onone
     Release:
+      DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
+      ENABLE_NS_ASSERTIONS: NO
+      SWIFT_COMPILATION_MODE: wholemodule
+      SWIFT_OPTIMIZATION_LEVEL: -O
+      VALIDATE_PRODUCT: YES
+    Release-AppStore:
       DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
       ENABLE_NS_ASSERTIONS: NO
       SWIFT_COMPILATION_MODE: wholemodule
@@ -53,30 +71,12 @@ targets:
         product: SoftwareFactoryKit
       - package: SwiftTerm
         product: SwiftTerm
-    # Sandboxed from day one, because the sandbox decides where the shared store lives:
-    # the app group container.
-    entitlements:
-      path: App/SoftwareFactory.entitlements
-      properties:
-        # Off, so the app can start an agent in your own environment: ~/.claude, the
-        # keychain, git, node, Xcode. A sandboxed child gets none of that. Turn it back
-        # on for a store build and the project page falls back to copying the command.
-        # (Alex, 12 Sep 2026.)
-        com.apple.security.app-sandbox: false
-        # The factory listens on a port: MCP for agents, a small API for the phone.
-        com.apple.security.network.server: true
-        # Outgoing, for iCloud.
-        com.apple.security.network.client: true
-        # Dictating a task.
-        com.apple.security.device.audio-input: true
-        # Choosing the folder a project runs in. Without this the sandbox refuses the
-        # open panel and the button looks broken. (Alex, 12 Sep 2026.)
-        com.apple.security.files.user-selected.read-write: true
-        com.apple.security.application-groups:
-          - 6T4RVD5724.com.alexecollins.softwarefactory
-        com.apple.developer.icloud-container-identifiers:
-          - iCloud.com.alexecollins.softwarefactory
-        com.apple.developer.icloud-services: [CloudKit]
+    # Two entitlements files, one per way the app ships, both hand-written and both
+    # commented: App/SoftwareFactory.entitlements has the sandbox off for the direct
+    # download, App/SoftwareFactory-AppStore.entitlements has it on for the store. They
+    # are not generated from here, because xcodegen manages one file per target and
+    # would write the same one into every configuration. Add an entitlement to one and
+    # add it to the other. (T163, 13 Sep 2026.)
     info:
       path: App/Info.plist
       properties:
@@ -99,6 +99,10 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_HARDENED_RUNTIME: YES
         COMBINE_HIDPI_IMAGES: YES
+        CODE_SIGN_ENTITLEMENTS: App/SoftwareFactory.entitlements
+      configs:
+        Release-AppStore:
+          CODE_SIGN_ENTITLEMENTS: App/SoftwareFactory-AppStore.entitlements
   SoftwareFactoryPhone:
     type: application
     supportedDestinations: [iOS]

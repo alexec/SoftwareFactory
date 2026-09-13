@@ -20,6 +20,8 @@ xcodebuild -project SoftwareFactory.xcodeproj -scheme SoftwareFactory -configura
 xcodebuild -project SoftwareFactory.xcodeproj -scheme SoftwareFactoryPhone -configuration Debug \
   -destination "generic/platform=iOS Simulator" -derivedDataPath build/DerivedData \
   -skipPackagePluginValidation -skipMacroValidation build
+# The store build of the Mac app: the same sources, sandboxed. Swap Debug for
+# Release-AppStore anywhere you would build the Mac app for the store.
 cd Packages/SoftwareFactoryKit && swift test
 open "build/DerivedData/Build/Products/Debug/Software Factory.app"
 ```
@@ -133,10 +135,23 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     never sees tmux. Nothing asks tmux anything from the main thread: `TerminalSessions`
     keeps `held`, refreshed off it by `lookForHeldSessions()`, because running tmux while
     the window draws is a beachball.
-  - The Mac app is **not sandboxed** (`com.apple.security.app-sandbox: false`). It has to
-    start an agent in your own environment: `~/.claude`, the keychain, git, node, Xcode.
-    A sandboxed child gets none of that. The cost is that this target cannot go to
-    TestFlight or the Mac App Store as it stands; the iPhone app is unaffected.
+  - The Mac app ships twice, from one set of sources, because the sandbox decides what it
+    can do and the Mac App Store takes nothing but a sandboxed app (T163).
+    - `Release` is the **direct download**: `com.apple.security.app-sandbox` false,
+      Developer ID signed and notarised, exported with
+      `AppStore/ExportOptions-macOS-direct.plist`. It can start an agent in your own
+      environment: `~/.claude`, the keychain, git, node, Xcode.
+    - `Release-AppStore` is the **store build**: the same sources with the sandbox on,
+      exported with `AppStore/ExportOptions-macOS.plist` (or `-upload` to send it).
+      Sandboxed, a child would inherit the sandbox and lose all of that, so the app does
+      not pretend: `AgentLauncher.isSandboxed` is true and every launch point puts the
+      command on the clipboard for you to paste into a window of your own. The floor, the
+      MCP server on 4747, the backlogs, the questions and the phone all work as normal.
+    - The two entitlements files, `App/SoftwareFactory.entitlements` and
+      `App/SoftwareFactory-AppStore.entitlements`, are hand-written and must be kept in
+      step. They are not generated from `project.yml` any more: xcodegen writes one file
+      per target and would put the same one in every configuration.
+    - The iPhone app is the same either way and archives from `Release`.
 - `Phone/Sources`: `PhoneModel` (NWBrowser finds the factory; `FactoryClient` speaks the
   package's HTTP over the Bonjour endpoint, polling `/api/snapshot` every 3 s and posting
   `/api/decide` and `/api/task`; when the factory is out of reach it reads, decides and
