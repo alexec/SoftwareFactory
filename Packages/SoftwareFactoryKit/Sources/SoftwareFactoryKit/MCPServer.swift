@@ -207,7 +207,9 @@ public struct MCPServer: Sendable {
         backlog: before you create or change a task, call project_read for its project and read its \
         description and instructions. Read the backlog (task_list) and take the work in the order it \
         is in; tasks that belong together sit together, and you may claim several at once when they \
-        are one piece of work. task_next hands you the top task nobody is on when you would rather be \
+        are one piece of work. A task's work says what to produce: design a brief and stop, plan \
+        and stop, implement, fix a cause, review, investigate without changing anything, or ship a \
+        build. task_next hands you the top task nobody is on when you would rather be \
         handed one, and never a parked one — parked is set aside on purpose, not yours to start on \
         your own. Claim what you are on (task_claim) and say when each is done (task_status). If a reply says a project is \
         on hold, finish what you are on and start nothing new on it. When you cannot decide \
@@ -276,7 +278,7 @@ public struct MCPServer: Sendable {
         public static var all: [Tool] { [
             // Agents
             Tool(name: "agent_register", description: "Register this MCP session with the factory. Leave agent_id out and the factory gives you the next A<n>. Every call you make counts as a sign of life; there is no separate check-in. Call again to update this registration.",
-                 properties: ["pid": ["type": "integer", "description": "Your own process id, so the factory can tell whether you are still running rather than merely quiet. Claude Code has it in CLAUDE_PID; otherwise it is the process id of the agent itself, not of a shell you ran something in"],
+                 properties: ["pid": ["type": "integer", "description": "Your own process id, so the factory can tell whether you are still running rather than merely quiet. Claude Code has it in CLAUDE_PID. Otherwise run `ps -o ppid= -p $$` in a shell: the parent of any shell you run is you. Do not send $$ itself, which is that shell and will have exited by the time anyone asks"],
                               "agent_id": str("The name you were told to register as, when you were told one, like A6. Leave it out and the factory gives you the next free name. A name a live session is working as is refused, and so is one that has been used before: a number belongs to one agent for the life of the factory"),
                               "about": str("Optional self-description for other agents"),
                               "project": str("The project you work on, by name: an app, a role across apps, a piece of tooling. Leave it out if your work belongs to no project. A name close to an existing project's is refused; a genuinely new name makes a new project"),
@@ -334,6 +336,9 @@ public struct MCPServer: Sendable {
                               "position": ["type": "string", "enum": ["top", "bottom", "parked"], "description": "Defaults to bottom"],
                               "above_task_id": str("Put it directly above this task instead"),
                               "note": str("Why, and anything the next reader needs"),
+                              "work": ["type": "string",
+                                       "enum": ["design", "plan", "implement", "fix", "review", "investigate", "ship"],
+                                       "description": "What the agent should do. Defaults to implement."],
                               "number": ["type": "integer", "description": "A short number of your choosing (T509), to match a number already in use elsewhere; otherwise the next free one is given"]],
                  required: ["project", "title"]),
             Tool(name: "task_claim", description: "You are on this task now, or on several that are one piece of work. Marks them in progress under your name. Read task_list first: tasks that belong together are usually next to each other.",
@@ -351,10 +356,13 @@ public struct MCPServer: Sendable {
                               "task_ids": ["type": "array", "items": ["type": "string"], "description": "Several tasks the line belongs on"],
                               "text": str("What to add")],
                  required: ["text"]),
-            Tool(name: "task_set", description: "Change what a task is rather than where it stands: its title, its number, the project it belongs to, where it sits on the backlog, or whose name is on it. Give only what you are changing.",
+            Tool(name: "task_set", description: "Change what a task is rather than where it stands: its title, its number, the work the agent should do, the project it belongs to, where it sits on the backlog, or whose name is on it. Give only what you are changing.",
                  properties: ["task_id": str("The task"),
                               "title": str("A new title"),
                               "number": ["type": "integer", "description": "A short number (T509), unique across every project"],
+                              "work": ["type": "string",
+                                       "enum": ["design", "plan", "implement", "fix", "review", "investigate", "ship"],
+                                       "description": "What the agent should do"],
                               "project": str("Move it to this project's backlog, at the bottom, with a note saying where it came from"),
                               "above_task_id": str("Put it directly above this task on the same backlog"),
                               "assign_to": str("An agent's A<n> id: the task is theirs, and task_next passes over it for everyone else. Empty takes the name off")],
@@ -622,7 +630,9 @@ public struct MCPServer: Sendable {
             // One task in full, or a project's backlog, narrowed by state or to your own.
             if let ref = args["task_id"] as? String, !ref.isEmpty {
                 guard let task = taskRef(ref, in: snap) else { throw ToolError(message: "No task \(ref).") }
-                var lines = [Self.line(task), "note: \(task.note.isEmpty ? "(none)" : task.note)"]
+                var lines = [Self.line(task),
+                             "work: \(task.work.rawValue): \(task.work.brief)",
+                             "note: \(task.note.isEmpty ? "(none)" : task.note)"]
                 if let agent = task.agentID.flatMap({ id in snap.agents.first { $0.id == id } }) { lines.append("agent: \(agent.label)") }
                 for (n, b) in task.blockers.enumerated() { lines.append("blocker \(n + 1): \(b.kind.rawValue)\(b.id.map { " \($0.uuidString)" } ?? ""): \(b.why)") }
                 for e in snap.escalations where e.taskID == task.id {
@@ -670,7 +680,7 @@ public struct MCPServer: Sendable {
             var task = FactoryTask(number: number, projectID: project.id, title: try string("title", args),
                                    state: Backlog.state(for: position),
                                    rank: Backlog.rank(for: position, projectID: project.id, in: snap.tasks),
-                                   note: args["note"] as? String ?? "", created: now())
+                                   note: args["note"] as? String ?? "", work: try taskWork(args), created: now())
             if let aboveRef = args["above_task_id"] as? String, !aboveRef.isEmpty {
                 guard let above = taskRef(aboveRef, in: snap), above.projectID == project.id
                 else { throw ToolError(message: "above_task_id is not a task on that backlog") }
@@ -689,6 +699,11 @@ public struct MCPServer: Sendable {
             if let title = (args["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
                 task.title = title
                 said.append("is now called \(title)")
+            }
+            if args["work"] != nil {
+                let work = try taskWork(args, defaulting: false)
+                task.work = work
+                said.append("is \(work.rawValue) work")
             }
             if let wanted = args["number"] as? Int {
                 guard wanted > 0 else { throw ToolError(message: "number must be a whole number above 0") }
@@ -720,7 +735,7 @@ public struct MCPServer: Sendable {
                 task = Backlog.move(task, to: project, from: snap.projects.first { $0.id == task.projectID }, in: snap.tasks, at: now())
                 said.append("is on \(project.name)'s backlog")
             }
-            guard !said.isEmpty else { throw ToolError(message: "Say what to change: title, number, project, above_task_id or assign_to.") }
+            guard !said.isEmpty else { throw ToolError(message: "Say what to change: title, number, work, project, above_task_id or assign_to.") }
             task.updated = now()
             try store.save(task)
             return "\(task.title) \(said.joined(separator: ", "))."
@@ -974,7 +989,7 @@ public struct MCPServer: Sendable {
     static func line(_ t: FactoryTask) -> String {
         let blocked = t.blockers.isEmpty ? "" : "  [blocked on " + t.blockers.map { "\($0.kind.rawValue): \($0.why)" }.joined(separator: "; ") + "]"
         let last = t.note.split(whereSeparator: \.isNewline).last.map { "  — \($0)" } ?? ""
-        return "\(t.label ?? "T-")  \(t.id.uuidString)  \(t.state.rawValue)  \(t.title)\(blocked)\(last)"
+        return "\(t.label ?? "T-")  \(t.id.uuidString)  \(t.state.rawValue)  \(t.work.rawValue)  \(t.title)\(blocked)\(last)"
     }
 
     static func messages(_ messages: [AgentMessage]) -> String {
@@ -986,6 +1001,17 @@ public struct MCPServer: Sendable {
     func string(_ key: String, _ args: [String: Any]) throws -> String {
         guard let v = args[key] as? String, !v.isEmpty else { throw ToolError(message: "\(key) is required") }
         return v
+    }
+
+    func taskWork(_ args: [String: Any], defaulting: Bool = true) throws -> FactoryTask.Work {
+        guard let raw = args["work"] as? String, !raw.isEmpty else {
+            if defaulting { return .implement }
+            throw ToolError(message: "work must be design, plan, implement, fix, review, investigate or ship.")
+        }
+        guard let work = FactoryTask.Work(rawValue: raw) else {
+            throw ToolError(message: "work must be design, plan, implement, fix, review, investigate or ship.")
+        }
+        return work
     }
 
     /// Resolves the caller. Reading only: the heartbeat is stamped once per call, at
