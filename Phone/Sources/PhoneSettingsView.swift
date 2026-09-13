@@ -38,7 +38,7 @@ struct PhoneSettingsView: View {
                         Text("A banner arrives for each new question, with its options, wherever the phone is.")
                             .foregroundStyle(.secondary)
                     case .denied:
-                        Text("Notifications are off for Software Factory. They can be turned on in the iOS Settings app.")
+                        Text("Notifications are off for Taktu: Software Factory. They can be turned on in the iOS Settings app.")
                             .foregroundStyle(.secondary)
                         Button("Open iOS Settings") {
                             if let url = URL(string: UIApplication.openSettingsURLString) {
@@ -46,7 +46,7 @@ struct PhoneSettingsView: View {
                             }
                         }
                     default:
-                        Text("Not asked yet. The floor asks the first time.")
+                        Text("Not asked yet. The dashboard asks the first time.")
                             .foregroundStyle(.secondary)
                     }
                     #if DEBUG
@@ -55,7 +55,7 @@ struct PhoneSettingsView: View {
                 }
 
                 Section("Lock Screen") {
-                    Text("While a question is open, it sits on the Lock Screen with its options, so you answer without unlocking. It is kept current while Software Factory is open.")
+                    Text("While a question is open, it sits on the Lock Screen with its options, so you answer without unlocking. It is kept current while Taktu: Software Factory is open.")
                         .foregroundStyle(.secondary)
                 }
 

@@ -8,17 +8,16 @@ import SoftwareFactoryKit
 enum TaskTitler {
     struct Result: Equatable {
         var title: String
-        var kind: FactoryTask.Kind
         var note: String
     }
 
     static func draft(from text: String) async -> Result {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let newline = text.firstIndex(where: \.isNewline) else {
-            return Result(title: text, kind: .feature, note: "")
+            return Result(title: text, note: "")
         }
         let title = String(text[..<newline]).trimmingCharacters(in: .whitespaces)
         let rest = String(text[text.index(after: newline)...]).trimmingCharacters(in: .whitespacesAndNewlines)
-        return Result(title: title, kind: .feature, note: rest)
+        return Result(title: title, note: rest)
     }
 }

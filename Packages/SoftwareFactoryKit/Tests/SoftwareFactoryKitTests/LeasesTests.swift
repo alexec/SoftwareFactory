@@ -34,7 +34,7 @@ import Testing
         holder.id = a
         holder.lastSeen = now
 
-        // The holder is still on the floor: the lease is overdue, not free.
+        // The holder is still registered: the lease is overdue, not free.
         #expect(Leases.overdue(for: phone.id, in: [old], agents: [holder], now: now).map(\.id) == [old.id])
         #expect(Leases.freeSlots(of: phone, in: [old], agents: [holder], now: now) == 0)
         guard case .full(let nextFree, let held) = Leases.lease(phone, for: b, wanting: 60, why: "", in: [old], agents: [holder], now: now) else {

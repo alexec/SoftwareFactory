@@ -21,23 +21,26 @@ func wholeSecond() -> Date {
         #expect(UUID(uuidString: project.id) != nil)
         #expect(project.name == "Where")
         #expect(Project.name(fromPath: "/Users/alex/Where/") == "Where")
-        let task = FactoryTask(projectID: project.id, title: "Fix it", kind: .bug, rank: 3, note: "why", created: now)
+        let task = FactoryTask(projectID: project.id, title: "Fix it", rank: 3, note: "why", created: now)
         var escalation = Escalation(
             projectID: project.id, question: "Which?", options: [.init(title: "A", recommended: true), .init(title: "B")],
             raised: now)
         try escalation.decide(escalation.options[1], at: now)
         let agent = Agent(name: "agent-1", projectID: project.id, registered: now)
+        let message = AgentMessage(recipientID: agent.id, from: "agent-2", subject: "Hello", contents: "Can you help?", sent: now)
 
         try store.save(project)
         try store.save(task)
         try store.save(escalation)
         try store.save(agent)
+        try store.save(message)
 
         let snap = try store.load()
         #expect(snap.projects == [project])
         #expect(snap.tasks == [task])
         #expect(snap.escalations == [escalation])
         #expect(snap.agents == [agent])
+        #expect(try store.messages(for: agent.id) == [message])
         #expect(snap.escalations[0].chosen?.title == "B")
         #expect(try #require(store.escalation(escalation.id)) == escalation)
     }
@@ -61,6 +64,7 @@ func wholeSecond() -> Date {
         #expect(FactoryTask(projectID: "/a", title: "t", rank: 0).version == Records.version)
         #expect(Escalation(projectID: "/a", question: "q", options: []).version == Records.version)
         #expect(Agent(name: "a", projectID: nil).version == Records.version)
+        #expect(AgentMessage(recipientID: UUID(), from: "a", subject: "s", contents: "c").version == Records.version)
         #expect(Resource(name: "r").version == Records.version)
         #expect(Lease(resourceID: UUID(), agentID: UUID(), why: "", since: .now, until: .now).version == Records.version)
     }
@@ -148,10 +152,11 @@ func wholeSecond() -> Date {
 }
 
 @Suite struct AgentTests {
-    @Test func goneAfterThreeMissedCheckIns() {
+    @Test func anHourOfSilenceIsGoneWhateverTheConnectionSays() {
         let now = Date()
         var silent = Agent(name: "silent", projectID: nil, registered: now.addingTimeInterval(-3600))
         silent.lastSeen = now.addingTimeInterval(-61 * 60)
+        silent.isConnected = true
         var talking = Agent(name: "talking", projectID: nil, registered: now.addingTimeInterval(-3600))
         talking.lastSeen = now.addingTimeInterval(-60)
         var left = Agent(name: "left", projectID: nil, registered: now.addingTimeInterval(-3600))
@@ -160,7 +165,15 @@ func wholeSecond() -> Date {
         let phone = Resource(name: "iPhone")
         let held = Lease(resourceID: phone.id, agentID: silent.id, why: "", since: now.addingTimeInterval(-1000), until: now.addingTimeInterval(1000))
         let snap = Snapshot(agents: [silent, talking, left], resources: [phone], leases: [held])
-        let changes = Sweep.goneAgents(in: snap, now: now)
+        // An open connection still reads as working: an agent waiting on a question is
+        // alive and its next call is minutes away.
+        #expect(silent.isWorking(now: now))
+        // But it does not keep it alive for ever. A session that died with the app never
+        // says goodbye, so an hour without a call is gone either way.
+        #expect(Sweep.goneAgents(in: snap, now: now).agents.map(\.name) == ["silent"])
+        silent.isConnected = false
+        let disconnected = Snapshot(agents: [silent, talking, left], resources: [phone], leases: [held])
+        let changes = Sweep.goneAgents(in: disconnected, now: now)
         #expect(changes.agents.map(\.name) == ["silent"])
         #expect(changes.agents[0].deregistered == now)
         #expect(changes.leases.map(\.id) == [held.id])
@@ -177,13 +190,22 @@ func wholeSecond() -> Date {
         #expect(!a.isWorking(now: now))
         a.lastSeen = now
         a.deregistered = now
-        #expect(!a.isOnTheFloor)
+        #expect(!a.isRegistered)
         #expect(!a.isWorking(now: now))
+    }
+
+    @Test func olderAgentsStartTheirQuietTimerFromLastSeen() throws {
+        let now = Date()
+        let agent = Agent(name: "old", projectID: nil, registered: now.addingTimeInterval(-3600))
+        var json = try #require(try JSONSerialization.jsonObject(with: FileStore.encoder.encode(agent)) as? [String: Any])
+        json.removeValue(forKey: "isConnected")
+        let decoded = try FileStore.decoder.decode(Agent.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(!decoded.isConnected)
     }
 }
 
 @Suite struct EscalationsViewTests {
-    @Test func openInFullThenTheNewestFewDecided() throws {
+    @Test func openInFullThenTheThreeNewestDecidedFromTheLastHour() throws {
         let t0 = Date(timeIntervalSince1970: 1000)
         func q(_ n: Int, decidedAt: TimeInterval? = nil) throws -> Escalation {
             var e = Escalation(projectID: "/p", question: "q\(n)", options: [.init(title: "A"), .init(title: "B")], raised: t0.addingTimeInterval(TimeInterval(n)))
@@ -192,8 +214,30 @@ func wholeSecond() -> Date {
         }
         let all = [try q(5), try q(1), try q(2, decidedAt: 50), try q(3, decidedAt: 70), try q(4, decidedAt: 60), try q(6, decidedAt: 10),
                    Escalation(projectID: "/other", question: "x", options: [.init(title: "A")])]
-        let shown = Escalations.visible(for: "/p", in: all, recentDecided: 3)
+        let shown = Escalations.visible(for: "/p", in: all, now: t0.addingTimeInterval(100))
         #expect(shown.open.map(\.question) == ["q1", "q5"])
         #expect(shown.decided.map(\.question) == ["q3", "q4", "q2"])
+    }
+
+    @Test func aDecidedQuestionAgesOutAfterAnHour() throws {
+        let decidedAt = Date(timeIntervalSince1970: 1000)
+        var recent = Escalation(projectID: "/p", question: "recent", options: [.init(title: "A")], raised: decidedAt)
+        var expired = Escalation(projectID: "/p", question: "expired", options: [.init(title: "A")], raised: decidedAt)
+        try recent.decide(recent.options[0], at: decidedAt)
+        try expired.decide(expired.options[0], at: decidedAt)
+
+        let shortlyBeforeExpiry = Escalations.visible(
+            for: "/p",
+            in: [recent, expired],
+            now: decidedAt.addingTimeInterval(Escalations.decidedVisibleFor - 1)
+        )
+        #expect(shortlyBeforeExpiry.decided.map(\.question) == ["recent", "expired"])
+
+        let atExpiry = Escalations.visible(
+            for: "/p",
+            in: [recent, expired],
+            now: decidedAt.addingTimeInterval(Escalations.decidedVisibleFor)
+        )
+        #expect(atExpiry.decided.isEmpty)
     }
 }

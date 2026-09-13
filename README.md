@@ -1,4 +1,4 @@
-# Software Factory
+# Taktu: Software Factory
 
 A Mac app that is the floor of a software factory:
 coding agents do the work, and you make the calls.
@@ -36,7 +36,8 @@ something themselves. You see all of it in one window and answer the questions w
    the server both read and write it; writes are atomic and one file per record, so a
    half-written file is never read.
 3. **A project is a name.** An app, a role that spans apps such as research, a piece of
-   tooling: it needs no folder. Projects appear when an agent names one or you add one.
+   tooling: it needs no folder. Add one with a brief description so agents know when to
+   use it; an agent naming a new project creates one without a description for compatibility.
    An agent that still sends a folder path gets the folder's name.
 4. **Working means the agent touched the factory in the last ten minutes.** Quiet means
    registered and silent; an hour of silence and it is marked gone. There is no check-in
@@ -59,20 +60,50 @@ Claude Code once (Settings has the command with a Copy button):
 claude mcp add --transport http --scope user software-factory http://127.0.0.1:4747/mcp
 ```
 
-The tools: `agent_register`, `agent_checkin`, `agent_deregister`, `project_list`,
-`project_add`, `task_list`, `task_next`, `task_add`, `task_claim`, `task_status`,
-`task_rank`, `task_remove`, `escalation_raise`, `escalation_await`, `escalation_list`,
-`resource_list`, `resource_add`, `resource_lease`, `resource_renew`, `resource_release`,
-`factory_status`, `factory_ask`, `task_block`, `task_unblock`, `task_move`, `task_show`, `task_note`, `task_number`, `project_remove`. Task kinds: feature, bug, chore, review, ship.
+The tools, and each says whether it reads or writes: queries are `project_list`,
+`task_list`, `task_next`, `agent_list`, `inbox`, `escalation_list`, `escalation_await`,
+`resource_list`, `factory_status`, `factory_ask`. Commands are `agent_register`,
+`agent_deregister`, `message_send`, `project_add`, `project_read`, `project_set`,
+`project_remove`, `task_add`, `task_claim`, `task_status`, `task_note`, `task_set`,
+`task_block`, `task_unblock`, `task_remove`, `resource_add`, `resource_lease`,
+`resource_release`. A query never writes anything but your heartbeat, and a test holds
+that true. Older names (`agent_messages`, `project_get`, the three `project_set_*`,
+`task_number`, `task_rank`, `task_move`, `task_show`, `resource_renew`) still answer for
+sessions that loaded them.
+Three tools wait: `task_next`, `escalation_await`, and `agent_messages` with `wait_for_new`. Each takes `timeout_seconds` (600 by default), answers "call again" when it runs out, and queues in one pool of 20 connections.
 There is no check-in: every call an agent makes counts as a sign of life. The server's
 instructions tell an agent to register first, work from the backlog and never a parked
 task, claim what it is on, lease what it shares, ask the factory before anything heavy,
-raise and await when stuck, stop when a project is on hold, and deregister when done,
-which also releases whatever it held.
+raise and await when stuck, stop when a project is on hold, and go idle when no work
+remains. After an hour of silence, the factory marks the agent
+gone and releases whatever it held. An agent deregisters only when it will not work in
+the factory again. Agent identity is the server-minted `Mcp-Session-Id` on its HTTP MCP
+session. The server uses MCP `2025-03-26`, the revision that supports that header, so the
+`mcp` command-line transport cannot register or act as an agent.
+
+An agent may add a short `about` description when it registers. `agent_list` shows the
+other agents on the floor and their ids. `agent_message_send` delivers text with a subject
+to one of those ids; `agent_messages` reads the caller's private inbox. Set
+`wait_for_new` to wait for mail that arrives after the call begins.
+
+`project_add` requires a brief `description`, which `project_list` shows to help agents
+choose the right project. `project_get` returns a project's name, description and
+instructions, and records that the active agent read them. A registered agent must call
+it before creating or changing a task in that project; task lists and task-next do not
+repeat the instructions. Changing instructions requires a new `project_get`. Use
+`project_set_description` or
+`project_set_instructions` to update either field.
 
 `Packages/SoftwareFactoryKit` also builds `software-factory`, a shell tool: `status` prints the floor as
 text, `tools` lists the tools, `mcp` is the same server over stdio for scripts.
 `SOFTWARE_FACTORY_STORE=/some/folder` points the app and the tool at another store.
+
+## The agent plugin
+
+`Plugins/software-factory` packages the local MCP connection and a skill that teaches an
+agent to work the factory's backlog. It supports Claude Code and GitHub Copilot CLI now;
+Codex and Cursor are coming soon. See [its instructions](Plugins/software-factory/README.md)
+to install it and start a session with the factory.
 
 ## The iPhone
 
@@ -99,18 +130,6 @@ Notifications are next.
   Typed before clicking an option it rides along as a note; sent on its own with "Answer
   with this" it is the answer, none of the options. The agent gets it from
   `escalation_await` either way. On the phone too.
-- **Open and Nudge.** Each agent on the floor says what it runs on and links to its own
-  session, so you can open it and look under the hood. Nudge sends the word "nudge" to
-  the agent with its next reply from the factory.
-- **A new task reaches an idle agent on its own.** For Claude Code, whose session id the
-  factory already has from registration: when its session is about to go idle, its own
-  Stop hook asks the factory whether there is anything waiting; the first time there is,
-  the factory tells it instead of letting it stop, once per task. Needs the hook added to
-  `~/.claude/settings.json`, pointed at `http://127.0.0.1:4747/api/stop_hook`.
-- **A word for the agent.** On a project's page, Mac or phone, type a note and send it. It
-  waits on the project, and can be taken back, until an agent's next call about that
-  project; then it goes out once at the end of that reply, "NOTE FROM ALEX: …", and is
-  gone. Away from the Mac the note goes through iCloud and the Mac picks it up.
 - **Answered questions fold away.** A decided question becomes one line in the project
   view, and only the newest three stay; the store keeps them all.
 - **A banner at the Mac.** Each new question is a macOS notification with the options as

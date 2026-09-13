@@ -1,0 +1,8 @@
+{
+  "name": "software-factory",
+  "description": "Connect Claude Code to a local Software Factory and work its backlog.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Alex Collins"
+  }
+}

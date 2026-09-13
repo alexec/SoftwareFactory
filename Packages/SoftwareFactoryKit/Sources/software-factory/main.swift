@@ -1,7 +1,7 @@
 // software-factory: the factory's MCP server, plus a few commands for a person at a shell.
 //
 //   software-factory mcp                       run the MCP server on stdio (what Claude Code launches)
-//   software-factory status                    the floor, as text
+//   software-factory status                    the dashboard, as text
 //   software-factory tools                     the tool names and what they do
 //   software-factory decide <escalation-id-prefix> <option-number>
 //
@@ -33,10 +33,11 @@ case "status":
     let snap = (try? store.load()) ?? Snapshot()
     let dash = Dashboard.make(snapshot: snap)
     print("Store: \(store.root.path)")
-    print("In progress: \(dash.inProgress)   Need you: \(dash.openEscalations.count)   Agents on the floor: \(dash.agents.count)")
+    print("In progress: \(dash.inProgress)   Need you: \(dash.openEscalations.count)   Agents: \(dash.agents.count)")
     for a in dash.agents {
         let on = a.task.map { " · \($0.title)" } ?? (a.agent.note.isEmpty ? "" : " · \(a.agent.note)")
-        print("  \(a.isWorking ? "working" : "quiet  ") \(a.agent.name) [\(a.project?.name ?? "-")]\(on)\(a.waitingOnYou ? " · waiting on you" : "")")
+        let word = a.activity.rawValue.padding(toLength: 8, withPad: " ", startingAt: 0)
+        print("  \(word) \(a.agent.label) [\(a.project?.name ?? "-")]\(on)\(a.waitingOnYou ? " · waiting on you" : "")")
     }
     for p in dash.projects {
         let doing = p.doing.map { " · \($0)" } ?? ""

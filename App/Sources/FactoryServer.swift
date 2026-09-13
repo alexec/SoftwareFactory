@@ -26,7 +26,7 @@ final class FactoryServer: @unchecked Sendable {
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
             let listener = try NWListener(using: params, on: NWEndpoint.Port(rawValue: port)!)
-            listener.service = NWListener.Service(name: Host.current().localizedName ?? "Software Factory", type: Self.serviceType)
+            listener.service = NWListener.Service(name: Host.current().localizedName ?? "Taktu: Software Factory", type: Self.serviceType)
             listener.stateUpdateHandler = { [onState, port] state in
                 switch state {
                 case .ready: onState("Listening on port \(port)")

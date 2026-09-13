@@ -37,6 +37,9 @@ settings:
 packages:
   SoftwareFactoryKit:
     path: Packages/SoftwareFactoryKit
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    from: 1.19.0
 targets:
   SoftwareFactory:
     type: application
@@ -48,18 +51,27 @@ targets:
     dependencies:
       - package: SoftwareFactoryKit
         product: SoftwareFactoryKit
+      - package: SwiftTerm
+        product: SwiftTerm
     # Sandboxed from day one, because the sandbox decides where the shared store lives:
     # the app group container.
     entitlements:
       path: App/SoftwareFactory.entitlements
       properties:
-        com.apple.security.app-sandbox: true
+        # Off, so the app can start an agent in your own environment: ~/.claude, the
+        # keychain, git, node, Xcode. A sandboxed child gets none of that. Turn it back
+        # on for a store build and the project page falls back to copying the command.
+        # (Alex, 12 Sep 2026.)
+        com.apple.security.app-sandbox: false
         # The factory listens on a port: MCP for agents, a small API for the phone.
         com.apple.security.network.server: true
         # Outgoing, for iCloud.
         com.apple.security.network.client: true
         # Dictating a task.
         com.apple.security.device.audio-input: true
+        # Choosing the folder a project runs in. Without this the sandbox refuses the
+        # open panel and the button looks broken. (Alex, 12 Sep 2026.)
+        com.apple.security.files.user-selected.read-write: true
         com.apple.security.application-groups:
           - 6T4RVD5724.com.alexecollins.softwarefactory
         com.apple.developer.icloud-container-identifiers:
@@ -68,8 +80,8 @@ targets:
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: Software Factory
-        CFBundleName: Software Factory
+        CFBundleDisplayName: "Taktu: Software Factory"
+        CFBundleName: "Taktu: Software Factory"
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         LSApplicationCategoryType: public.app-category.developer-tools
@@ -77,7 +89,7 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         NSHumanReadableCopyright: © 2026 Alex Collins
         CFBundleIconName: AppIcon
-        NSMicrophoneUsageDescription: Software Factory listens while you dictate a task. The words are recognised on this Mac and nothing is recorded.
+        NSMicrophoneUsageDescription: "Taktu: Software Factory listens while you dictate a task. The words are recognised on this Mac and nothing is recorded."
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.alexecollins.softwarefactory
@@ -109,8 +121,8 @@ targets:
     info:
       path: Phone/Info.plist
       properties:
-        CFBundleDisplayName: Software Factory
-        CFBundleName: Software Factory
+        CFBundleDisplayName: "Taktu: Software Factory"
+        CFBundleName: "Taktu: Software Factory"
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         LSApplicationCategoryType: public.app-category.developer-tools
@@ -119,8 +131,8 @@ targets:
         CFBundleIconName: AppIcon
         NSSupportsLiveActivities: true
         UIBackgroundModes: [remote-notification]
-        NSLocalNetworkUsageDescription: Software Factory looks for the factory running on your Mac, on the same network, so you can answer its questions from here.
-        NSMicrophoneUsageDescription: Software Factory listens while you dictate a task. The words are recognised on this phone and nothing is recorded.
+        NSLocalNetworkUsageDescription: "Taktu: Software Factory looks for the factory running on your Mac, on the same network, so you can answer its questions from here."
+        NSMicrophoneUsageDescription: "Taktu: Software Factory listens while you dictate a task. The words are recognised on this phone and nothing is recorded."
         NSBonjourServices: [_softwarefactory._tcp]
         UILaunchScreen:
           UIColorName: LaunchBackground
@@ -146,8 +158,8 @@ targets:
     info:
       path: Phone/Widgets/Info.plist
       properties:
-        CFBundleDisplayName: Software Factory
-        CFBundleName: Software Factory Widgets
+        CFBundleDisplayName: "Taktu: Software Factory"
+        CFBundleName: "Taktu: Software Factory Widgets"
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         NSHumanReadableCopyright: © 2026 Alex Collins

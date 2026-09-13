@@ -7,7 +7,8 @@ struct PhoneBacklogView: View {
     var project: Project
 
     @State private var newTitle = ""
-    @State private var steer = ""
+    @State private var selectedTask: FactoryTask?
+    @State private var editingTask: FactoryTask?
 
     private var tasks: [FactoryTask] { Backlog.visible(for: project.id, in: model.snapshot.tasks) }
     private var status: Dashboard.ProjectStatus? { model.dashboard.projects.first { $0.id == project.id } }
@@ -42,20 +43,25 @@ struct PhoneBacklogView: View {
                                 .strikethrough(task.state == .done)
                                 .foregroundStyle(task.state == .done || task.state == .parked ? .secondary : .primary)
                             Spacer()
-                            Text(task.state == .inProgress ? "In progress" : (task.state == .done ? "Done" : (task.state == .parked ? "Parked" : (task.state == .blocked ? "Blocked" : ""))))
+                            Text(task.state == .inProgress ? "In progress" : (task.state == .done ? "Done" : (task.state == .parked ? "Parked" : "")))
                                 .font(.caption.weight(.medium))
-                                .foregroundStyle(task.state == .inProgress ? .green : (task.state == .blocked ? .orange : .secondary))
+                                .foregroundStyle(task.state == .inProgress ? .green : .secondary)
                         }
-                        if task.state == .blocked, !task.blockers.isEmpty {
-                            Text(task.blockedWhy).font(.caption).foregroundStyle(.orange).lineLimit(2)
-                        } else if let ending = task.note.split(whereSeparator: \.isNewline).last, !ending.isEmpty {
+                        if let ending = task.note.split(whereSeparator: \.isNewline).last,
+                           !ending.isEmpty,
+                           ending != task.blockedWhy {
                             Text(ending)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
                         }
+                        if task.state == .blocked, !task.blockers.isEmpty {
+                            Text(task.blockedWhy).font(.caption).foregroundStyle(.orange).lineLimit(2)
+                        }
                     }
                     .padding(.vertical, 2)
+                    .contentShape(.rect)
+                    .onTapGesture { selectedTask = task }
                 }
               }
             }
@@ -67,7 +73,6 @@ struct PhoneBacklogView: View {
                         Menu {
                             Button("Add to the top") { add(at: .top) }
                             Button("Add to the bottom") { add(at: .bottom) }
-                            Button("Add to parked") { add(at: .parked) }
                         } label: {
                             Text("Add")
                         } primaryAction: {
@@ -92,6 +97,36 @@ struct PhoneBacklogView: View {
         }
         .navigationTitle(project.name)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $selectedTask) { task in
+            VStack(alignment: .leading, spacing: 12) {
+                Text(task.title)
+                    .font(.headline)
+                    .strikethrough(task.state == .done)
+                if let ending = task.note.split(whereSeparator: \.isNewline).last,
+                   !ending.isEmpty,
+                   ending != task.blockedWhy {
+                    Text(ending)
+                        .foregroundStyle(.secondary)
+                }
+                if task.state == .blocked, !task.blockers.isEmpty {
+                    Text(task.blockedWhy)
+                        .foregroundStyle(.orange)
+                }
+                Button("Edit") {
+                    selectedTask = nil
+                    editingTask = task
+                }
+                .buttonStyle(.borderedProminent)
+                Spacer()
+            }
+            .padding()
+            .presentationDetents([.medium])
+        }
+        .sheet(item: $editingTask) { task in
+            PhoneTaskEditor(task: task) { title, note in
+                _Concurrency.Task { await model.editTask(task, title: title, note: note) }
+            }
+        }
     }
 
     private func add(at position: Backlog.Position) {
@@ -100,8 +135,6 @@ struct PhoneBacklogView: View {
         _Concurrency.Task { await model.addTask(to: project, title: title, at: position) }
     }
 
-    /// The status dot and what it is on, then the note to the agent: the same order as
-    /// the Mac's own project page. (Alex, 12 Sep 2026.)
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
@@ -113,27 +146,47 @@ struct PhoneBacklogView: View {
                 Text(project.onHold ? "On hold" : (status?.doing ?? "Nobody is on it"))
                     .font(.headline)
             }
-            HStack(alignment: .bottom, spacing: 8) {
-                TextField("A word for the agent, sent on its next call", text: $steer, axis: .vertical)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct PhoneTaskEditor: View {
+    var task: FactoryTask
+    var save: (String, String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var title: String
+    @State private var note: String
+
+    init(task: FactoryTask, save: @escaping (String, String) -> Void) {
+        self.task = task
+        self.save = save
+        _title = State(initialValue: task.title)
+        _note = State(initialValue: task.note)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Task", text: $title, axis: .vertical)
                     .lineLimit(1...4)
-                Button("Send") {
-                    let text = steer
-                    steer = ""
-                    _Concurrency.Task { await model.note(text, on: project) }
-                }
-                .buttonStyle(.glass)
-                .disabled(steer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                TextField("Note", text: $note, axis: .vertical)
+                    .lineLimit(3...8)
             }
-            ForEach((model.project(for: project.id) ?? project).notes) { note in
-                HStack(spacing: 8) {
-                    Image(systemName: "text.bubble").foregroundStyle(.secondary)
-                    Text(note.text).font(.subheadline).lineLimit(2)
-                    Spacer()
-                    Text("waiting").font(.caption).foregroundStyle(.tertiary)
+            .navigationTitle("Edit task")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        save(title, note)
+                        dismiss()
+                    }
+                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
-        .padding(.vertical, 4)
     }
 }
 

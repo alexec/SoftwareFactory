@@ -87,7 +87,7 @@ struct DictateField<Submit: View>: View {
 
     private var primer: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Software Factory listens while you dictate. Words are recognised on this device; nothing is recorded.")
+            Text("Taktu: Software Factory listens while you dictate. Words are recognised on this device; nothing is recorded.")
                 .fixedSize(horizontal: false, vertical: true)
             Button("Continue") { _Concurrency.Task { await dictation.ask() } }
                 .buttonStyle(.glassProminent)
@@ -119,8 +119,8 @@ struct DictateField<Submit: View>: View {
 /// generic type.
 private enum DictationHelp {
     #if os(macOS)
-    static let deniedText = "Dictation needs the microphone, which can be turned on for Software Factory in System Settings, Privacy and Security."
+    static let deniedText = "Dictation needs the microphone, which can be turned on for Taktu: Software Factory in System Settings, Privacy and Security."
     #else
-    static let deniedText = "Dictation needs the microphone, which can be turned on for Software Factory in the iOS Settings app."
+    static let deniedText = "Dictation needs the microphone, which can be turned on for Taktu: Software Factory in the iOS Settings app."
     #endif
 }

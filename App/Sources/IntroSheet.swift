@@ -11,9 +11,9 @@ struct IntroSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Software Factory")
+                        Text("Taktu: Software Factory")
                             .font(.system(.largeTitle, design: .rounded).weight(.bold))
-                        Text("The floor of a factory where coding agents do the work and you make the calls.")
+                        Text("A factory where coding agents do the work and you make the calls.")
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -39,7 +39,7 @@ struct IntroSheet: View {
                 model.hasSeenIntro = true
                 dismiss()
             } label: {
-                Text("Open the floor").frame(maxWidth: .infinity)
+                Text("Open the factory").frame(maxWidth: .infinity)
             }
             .buttonStyle(.glassProminent)
             .controlSize(.large)

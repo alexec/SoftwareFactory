@@ -57,9 +57,9 @@ public struct HTTPResponse: Sendable {
         self.body = body
     }
 
-    public static func json(_ object: Any, status: Int = 200) -> HTTPResponse {
+    public static func json(_ object: Any, status: Int = 200, headers: [String: String] = [:]) -> HTTPResponse {
         let data = (try? JSONSerialization.data(withJSONObject: object, options: [.withoutEscapingSlashes])) ?? Data()
-        return HTTPResponse(status: status, headers: ["Content-Type": "application/json"], body: data)
+        return HTTPResponse(status: status, headers: headers.merging(["Content-Type": "application/json"]) { _, contentType in contentType }, body: data)
     }
 
     public static func encoded<T: Encodable>(_ value: T, status: Int = 200) -> HTTPResponse {
@@ -117,10 +117,11 @@ public struct HTTPResponse: Sendable {
 /// - `POST /mcp`: the MCP streamable-HTTP endpoint. JSON-RPC in, JSON-RPC out; a
 ///   notification gets 202 with no body. `GET /mcp` is 405: the server never pushes.
 /// - `/api/*`: what the apps use. `GET /api/snapshot` is the whole store as JSON, which the
-///   phone turns into its own floor with `Dashboard.make`;
+///   phone turns into its own dashboard with `Dashboard.make`;
 ///   `POST /api/decide` records a decision; `POST /api/task` files a task.
 public struct HTTPRouter: Sendable {
     public let server: MCPServer
+    private let sessions = MCPSessions()
 
     public init(server: MCPServer) {
         self.server = server
@@ -136,10 +137,20 @@ public struct HTTPRouter: Sendable {
         }
         switch (request.method, request.path.split(separator: "?").first.map(String.init) ?? request.path) {
         case ("POST", "/mcp"):
-            return mcp(request.body)
+            return mcp(request)
         case ("GET", "/mcp"):
             return .text("This server does not open a stream; POST JSON-RPC here.", status: 405)
         case ("DELETE", "/mcp"):
+            guard let sessionID = sessionID(in: request), let agent = sessions.remove(sessionID) else {
+                return .text("Unknown MCP session", status: 404)
+            }
+            if let agent {
+                do {
+                    try server.setConnection(connected: false, for: agent)
+                } catch {
+                    return .text("\(error)", status: 500)
+                }
+            }
             return HTTPResponse(status: 200)
         case ("GET", "/api/snapshot"):
             do { return .encoded(try store.load()) } catch { return .text("\(error)", status: 500) }
@@ -147,14 +158,10 @@ public struct HTTPRouter: Sendable {
             return decide(request.body)
         case ("POST", "/api/task"):
             return task(request.body)
-        case ("POST", "/api/note"):
-            return note(request.body)
-        case ("POST", "/api/nudge"):
-            return nudge(request.body)
-        case ("POST", "/api/stop_hook"):
-            return stopHook(request.body)
+        case ("POST", "/api/task/edit"):
+            return editTask(request.body)
         case ("GET", "/"):
-            return .text("Software Factory. MCP at /mcp; the apps use /api.", status: 200)
+            return .text("Taktu: Software Factory. MCP at /mcp; the apps use /api.", status: 200)
         default:
             return .text("Not found", status: 404)
         }
@@ -165,58 +172,93 @@ public struct HTTPRouter: Sendable {
         return host == "localhost" || host == "127.0.0.1" || host == "::1"
     }
 
-    func mcp(_ body: Data) -> HTTPResponse {
-        guard let parsed = try? JSONSerialization.jsonObject(with: body) else {
+    func mcp(_ request: HTTPRequest) -> HTTPResponse {
+        guard let parsed = try? JSONSerialization.jsonObject(with: request.body) else {
             return .json(MCPServer.error(id: nil, code: -32700, message: "Parse error"), status: 400)
         }
         if let batch = parsed as? [[String: Any]] {
-            let responses = batch.compactMap { server.handle($0) }
+            guard let sessionID = sessionID(in: request) else {
+                return .text("Mcp-Session-Id is required", status: 400)
+            }
+            guard sessions.contains(sessionID) else {
+                return .text("Unknown MCP session", status: 404)
+            }
+            let responses = batch.compactMap { handle($0, sessionID: sessionID) }
             return responses.isEmpty ? HTTPResponse(status: 202) : .json(responses)
         }
         guard let one = parsed as? [String: Any] else {
             return .json(MCPServer.error(id: nil, code: -32600, message: "Invalid request"), status: 400)
         }
-        guard let response = server.handle(one) else { return HTTPResponse(status: 202) }
+        let method = one["method"] as? String
+        if method == "initialize" {
+            guard request.headers["mcp-session-id"] == nil else {
+                return .text("MCP session is assigned during initialization", status: 400)
+            }
+            let sessionID = sessions.create()
+            guard let response = server.handle(one) else { return HTTPResponse(status: 202) }
+            return .json(response, headers: ["Mcp-Session-Id": sessionID.uuidString])
+        }
+        guard let sessionID = sessionID(in: request) else {
+            return .text("Mcp-Session-Id is required", status: 400)
+        }
+        guard sessions.contains(sessionID) else {
+            return .text("Unknown MCP session", status: 404)
+        }
+        guard let response = handle(one, sessionID: sessionID) else { return HTTPResponse(status: 202) }
         return .json(response)
     }
 
-    struct NudgeBody: Decodable {
-        var agentID: UUID
+    func handle(_ request: [String: Any], sessionID: UUID) -> [String: Any]? {
+        let response = server.handle(request, agentID: sessions.agent(for: sessionID))
+        guard MCPServer.isAgentRegistration(request),
+              let response,
+              let label = MCPServer.registeredAgentLabel(in: response)
+        else { return response }
+        sessions.setAgent(label, for: sessionID)
+        return response
     }
 
-    /// The person nudges an agent: it hears "nudge" on its next call.
-    func nudge(_ body: Data) -> HTTPResponse {
-        guard let n = try? FileStore.decoder.decode(NudgeBody.self, from: body) else {
-            return .text("Body: {agentID}", status: 400)
+    func sessionID(in request: HTTPRequest) -> UUID? {
+        request.headers["mcp-session-id"].flatMap(UUID.init(uuidString:))
+    }
+
+    private final class MCPSessions: @unchecked Sendable {
+        private let lock = NSLock()
+        private var ids = Set<UUID>()
+        private var agents: [UUID: String] = [:]
+
+        func create() -> UUID {
+            lock.lock()
+            defer { lock.unlock() }
+            let id = UUID()
+            ids.insert(id)
+            return id
         }
-        do {
-            guard var agent = try store.load().agents.first(where: { $0.id == n.agentID }) else { return .text("No such agent", status: 404) }
-            agent.nudged = server.now()
-            try store.save(agent)
-            return .encoded(agent)
-        } catch { return .text("\(error)", status: 500) }
-    }
 
-    struct NoteBody: Decodable {
-        var project: String
-        var text: String
-        var by: String?
-    }
-
-    /// A note for the agent on a project; it goes out on the agent's next call.
-    func note(_ body: Data) -> HTTPResponse {
-        guard let n = try? FileStore.decoder.decode(NoteBody.self, from: body) else {
-            return .text("Body: {project, text, by?}", status: 400)
+        func contains(_ id: UUID) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return ids.contains(id)
         }
-        do {
-            let snap = try store.load()
-            let project = try server.resolveProject(n.project, in: snap, create: false)
-            let noted = Steering.note(n.text, on: project, by: n.by ?? "alex, phone", at: server.now())
-            try store.save(noted)
-            return .encoded(noted)
-        } catch let e as MCPServer.ToolError {
-            return .text(e.message, status: 404)
-        } catch { return .text("\(error)", status: 500) }
+
+        func remove(_ id: UUID) -> String?? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard ids.remove(id) != nil else { return nil }
+            return agents.removeValue(forKey: id)
+        }
+
+        func agent(for sessionID: UUID) -> String? {
+            lock.lock()
+            defer { lock.unlock() }
+            return agents[sessionID]
+        }
+
+        func setAgent(_ agentID: String, for sessionID: UUID) {
+            lock.lock()
+            defer { lock.unlock() }
+            agents[sessionID] = agentID
+        }
     }
 
     /// An option with an optional note, or `answer` alone for the person's own words.
@@ -250,21 +292,20 @@ public struct HTTPRouter: Sendable {
     struct TaskBody: Decodable {
         var project: String
         var title: String
-        var kind: FactoryTask.Kind?
         var position: Backlog.Position?
         var note: String?
     }
 
     func task(_ body: Data) -> HTTPResponse {
         guard let t = try? FileStore.decoder.decode(TaskBody.self, from: body) else {
-            return .text("Body: {project (name or id), title, kind?, position?, note?}", status: 400)
+            return .text("Body: {project (name or id), title, position?, note?}", status: 400)
         }
         do {
             let snap = try store.load()
             let project = try server.resolveProject(t.project, in: snap, create: true)
             let position = t.position ?? .bottom
             let task = FactoryTask(number: Backlog.nextNumber(in: (try? store.loadEveryTask()) ?? snap.tasks),
-                                   projectID: project.id, title: t.title, kind: t.kind ?? .feature,
+                                   projectID: project.id, title: t.title,
                                    state: Backlog.state(for: position),
                                    rank: Backlog.rank(for: position, projectID: project.id, in: snap.tasks),
                                    note: t.note ?? "", created: server.now())
@@ -275,26 +316,29 @@ public struct HTTPRouter: Sendable {
         } catch { return .text("\(error)", status: 500) }
     }
 
-    /// Claude Code's own Stop hook body: the fields it sends are documented at
-    /// code.claude.com/docs/hooks-guide; only these two matter here.
-    struct StopHookBody: Decodable {
-        var session_id: String?
-        var stop_hook_active: Bool?
+    struct EditTaskBody: Decodable {
+        var id: UUID
+        var title: String
+        var note: String
     }
 
-    /// A session about to go idle: offer it the top of its project's backlog, once,
-    /// or answer with nothing to say and let the stop happen normally.
-    func stopHook(_ body: Data) -> HTTPResponse {
-        guard let h = try? FileStore.decoder.decode(StopHookBody.self, from: body), let sessionID = h.session_id else {
-            return .json([String: Any]())
+    func editTask(_ body: Data) -> HTTPResponse {
+        guard let edited = try? FileStore.decoder.decode(EditTaskBody.self, from: body) else {
+            return .text("Body: {id, title, note}", status: 400)
         }
         do {
-            let snap = try store.load()
-            guard let (agent, task) = StopHook.check(sessionID: sessionID, stopHookActive: h.stop_hook_active ?? false, in: snap)
-            else { return .json([String: Any]()) }
-            let (announced, reason) = StopHook.announce(task, to: agent)
-            try store.save(announced)
-            return .json(["decision": "block", "reason": reason])
-        } catch { return .json([String: Any]()) }
+            guard let task = try store.load().tasks.first(where: { $0.id == edited.id }) else {
+                return .text("No such task", status: 404)
+            }
+            let updated = Backlog.edit(task, title: edited.title, note: edited.note, at: server.now())
+            guard updated.title == edited.title.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                return .text("A task needs a title", status: 400)
+            }
+            try store.save(updated)
+            return .encoded(updated)
+        } catch {
+            return .text("\(error)", status: 500)
+        }
     }
+
 }

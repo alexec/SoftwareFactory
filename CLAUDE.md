@@ -63,6 +63,11 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     contains the other, a couple of characters apart, or a shared word of five letters:
     "NightSleeper" is a slip for "Sleeper Train"). `resolveProject` refuses a near miss
     unless `project_add` is called with `force`.
+  - `AgentNumbers`: the agent numbers given out, one empty file each under
+    `agent-numbers/`. Taking one is creating its file with O_EXCL, so the app and the
+    server can both hand out names without talking to each other, and a deleted agent
+    never gives its number back. `FileStore.takeAgentNumber()` seeds a store written
+    before the folder existed from the numbers its agents already carry.
   - `LaunchPrompt`: the words an agent starts with, in one place: `project` (work the
     backlog), `task` (one task, already in its name, to claim), `free` (no project,
     the person says what for).
@@ -105,18 +110,33 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     through `persist`; starts `FactoryServer` on port 4747.
   - `FactoryServer`: `NWListener` on the port, one queue per connection (a request can
     block for minutes), Bonjour `_softwarefactory._tcp`.
-  - `RootView` (split view: Floor, Capacity, projects), `FactoryView` (the Capacity page:
-    verdict and what each kind of work would be told, then one grid of cards for the
-    Mac's own readings and every leasable resource alike, each a name and a colored
-    utilization line; add a resource, see who holds it, Take back. The throttle sliders
-    that held new work on swap or memory are out for the moment, to be refined),
-    `Notifier` (one banner per new question, options as actions; `Presence.isAtTheMac`), `FloorView` (stat tiles, Needs
-    you as a horizontal strip, On the floor), `EscalationCard`, `ProjectView` (backlog
+  - `RootView` (split view: Dashboard, Agents, Capacity, then the projects; a page per
+    agent hangs off it), `DashboardView` (stat tiles, Needs you as a horizontal strip,
+    the agents on the floor as cards; `AgentCard` is one of them and `AgentView` is the
+    page behind it), `AgentsView` (every agent registered, and the button that starts a
+    new one), `FactoryView` (the Capacity page: verdict and what each kind of work would
+    be told, then one grid of cards for the Mac's own readings and every leasable
+    resource alike, each a name and a colored utilization line; add a resource, see who
+    holds it, Take back. The throttle sliders that held new work on swap or memory are
+    out for the moment, to be refined),
+    `Notifier` (one banner per new question, options as actions; `Presence.isAtTheMac`),
+    `EscalationCard`, `ProjectView` (backlog
     with add, drag reorder, state menu, notes under rows, and Start an agent on this,
     on a backlog row: it reserves an agent, puts the task in its name and starts it on
     that one task), `AgentLauncher` and `StartAgent` (reserve, assign, launch: one path
     for every launch), `IntroSheet`, `SettingsView`
     (How it works on top, the register command, iCloud, the store, Developer in DEBUG).
+  - `TerminalSessions` and `Tmux`: an agent the app launches runs in a terminal the app
+    owns (SwiftTerm), so its page shows it working and you can type to it. tmux holds the
+    session on a server of its own, so the agent outlives the app: quit, rebuild, come
+    back, and opening its page attaches to what has been running all along. The person
+    never sees tmux. Nothing asks tmux anything from the main thread: `TerminalSessions`
+    keeps `held`, refreshed off it by `lookForHeldSessions()`, because running tmux while
+    the window draws is a beachball.
+  - The Mac app is **not sandboxed** (`com.apple.security.app-sandbox: false`). It has to
+    start an agent in your own environment: `~/.claude`, the keychain, git, node, Xcode.
+    A sandboxed child gets none of that. The cost is that this target cannot go to
+    TestFlight or the Mac App Store as it stands; the iPhone app is unaffected.
 - `Phone/Sources`: `PhoneModel` (NWBrowser finds the factory; `FactoryClient` speaks the
   package's HTTP over the Bonjour endpoint, polling `/api/snapshot` every 3 s and posting
   `/api/decide` and `/api/task`; when the factory is out of reach it reads, decides and
@@ -144,6 +164,14 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
 ## Rules for changes
 
 - A rule goes in the package with a test before it goes in a view.
+- A terminal holds one agent. An agent registering into a session another agent holds
+  takes it, and the factory clears it off the old record; an agent still live in there
+  keeps it and the newcomer gets none (`Agents.claimSession`). A shell outlives its agent
+  with SOFTWARE_FACTORY_SESSION still exported, which is how two used to share one window.
+- An agent's number is its own for the life of the factory. `agent_register` takes an
+  `agent_id` (the name the app told it to use); a name a live session is working as is
+  refused, a name given out before is refused, and a name nobody has had is claimed.
+  No other tool takes an `agent_id`: the connection says who is calling.
 - Never change a record's JSON shape without a reader for the old shape; bump
   `Records.version` when an older reader could not cope.
 - Anything that runs on an audio or network thread is `@Sendable` and touches nothing

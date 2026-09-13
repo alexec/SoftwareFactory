@@ -1,0 +1,15 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "software-factory",
+  "version": "0.1.0",
+  "description": "Connect an agent to a local Software Factory and work its backlog.",
+  "author": {
+    "name": "Alex Collins"
+  },
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "software-factory",
+    "backlog"
+  ]
+}

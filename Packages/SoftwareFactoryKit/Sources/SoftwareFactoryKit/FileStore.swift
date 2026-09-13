@@ -41,6 +41,7 @@ public struct Snapshot: Codable, Sendable, Equatable {
 ///     <root>/tasks/<uuid>.json
 ///     <root>/escalations/<uuid>.json
 ///     <root>/agents/<uuid>.json
+///     <root>/messages/<uuid>.json
 ///     <root>/resources/<uuid>.json
 ///     <root>/leases/<uuid>.json
 public struct FileStore: Sendable {
@@ -50,7 +51,7 @@ public struct FileStore: Sendable {
 
     public init(root: URL) throws {
         self.root = root
-        for folder in ["projects", "tasks", "escalations", "agents", "resources", "leases"] {
+        for folder in ["projects", "tasks", "escalations", "agents", "messages", "resources", "leases"] {
             try FileManager.default.createDirectory(
                 at: root.appending(path: folder), withIntermediateDirectories: true)
         }
@@ -98,6 +99,20 @@ public struct FileStore: Sendable {
         )
     }
 
+    /// The agent numbers already given out. One file per number, so taking one is
+    /// atomic between the app and the server, and a deleted agent never frees its name.
+    public func agentNumbers() throws -> AgentNumbers {
+        try AgentNumbers(root: root)
+    }
+
+    /// The next agent number, taken and written down. A store from before the counter
+    /// existed starts above the highest number its agents already carry.
+    public func takeAgentNumber() throws -> Int {
+        let numbers = try agentNumbers()
+        let seen = try? load().agents.compactMap(\.number).max()
+        return numbers.take(notBelow: seen.flatMap { $0 } ?? 0)
+    }
+
     /// The throttle is one file, `throttle.json`, and the default when there is none.
     public func throttle() -> Throttle {
         let url = root.appending(path: "throttle.json")
@@ -123,6 +138,14 @@ public struct FileStore: Sendable {
         let url = root.appending(path: "escalations").appending(path: id.uuidString + ".json")
         guard let data = try? Data(contentsOf: url) else { return nil }
         return try? Self.decoder.decode(Escalation.self, from: data)
+    }
+
+    /// Messages are only read through an authenticated agent's inbox, never included in
+    /// the public snapshot that the phone receives.
+    public func messages(for recipientID: UUID) throws -> [AgentMessage] {
+        try (loadAll("messages") as [AgentMessage])
+            .filter { $0.recipientID == recipientID }
+            .sorted { $0.sent < $1.sent }
     }
 
     private func loadAll<T: Decodable>(_ folder: String) throws -> [T] {
@@ -157,6 +180,10 @@ public struct FileStore: Sendable {
 
     public func save(_ agent: Agent) throws {
         try write(agent, to: "agents", name: agent.id.uuidString)
+    }
+
+    public func save(_ message: AgentMessage) throws {
+        try write(message, to: "messages", name: message.id.uuidString)
     }
 
     public func save(_ resource: Resource) throws {

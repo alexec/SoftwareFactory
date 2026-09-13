@@ -125,13 +125,7 @@ struct FactoryView: View {
         }
     }
 
-    private func color(_ v: Capacity.Verdict) -> Color {
-        switch v {
-        case .under: .green
-        case .tight: .orange
-        case .over: .red
-        }
-    }
+    private func color(_ v: Capacity.Verdict) -> Color { CapacityDot.color(v) }
 
     private func symbol(_ a: Capacity.Answer) -> String {
         switch a {
@@ -143,6 +137,28 @@ struct FactoryView: View {
 
     private func percent(_ f: Double) -> String { "\(Int((f * 100).rounded()))%" }
     private func gigabytes(_ b: UInt64) -> String { String(format: "%.1f GB", Double(b) / 1_073_741_824) }
+}
+
+/// The Mac's verdict as a dot: green under capacity, orange tight, red over.
+struct CapacityDot: View {
+    var verdict: Capacity.Verdict?
+    var reason: String?
+
+    var body: some View {
+        Circle()
+            .fill(Self.color(verdict))
+            .frame(width: 8, height: 8)
+            .help(reason ?? "Reading the Mac")
+    }
+
+    static func color(_ verdict: Capacity.Verdict?) -> Color {
+        switch verdict {
+        case .under: .green
+        case .tight: .orange
+        case .over: .red
+        case nil: .secondary.opacity(0.4)
+        }
+    }
 }
 
 private struct Room: View {

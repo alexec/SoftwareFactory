@@ -5,7 +5,7 @@ import SoftwareFactoryKit
 
 /// One macOS notification per new question, its options as the actions, so a question
 /// can be answered without opening the window. The system alert that asks permission
-/// is shown only from the primer on the floor, never on launch.
+/// is shown only from the primer on the dashboard, never on launch.
 @MainActor
 final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     enum Standing: Equatable {

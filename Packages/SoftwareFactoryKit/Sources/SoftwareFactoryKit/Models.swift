@@ -3,7 +3,9 @@ import Foundation
 /// The shape of every record on disk and in iCloud. Bump when a record changes in a way
 /// an older reader could not cope with; a reader always decodes an older shape.
 public enum Records {
-    public static let version = 1
+    /// 2: a task no longer carries a kind. A reader from version 1 wanted one and would
+    /// skip the record, so the number goes up. (Alex, 12 Sep 2026: we never used it.)
+    public static let version = 2
 }
 
 /// A product being built, identified by its folder. The path is the id because it is the
@@ -15,6 +17,10 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
     /// Stable and opaque. Projects from before 12 Sep 2026 carry their old folder path here.
     public var id: String
     public var name: String
+    /// A short explanation of when an agent should use this project.
+    public var description: String
+    /// Project-specific guidance shown once to each agent before it works its backlog.
+    public var instructions: String
     public var added: Date
     /// Set aside by the person: nothing is handed out from its backlog and agents are
     /// told so. Everything stays; the switch is in the app only.
@@ -22,31 +28,16 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
     /// Set when the project was taken out of the factory. The record stays on disk and
     /// out of every list, with its tasks. (Director, 12 Sep 2026: a wrong path.)
     public var removed: Date?
-    /// Words from the person for whoever works on this project next. Each is handed to
-    /// an agent on its next call about the project and then gone. (Alex, 12 Sep 2026:
-    /// a way to steer the agent.)
-    public var notes: [Note] = []
-    /// Notes already handed over, so a copy that comes back from another device is not
-    /// handed over twice. The last fifty.
-    public var sentNoteIDs: [UUID] = []
+    /// Where an agent runs for this project: a folder on this Mac, set by hand from the
+    /// project page or by project_set_path. Nothing to do with the id above, and nothing
+    /// requires it; a project with no single folder just leaves it unset.
+    public var path: String?
 
-    public struct Note: Codable, Identifiable, Hashable, Sendable {
-        public var id: UUID
-        public var text: String
-        public var by: String
-        public var at: Date
-
-        public init(id: UUID = UUID(), text: String, by: String, at: Date = .now) {
-            self.id = id
-            self.text = text
-            self.by = by
-            self.at = at
-        }
-    }
-
-    public init(name: String, id: String = UUID().uuidString, added: Date = .now) {
+    public init(name: String, description: String = "", instructions: String = "", id: String = UUID().uuidString, added: Date = .now) {
         self.id = id
         self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.description = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.instructions = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
         self.added = added
     }
 
@@ -61,29 +52,19 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
         id = try c.decode(String.self, forKey: .id)
         name = try c.decode(String.self, forKey: .name)
+        description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
+        instructions = try c.decodeIfPresent(String.self, forKey: .instructions) ?? ""
         added = try c.decode(Date.self, forKey: .added)
         onHold = try c.decodeIfPresent(Bool.self, forKey: .onHold) ?? false
         removed = try c.decodeIfPresent(Date.self, forKey: .removed)
-        notes = try c.decodeIfPresent([Note].self, forKey: .notes) ?? []
-        sentNoteIDs = try c.decodeIfPresent([UUID].self, forKey: .sentNoteIDs) ?? []
+        path = try c.decodeIfPresent(String.self, forKey: .path)
     }
 
 }
 
-/// One task on a project's backlog: a feature, a bug or a chore. Called `FactoryTask` in
-/// Swift only because `Task` is taken by concurrency; it is a task everywhere a person reads it.
+/// One task on a project's backlog. Called `FactoryTask` in Swift only because `Task` is
+/// taken by concurrency; it is a task everywhere a person reads it.
 public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
-    public enum Kind: String, Codable, CaseIterable, Sendable {
-        case feature, bug, chore
-        /// A UX review, a luxury audit, an App Store compliance pass: work that produces
-        /// findings rather than a change. (Alex, 12 September 2026.)
-        case review
-        /// Closing-out work on the store record: the listing, privacy and support pages,
-        /// the build attached, the repo made private. (Director, 12 Sep 2026: most of the
-        /// fleet's closing work is this, not review.)
-        case ship
-    }
-
     public enum State: String, Codable, CaseIterable, Sendable {
         case backlog, inProgress, done
         /// Seen by the person and set aside: not next, not done, not forgotten.
@@ -118,7 +99,6 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
     public var number: Int?
     public var projectID: String
     public var title: String
-    public var kind: Kind
     public var state: State
     /// Position on the backlog. Lower comes first.
     public var rank: Int
@@ -143,7 +123,7 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
     public var label: String? { number.map { "T\($0)" } }
 
     enum CodingKeys: String, CodingKey {
-        case version, id, number, projectID, title, kind, state, rank, note, agentID, blockers, removed, created, updated
+        case version, id, number, projectID, title, state, rank, note, agentID, blockers, removed, created, updated
         case legacyBlocker = "blocker"
     }
 
@@ -154,7 +134,6 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         try c.encodeIfPresent(number, forKey: .number)
         try c.encode(projectID, forKey: .projectID)
         try c.encode(title, forKey: .title)
-        try c.encode(kind, forKey: .kind)
         try c.encode(state, forKey: .state)
         try c.encode(rank, forKey: .rank)
         try c.encode(note, forKey: .note)
@@ -166,7 +145,7 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
     }
 
     public init(
-        id: UUID = UUID(), number: Int? = nil, projectID: String, title: String, kind: Kind = .feature,
+        id: UUID = UUID(), number: Int? = nil, projectID: String, title: String,
         state: State = .backlog, rank: Int, note: String = "", agentID: UUID? = nil,
         created: Date = .now
     ) {
@@ -174,7 +153,6 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         self.number = number
         self.projectID = projectID
         self.title = title
-        self.kind = kind
         self.state = state
         self.rank = rank
         self.note = note
@@ -189,7 +167,6 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         number = try c.decodeIfPresent(Int.self, forKey: .number)
         projectID = try c.decode(String.self, forKey: .projectID)
         title = try c.decode(String.self, forKey: .title)
-        kind = try c.decode(Kind.self, forKey: .kind)
         state = try c.decode(State.self, forKey: .state)
         rank = try c.decode(Int.self, forKey: .rank)
         note = try c.decode(String.self, forKey: .note)
@@ -208,76 +185,177 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
 public struct Agent: Codable, Identifiable, Hashable, Sendable {
     public var version = Records.version
     public var id: UUID
+    /// The short public identifier used by MCP callers. The UUID remains the stable
+    /// storage and relationship key.
+    public var number: Int?
     public var name: String
+    public var about: String
     public var projectID: String?
+    /// The latest instructions read for each project, keyed by the stable project id.
+    /// Keeping the text makes a changed instruction visible again.
+    public var seenInstructions: [String: String]
     public var taskID: UUID?
     public var note: String
+    /// The terminal session this agent runs in, when the app started it: the name it
+    /// passes at registration from SOFTWARE_FACTORY_SESSION. The app attaches to it to
+    /// show the agent working. Nil for an agent started by hand.
+    public var session: String?
     public var registered: Date
     public var lastSeen: Date
+    /// The quiet and gone timers start only after the MCP session disconnects.
+    public var isConnected: Bool
     public var deregistered: Date?
-    /// What the agent runs on. Only "claude-code" today. (Alex, 12 Sep 2026.)
-    public var provider: String?
-    /// A link to the agent's own session, so the person can open it and look under
-    /// the hood: a claude:// link for Claude Code.
-    public var url: String?
-    /// Set when the person nudged the agent; handed over on its next call and cleared.
-    public var nudged: Date?
-    /// Task ids already offered to this agent by the Stop hook, so a task is announced
-    /// only once. Last 50 kept.
-    public var announcedTasks: [UUID] = []
 
-    public static let providers = ["claude-code"]
-
-    public var hasIntroducedItself: Bool {
-        !(provider ?? "").isEmpty && !(url ?? "").isEmpty
-    }
-
-    public init(id: UUID = UUID(), name: String, projectID: String?, registered: Date = .now) {
+    public init(id: UUID = UUID(), number: Int? = nil, name: String, about: String = "", projectID: String?, registered: Date = .now) {
         self.id = id
+        self.number = number
         self.name = name
+        self.about = about
         self.projectID = projectID
+        self.seenInstructions = [:]
         self.note = ""
         self.registered = registered
         self.lastSeen = registered
+        self.isConnected = false
     }
 
-    public var isOnTheFloor: Bool { deregistered == nil }
+    public var isRegistered: Bool { deregistered == nil }
 
-    /// An agent is seen whenever it touches the factory: claims, updates, questions,
-    /// leases. Ten minutes without any of that and it reads as quiet. (Alex, 12 Sep 2026:
-    /// no separate check-in; infer it from the task updates.)
+    /// What an agent gives back as its agent_id: its number, or its raw id for one
+    /// that registered before numbers.
+    public var label: String {
+        number.map { "A\($0)" } ?? id.uuidString
+    }
+
+    /// Once disconnected, an agent reads as quiet after ten minutes without a call.
     public static let quietAfter: TimeInterval = 10 * 60
-    /// An hour of silence and an agent that never said goodbye is marked gone anyway.
+    /// An hour after disconnect, an agent that never said goodbye is marked gone.
     public static let goneAfter: TimeInterval = 60 * 60
 
     public func isWorking(now: Date) -> Bool {
-        isOnTheFloor && now.timeIntervalSince(lastSeen) <= Self.quietAfter
+        isRegistered && (isConnected || now.timeIntervalSince(lastSeen) <= Self.quietAfter)
     }
 
-    /// Still registered, but silent for an hour.
+    /// Whether a session is live on this agent right now, for the questions only one
+    /// answer can win: who holds this name, who is in this terminal. The flag on its own
+    /// is not enough, because a session that died with the app never says goodbye, so ten
+    /// minutes of silence gives it up. (Alex, 13 Sep 2026.)
+    public func hasLiveSession(now: Date) -> Bool {
+        isRegistered && isConnected && now.timeIntervalSince(lastSeen) <= Self.quietAfter
+    }
+
+    /// Still registered, and silent for an hour. The connection flag does not save it:
+    /// a session that died with the app never says goodbye, and every call is a
+    /// heartbeat, so an hour without one means gone. A waiting tool answers long before
+    /// that, so an agent parked in escalation_await keeps itself alive.
+    /// (Alex, 12 Sep 2026.)
     public func hasGoneQuiet(now: Date) -> Bool {
-        isOnTheFloor && now.timeIntervalSince(lastSeen) > Self.goneAfter
+        isRegistered && now.timeIntervalSince(lastSeen) > Self.goneAfter
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
         id = try c.decode(UUID.self, forKey: .id)
+        number = try c.decodeIfPresent(Int.self, forKey: .number)
         name = try c.decode(String.self, forKey: .name)
+        about = try c.decodeIfPresent(String.self, forKey: .about) ?? ""
         projectID = try c.decodeIfPresent(String.self, forKey: .projectID)
+        seenInstructions = try c.decodeIfPresent([String: String].self, forKey: .seenInstructions) ?? [:]
         taskID = try c.decodeIfPresent(UUID.self, forKey: .taskID)
         note = try c.decode(String.self, forKey: .note)
+        session = try c.decodeIfPresent(String.self, forKey: .session)
         registered = try c.decode(Date.self, forKey: .registered)
         lastSeen = try c.decode(Date.self, forKey: .lastSeen)
+        isConnected = try c.decodeIfPresent(Bool.self, forKey: .isConnected) ?? false
         deregistered = try c.decodeIfPresent(Date.self, forKey: .deregistered)
-        provider = try c.decodeIfPresent(String.self, forKey: .provider)
-        url = try c.decodeIfPresent(String.self, forKey: .url)
-        nudged = try c.decodeIfPresent(Date.self, forKey: .nudged)
-        announcedTasks = try c.decodeIfPresent([UUID].self, forKey: .announcedTasks) ?? []
     }
 
 }
 
-/// The sweep the factory runs on every look: agents that stopped checking in are marked
+/// Who works here. The number is the name: A1, A2, A3.
+public enum Agents {
+    /// The next free number, one more than the highest ever used. Numbers are never
+    /// given out twice, so an agent that has left keeps its name in the record.
+    public static func nextNumber(in agents: [Agent]) -> Int {
+        (agents.compactMap(\.number).max() ?? 0) + 1
+    }
+
+    /// An agent the app is about to start: it has its name before it registers, so the
+    /// person sees the card the moment they click, and the terminal belongs to it from
+    /// the start. The agent then registers with this same id, passing it as `agent_id`.
+    /// (Alex, 13 Sep 2026: the prompt tells the agent who it is.)
+    ///
+    /// The number comes from the factory's counter on disk, not from the agents still in
+    /// the store, so a number is never handed out twice.
+    public static func reserve(number: Int, projectID: String?, session: String?, now: Date = .now) -> Agent {
+        var agent = Agent(number: number, name: "A\(number)", projectID: projectID, registered: now)
+        agent.session = session
+        return agent
+    }
+
+    /// What happens when an agent registers saying it is in a terminal session. One
+    /// terminal holds one agent: two on the same session means two cards, one window,
+    /// and whatever you type reaching the wrong one. (Alex, 13 Sep 2026: I have seen it.)
+    ///
+    /// A shell that outlives its agent keeps SOFTWARE_FACTORY_SESSION exported, so the
+    /// next agent started by hand in that window reports the same session. The session
+    /// goes to whoever is actually in the window: the newcomer, and it comes off the
+    /// record that held it. An agent still live in there keeps it, and the newcomer gets
+    /// no session rather than a window that is not its own.
+    public struct SessionClaim: Sendable, Equatable {
+        /// The session the newcomer keeps. Nil when someone else is still in there.
+        public var session: String?
+        /// Records to save with their session cleared.
+        public var released: [Agent]
+    }
+
+    public static func claimSession(
+        _ session: String, for newcomer: Agent, in agents: [Agent], now: Date
+    ) -> SessionClaim {
+        let holders = agents.filter { $0.session == session && $0.id != newcomer.id && $0.isRegistered }
+        if holders.contains(where: { $0.hasLiveSession(now: now) }) {
+            return SessionClaim(session: nil, released: [])
+        }
+        return SessionClaim(session: session, released: holders.map {
+            var released = $0
+            released.session = nil
+            return released
+        })
+    }
+}
+
+/// One message in an agent's private inbox.
+public struct AgentMessage: Codable, Identifiable, Hashable, Sendable {
+    public var version = Records.version
+    public var id: UUID
+    public var recipientID: UUID
+    public var from: String
+    public var subject: String
+    public var contents: String
+    public var sent: Date
+
+    public init(id: UUID = UUID(), recipientID: UUID, from: String, subject: String, contents: String, sent: Date = .now) {
+        self.id = id
+        self.recipientID = recipientID
+        self.from = from
+        self.subject = subject
+        self.contents = contents
+        self.sent = sent
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        id = try c.decode(UUID.self, forKey: .id)
+        recipientID = try c.decode(UUID.self, forKey: .recipientID)
+        from = try c.decode(String.self, forKey: .from)
+        subject = try c.decode(String.self, forKey: .subject)
+        contents = try c.decode(String.self, forKey: .contents)
+        sent = try c.decode(Date.self, forKey: .sent)
+    }
+}
+
+/// The sweep the factory runs on every look: agents disconnected for an hour are marked
 /// gone and their leases released, so a crashed session never holds a phone all day.
 public enum Sweep {
     public struct Changes: Equatable, Sendable {
@@ -334,7 +412,7 @@ public enum Sweep {
         var changes = Changes(agents: [], leases: [])
         for var agent in snapshot.agents where agent.hasGoneQuiet(now: now) {
             agent.deregistered = now
-            agent.note = agent.note.isEmpty ? "marked gone after an hour of silence" : agent.note + " · marked gone after an hour of silence"
+            agent.note = agent.note.isEmpty ? "marked gone after an hour disconnected" : agent.note + " · marked gone after an hour disconnected"
             changes.agents.append(agent)
             for var lease in Leases.heldBy(agent.id, in: snapshot.leases, now: now) {
                 lease.released = now

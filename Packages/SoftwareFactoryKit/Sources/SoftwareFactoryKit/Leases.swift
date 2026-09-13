@@ -19,13 +19,13 @@ public enum Leases {
         all.filter { $0.resourceID == resourceID && $0.isActive(now: now) }.sorted { $0.until < $1.until }
     }
 
-    /// Leases past their time whose holder is still on the floor: the job outlived its
+    /// Leases past their time whose holder is still registered: the job outlived its
     /// claim. They still count as held, and read as overdue rather than free, so a long
     /// job never lets the ledger say a machine is free while it is not. A holder that has
-    /// gone (deregistered, or swept after three missed check-ins) frees the slot.
+    /// Gone agents, either deregistered or swept after an hour disconnected, free the slot.
     public static func overdue(for resourceID: UUID, in all: [Lease], agents: [Agent], now: Date) -> [Lease] {
-        let onFloor = Set(agents.filter(\.isOnTheFloor).map(\.id))
-        return all.filter { $0.resourceID == resourceID && $0.released == nil && $0.until <= now && onFloor.contains($0.agentID) }
+        let registered = Set(agents.filter(\.isRegistered).map(\.id))
+        return all.filter { $0.resourceID == resourceID && $0.released == nil && $0.until <= now && registered.contains($0.agentID) }
             .sorted { $0.until < $1.until }
     }
 
@@ -61,7 +61,7 @@ public enum Leases {
     }
 
     /// More time on a lease the agent holds, again capped by the resource's longest lease.
-    /// A holder still on the floor may renew an overdue lease too: the job is the same job.
+    /// A holder still registered may renew an overdue lease too: the job is the same job.
     public static func renew(
         _ lease: Lease, of resource: Resource, for agentID: UUID, wanting wanted: TimeInterval, now: Date
     ) throws(LeaseError) -> Lease {

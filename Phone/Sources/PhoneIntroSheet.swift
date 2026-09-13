@@ -10,14 +10,14 @@ struct PhoneIntroSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Software Factory")
+                        Text("Taktu: Software Factory")
                             .font(.system(.largeTitle, design: .rounded).weight(.bold))
                         Text("The factory in your pocket. Agents on your Mac ask; you answer from wherever you are.")
                     }
                     VStack(alignment: .leading, spacing: 8) {
                         Text("How you use it")
                             .font(.headline)
-                        step("Open it on the same Wi‑Fi as the Mac running Software Factory. It finds the factory on its own.")
+                        step("Open it on the same Wi‑Fi as the Mac running Taktu: Software Factory. It finds the factory on its own.")
                         step("Read what needs you.")
                         step("Tap the option you choose. The agent carries on.")
                     }
@@ -34,7 +34,7 @@ struct PhoneIntroSheet: View {
                 model.hasSeenIntro = true
                 dismiss()
             } label: {
-                Text("Open the floor").frame(maxWidth: .infinity, minHeight: 32)
+                Text("Open the factory").frame(maxWidth: .infinity, minHeight: 32)
             }
             .buttonStyle(.glassProminent)
             .controlSize(.large)

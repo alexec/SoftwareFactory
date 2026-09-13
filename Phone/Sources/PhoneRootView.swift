@@ -19,7 +19,7 @@ struct PhoneRootView: View {
                     }
                     needsYou
                     projects
-                    onTheFloor
+                    registeredAgents
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -89,7 +89,7 @@ struct PhoneRootView: View {
                     NavigationLink(value: status.project) {
                         HStack(spacing: 10) {
                             Circle()
-                                .fill(status.activity == .working ? Color.green : (status.activity == .waiting ? Color.orange : Color.secondary.opacity(0.4)))
+                                .fill(status.isEmpty ? Color.clear : dotColor(status.activity))
                                 .frame(width: 8, height: 8)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(status.project.name).font(.headline).foregroundStyle(status.project.onHold ? .secondary : .primary)
@@ -119,17 +119,27 @@ struct PhoneRootView: View {
         }
     }
 
+    /// Green working, orange blocked, grey waiting, black idle: the Mac's colours.
+    private func dotColor(_ activity: Dashboard.AgentActivity) -> Color {
+        switch activity {
+        case .working: .green
+        case .blocked: .orange
+        case .waiting: .gray
+        case .idle: .primary
+        }
+    }
+
     @ViewBuilder
-    private var onTheFloor: some View {
+    private var registeredAgents: some View {
         let agents = model.dashboard.agents
         if !agents.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                Text("On the floor")
+                Text("Agents")
                     .font(.title3.weight(.semibold))
                 ForEach(agents) { status in
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Circle()
-                            .fill(status.isWorking ? Color.green : Color.orange)
+                            .fill(dotColor(status.activity))
                             .frame(width: 8, height: 8)
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 6) {
@@ -143,21 +153,6 @@ struct PhoneRootView: View {
                             }
                         }
                         Spacer()
-                        if let url = status.agent.url.flatMap(URL.init(string:)) {
-                            Link(destination: url) {
-                                Image(systemName: "arrow.up.forward.app").frame(width: 44, height: 44)
-                            }
-                            .accessibilityLabel("Open the agent's session")
-                        }
-                        if model.source == .factory {
-                            Button {
-                                _Concurrency.Task { await model.nudge(status.agent) }
-                            } label: {
-                                Image(systemName: status.agent.nudged == nil ? "hand.tap" : "hand.tap.fill").frame(width: 44, height: 44)
-                            }
-                            .disabled(status.agent.nudged != nil)
-                            .accessibilityLabel("Nudge")
-                        }
                     }
                     .padding(.vertical, 4)
                 }
@@ -172,7 +167,7 @@ struct NotificationPrimer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Software Factory can tell you when a question arrives, wherever you are. The banner carries the options, so you answer from it. Questions travel through your own iCloud.")
+            Text("Taktu: Software Factory can tell you when a question arrives, wherever you are. The banner carries the options, so you answer from it. Questions travel through your own iCloud.")
                 .fixedSize(horizontal: false, vertical: true)
             Button { model.askForNotifications() } label: {
                 Text("Continue").frame(maxWidth: .infinity, minHeight: 32)
@@ -190,7 +185,7 @@ struct NetworkPrimer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Software Factory looks for the factory running on your Mac, on the same Wi‑Fi, so you can answer its questions from here. Nothing leaves your network.")
+            Text("Taktu: Software Factory looks for the factory running on your Mac, on the same Wi‑Fi, so you can answer its questions from here. Nothing leaves your network.")
                 .fixedSize(horizontal: false, vertical: true)
             Button { model.startLooking() } label: {
                 Text("Continue").frame(maxWidth: .infinity, minHeight: 32)

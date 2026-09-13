@@ -88,9 +88,24 @@ public enum Backlog {
         position == .parked ? .parked : .backlog
     }
 
-    /// The top task nobody is on.
-    public static func next(for projectID: String, in all: [FactoryTask]) -> FactoryTask? {
-        tasks(for: projectID, in: all).first { $0.state == .backlog }
+    /// The top task nobody is on. A task the person put someone's name against is
+    /// theirs: it comes first for that agent, and is passed over by everyone else.
+    /// (Alex, 12 Sep 2026.)
+    public static func next(for projectID: String, in all: [FactoryTask], agentID: UUID? = nil) -> FactoryTask? {
+        let waiting = tasks(for: projectID, in: all).filter { $0.state == .backlog }
+        if let agentID, let mine = waiting.first(where: { $0.agentID == agentID }) { return mine }
+        return waiting.first { $0.agentID == nil }
+    }
+
+    /// Puts a task in one agent's name, or takes the name off with nil. The task stays
+    /// where it is on the backlog; the agent claims it when it starts.
+    public static func assign(_ task: FactoryTask, to agentID: UUID?, named name: String?, by who: String, at date: Date = .now) -> FactoryTask {
+        guard task.agentID != agentID else { return task }
+        var assigned = task
+        assigned.agentID = agentID
+        assigned.updated = date
+        let line = agentID == nil ? "unassigned" : "assigned to \(name ?? "an agent")"
+        return comment(on: assigned, line, by: who, at: date)
     }
 
     /// Moves the tasks of one project in `states` the way a list's `onMove` describes it,
@@ -161,6 +176,22 @@ public enum Backlog {
         return task
     }
 
+    /// Changes the person-owned details of a task without disturbing its state or the
+    /// agent work recorded on it. An empty title is not a task, so it leaves it alone.
+    public static func edit(
+        _ task: FactoryTask, title: String, note: String, at date: Date = .now
+    ) -> FactoryTask {
+        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return task }
+        let note = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard task.title != title || task.note != note else { return task }
+        var task = task
+        task.title = title
+        task.note = note
+        task.updated = date
+        return task
+    }
+
     /// Takes a task off the backlog without losing it: the record stays, with the reason.
     public static func remove(_ task: FactoryTask, why: String, at date: Date = .now) -> FactoryTask {
         var task = task
@@ -208,7 +239,7 @@ public enum Backlog {
     }
 
     /// Marks a task blocked on one more thing. The agent keeps its name on it, so the
-    /// floor still says who was on it when it clears. The same thing twice is once.
+    /// note still says who was on it when it clears. The same thing twice is once.
     public static func block(_ task: FactoryTask, on blocker: FactoryTask.Blocker, at date: Date = .now) -> FactoryTask {
         var task = task
         task.state = .blocked

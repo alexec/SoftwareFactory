@@ -205,7 +205,7 @@ final class PhoneModel {
         let drafted = await TaskTitler.draft(from: title)
         if source == .factory, let client {
             let body = (try? JSONSerialization.data(withJSONObject: [
-                "project": project.id, "title": drafted.title, "kind": drafted.kind.rawValue,
+                "project": project.id, "title": drafted.title,
                 "note": drafted.note, "position": position.rawValue,
             ])) ?? Data()
             do {
@@ -220,7 +220,7 @@ final class PhoneModel {
         }
         guard cloud.isReady else { return }
         let task = FactoryTask(
-            projectID: project.id, title: drafted.title, kind: drafted.kind,
+            projectID: project.id, title: drafted.title,
             state: Backlog.state(for: position),
             rank: Backlog.rank(for: position, projectID: project.id, in: snapshot.tasks),
             note: drafted.note)
@@ -229,32 +229,16 @@ final class PhoneModel {
         dashboard = Dashboard.make(snapshot: snapshot)
     }
 
-    func project(for id: String) -> Project? {
-        dashboard.projects.first { $0.id == id }?.project
-    }
-
-    /// A word for the agent on a project. Through the factory when near it; through
-    /// iCloud otherwise, where the Mac picks it up within its next pull.
-    /// A nudge, near the Mac only for now: the agent hears "nudge" on its next call.
-    func nudge(_ agent: Agent) async {
-        guard source == .factory, let client else { return }
-        let body = (try? JSONSerialization.data(withJSONObject: ["agentID": agent.id.uuidString])) ?? Data()
-        do {
-            let response = try await client.send(HTTPRequest(method: "POST", path: "/api/nudge", headers: ["Content-Type": "application/json"], body: body))
-            guard response.status == 200 else { throw FactoryClient.ClientError.failed("The factory answered \(response.status).") }
-            await poll()
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
-    func note(_ text: String, on project: Project) async {
-        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+    func editTask(_ task: FactoryTask, title: String, note: String) async {
+        let edited = Backlog.edit(task, title: title, note: note)
+        guard edited != task else { return }
         if source == .factory, let client {
-            let body = (try? JSONSerialization.data(withJSONObject: ["project": project.id, "text": text, "by": "alex, phone"])) ?? Data()
+            let body = (try? JSONSerialization.data(withJSONObject: [
+                "id": edited.id.uuidString, "title": edited.title, "note": edited.note,
+            ])) ?? Data()
             do {
-                let response = try await client.send(HTTPRequest(method: "POST", path: "/api/note", headers: ["Content-Type": "application/json"], body: body))
+                let response = try await client.send(HTTPRequest(
+                    method: "POST", path: "/api/task/edit", headers: ["Content-Type": "application/json"], body: body))
                 guard response.status == 200 else { throw FactoryClient.ClientError.failed("The factory answered \(response.status).") }
                 await poll()
             } catch {
@@ -262,12 +246,15 @@ final class PhoneModel {
             }
             return
         }
-        let base = await cloud.pullProject(project.id) ?? project
-        let noted = Steering.note(text, on: base, by: "alex, phone")
-        await cloud.push(project: noted)
-        if let i = snapshot.projects.firstIndex(where: { $0.id == project.id }) {
-            snapshot.projects[i] = noted
-            dashboard = Dashboard.make(snapshot: snapshot)
-        }
+        guard cloud.isReady else { return }
+        await cloud.push(task: edited)
+        guard let index = snapshot.tasks.firstIndex(where: { $0.id == edited.id }) else { return }
+        snapshot.tasks[index] = edited
+        dashboard = Dashboard.make(snapshot: snapshot)
     }
+
+    func project(for id: String) -> Project? {
+        dashboard.projects.first { $0.id == id }?.project
+    }
+
 }

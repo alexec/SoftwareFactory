@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Software Factory</string>
+	<string>Taktu: Software Factory</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIconName</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Software Factory</string>
+	<string>Taktu: Software Factory</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -31,6 +31,6 @@
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Alex Collins</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Software Factory listens while you dictate a task. The words are recognised on this Mac and nothing is recorded.</string>
+	<string>Taktu: Software Factory listens while you dictate a task. The words are recognised on this Mac and nothing is recorded.</string>
 </dict>
 </plist>

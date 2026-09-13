@@ -1,7 +1,7 @@
 # Backlog
 
 **The backlog lives in the factory itself** since 12 September 2026: open the Mac app and
-click Software Factory in the sidebar, or ask the server with `task_list`. Agents file,
+click Taktu: Software Factory in the sidebar, or ask the server with `task_list`. Agents file,
 claim, rank and finish tasks there; so does this file's former list. What stays here is
 the thinking that does not fit a task row.
 
@@ -19,8 +19,9 @@ the thinking that does not fit a task row.
 - **The server as a separate process.** It ran as an embedded executable for an hour on
   12 September and moved into the app on a port the same day: one address every client
   shares, and the factory is open exactly while the app is.
-- **A kind picker on task rows.** Alex, 12 September 2026: not needed in the MVP, and
-  the icon beside it went with it. Tasks still carry a kind for agents to set.
+- **A kind on a task.** Alex, 12 September 2026: the picker went first, then the field
+  itself on 12 September, because nothing ever read it. A task is a title, a note and
+  where it sits.
 
 ## Decisions worth keeping
 

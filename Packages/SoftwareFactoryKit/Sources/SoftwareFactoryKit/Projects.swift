@@ -52,6 +52,17 @@ public enum Projects {
         return out.filter { $0.count >= 4 }
     }
 
+    /// A folder under the person's home reads as "~/Work", the way they would say it.
+    /// The home comes from the password file, because inside the sandbox
+    /// `NSHomeDirectory` is the app's own container and nothing ever matches it.
+    public static func shortPath(_ path: String, home: String = FileStore.realHomeDirectory().path) -> String {
+        guard !home.isEmpty else { return path }
+        if path == home { return "~" }
+        // "/Users/alexander" must not read as "~ander" when home is "/Users/alex".
+        guard path.hasPrefix(home + "/") else { return path }
+        return "~" + path.dropFirst(home.count)
+    }
+
     static func distance(_ a: String, _ b: String) -> Int {
         let a = Array(a), b = Array(b)
         if a.isEmpty { return b.count }

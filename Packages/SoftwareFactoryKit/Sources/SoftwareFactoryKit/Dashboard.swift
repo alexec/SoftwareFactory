@@ -1,19 +1,17 @@
 import Foundation
 
-/// What the floor shows, derived from the store.
+/// What the app shows, derived from the store.
 public struct Dashboard: Sendable, Equatable {
-    public enum ProjectActivity: String, Sendable {
-        /// An agent on it checked in moments ago.
-        case working
-        /// An agent is on it and quiet, or has a question open.
-        case waiting
-        /// No agent on it.
-        case idle
-    }
+    /// A project reads exactly the way its agents do, so a colour means one thing on the
+    /// whole screen. Nobody on it is an absence rather than an activity: it draws no dot.
+    /// (Alex, 12 Sep 2026.)
+    public typealias ProjectActivity = AgentActivity
 
     public struct ProjectStatus: Identifiable, Sendable, Equatable {
         public var project: Project
         public var activity: ProjectActivity
+        /// Nobody is on it, so it draws no dot at all.
+        public var isEmpty: Bool { agents.isEmpty }
         public var currentTask: FactoryTask?
         public var agents: [Agent]
         public var openEscalations: Int
@@ -33,20 +31,47 @@ public struct Dashboard: Sendable, Equatable {
         }
     }
 
+    /// What an agent is doing, as one word and one colour.
+    public enum AgentActivity: String, Sendable {
+        /// On a task and checked in moments ago.
+        case working
+        /// Its task is blocked, on a decision, another task, or a person.
+        case blocked
+        /// Registered with nothing in hand: waiting for a task, for mail, or for
+        /// you to answer its question.
+        case waiting
+        /// Nothing said for ten minutes, and no connection open.
+        case idle
+    }
+
     public struct AgentStatus: Identifiable, Sendable, Equatable {
         public var agent: Agent
         public var project: Project?
         public var task: FactoryTask?
-        public var isWorking: Bool
+        public var activity: AgentActivity
         public var waitingOnYou: Bool
 
         public var id: UUID { agent.id }
+
+        public var isWorking: Bool { activity == .working }
+    }
+
+    /// The one rule behind an agent's dot. An agent that has gone quiet is idle
+    /// whatever it was holding; a blocked task beats waiting, because the block is
+    /// the thing to clear.
+    public static func activity(
+        of agent: Agent, task: FactoryTask?, hasOpenQuestion: Bool, now: Date
+    ) -> AgentActivity {
+        guard agent.isWorking(now: now) else { return .idle }
+        if task?.state == .blocked { return .blocked }
+        if hasOpenQuestion || task == nil { return .waiting }
+        return .working
     }
 
     public struct Holding: Identifiable, Sendable, Equatable {
         public var lease: Lease
         public var agentName: String
-        /// Past its time, holder still on the floor.
+        /// Past its time, holder still registered.
         public var isOverdue: Bool
 
         public var id: UUID { lease.id }
@@ -76,15 +101,19 @@ public struct Dashboard: Sendable, Equatable {
     public static func make(snapshot: Snapshot, now: Date = .now) -> Dashboard {
         var projects: [String: Project] = [:]
         for p in snapshot.projects { projects[p.id] = p }
-        for a in snapshot.agents where a.isOnTheFloor {
+        for a in snapshot.agents where a.isRegistered {
             if let pid = a.projectID, projects[pid] == nil { projects[pid] = Project(name: Project.name(fromPath: pid), id: pid, added: a.registered) }
         }
-        let onFloor = snapshot.agents.filter(\.isOnTheFloor).sorted { $0.lastSeen > $1.lastSeen }
+        // In the order they registered, A1 first. Sorting by who spoke last made the
+        // cards swap places every couple of seconds. (Alex, 12 Sep 2026.)
+        let registered = snapshot.agents.filter(\.isRegistered).sorted {
+            ($0.number ?? .max, $0.name) < ($1.number ?? .max, $1.name)
+        }
         let open = snapshot.escalations.filter(\.isOpen)
 
         let onHold = Set(projects.values.filter(\.onHold).map(\.id))
         let statuses = projects.values.map { project -> ProjectStatus in
-            let agents = onFloor.filter { $0.projectID == project.id }
+            let agents = registered.filter { $0.projectID == project.id }
             // A project on hold shows its name and nothing else: no activity, no counts, no
             // current task. Its open questions still count, since a question still needs
             // an answer. (Alex, 12 Sep 2026: hide info about projects on hold.)
@@ -94,8 +123,18 @@ public struct Dashboard: Sendable, Equatable {
                     project: project, activity: .idle, currentTask: nil, agents: agents, openEscalations: questions,
                     backlogCount: 0, blockedCount: 0, inProgressCount: 0, doneCount: 0)
             }
+            // One rule for both dots: whatever its agents are doing, the project is. The
+            // busiest of them wins, so a project with one working agent reads working.
+            let doing = agents.map { agent -> AgentActivity in
+                let task = agent.taskID.flatMap { id in snapshot.tasks.first { $0.id == id } }
+                return Dashboard.activity(of: agent, task: task,
+                                          hasOpenQuestion: open.contains { $0.agentID == agent.id }, now: now)
+            }
             let activity: ProjectActivity =
-                agents.contains { $0.isWorking(now: now) } ? .working : (agents.isEmpty ? .idle : .waiting)
+                doing.contains(.working) ? .working
+                : doing.contains(.blocked) ? .blocked
+                : doing.contains(.waiting) ? .waiting
+                : .idle
             let tasks = snapshot.tasks.filter { $0.projectID == project.id }
             return ProjectStatus(
                 project: project,
@@ -116,15 +155,18 @@ public struct Dashboard: Sendable, Equatable {
             return a.project.name.localizedCaseInsensitiveCompare(b.project.name) == .orderedAscending
         }
 
-        let agentStatuses = onFloor.map { agent in
-            AgentStatus(
+        let agentStatuses = registered.map { agent in
+            let task = agent.taskID.flatMap { id in snapshot.tasks.first { $0.id == id } }
+            let question = open.contains { $0.agentID == agent.id }
+            return AgentStatus(
                 agent: agent,
                 project: agent.projectID.flatMap { projects[$0] },
-                task: agent.taskID.flatMap { id in snapshot.tasks.first { $0.id == id } },
-                isWorking: agent.isWorking(now: now),
-                waitingOnYou: open.contains { $0.agentID == agent.id })
+                task: task,
+                activity: activity(of: agent, task: task, hasOpenQuestion: question, now: now),
+                waitingOnYou: question)
         }
 
+        // Who holds a resource reads as the agent's name, the same name the cards show.
         let names = Dictionary(uniqueKeysWithValues: snapshot.agents.map { ($0.id, $0.name) })
         let resources = snapshot.resources.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }.map { r in
             ResourceStatus(resource: r, held: Leases.held(for: r.id, in: snapshot.leases, agents: snapshot.agents, now: now).map {
@@ -141,11 +183,14 @@ public struct Dashboard: Sendable, Equatable {
         )
     }
 
+    /// The order projects sit in: working first, then what is stuck, then what waits,
+    /// then what is quiet.
     private static func rank(_ a: ProjectActivity) -> Int {
         switch a {
         case .working: 0
-        case .waiting: 1
-        case .idle: 2
+        case .blocked: 1
+        case .waiting: 2
+        case .idle: 3
         }
     }
 }

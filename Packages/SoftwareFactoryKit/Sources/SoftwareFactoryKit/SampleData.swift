@@ -12,20 +12,20 @@ public enum SampleData {
         var packedLead = Agent(name: "packed-lead", projectID: packed.id, registered: now.addingTimeInterval(-6000))
         packedLead.lastSeen = now.addingTimeInterval(-1700)
 
-        var rooms = FactoryTask(projectID: where_.id, title: "Rooms run together when dictated", kind: .bug,
+        var rooms = FactoryTask(projectID: where_.id, title: "Rooms run together when dictated",
                                 state: .inProgress, rank: 0, agentID: agent1.id, created: now.addingTimeInterval(-7200))
         rooms.updated = now.addingTimeInterval(-2500)
         agent1.taskID = rooms.id
 
         let tasks = [
             rooms,
-            FactoryTask(projectID: where_.id, title: "Search across every box", kind: .feature, rank: 1,
+            FactoryTask(projectID: where_.id, title: "Search across every box", rank: 1,
                         created: now.addingTimeInterval(-6000)),
-            FactoryTask(projectID: where_.id, title: "Regenerate the icon from the script", kind: .chore, rank: 2,
+            FactoryTask(projectID: where_.id, title: "Regenerate the icon from the script", rank: 2,
                         created: now.addingTimeInterval(-5000)),
-            FactoryTask(projectID: packed.id, title: "Weather for the trip's first day", kind: .feature, rank: 0,
+            FactoryTask(projectID: packed.id, title: "Weather for the trip's first day", rank: 0,
                         created: now.addingTimeInterval(-4000)),
-            FactoryTask(projectID: packed.id, title: "Ticking a bag item skips one", kind: .bug, rank: 1,
+            FactoryTask(projectID: packed.id, title: "Ticking a bag item skips one", rank: 1,
                         created: now.addingTimeInterval(-3000)),
         ]
 

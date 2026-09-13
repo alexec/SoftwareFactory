@@ -164,24 +164,18 @@ final class CloudSync {
         return CloudRecords.decode(all)
     }
 
-    /// The questions and the projects: what the Mac needs to learn of decisions made and
-    /// notes written elsewhere.
-    func pullEscalationsAndProjects() async -> (escalations: [Escalation], projects: [Project])? {
+    /// The questions the Mac needs to learn of decisions made elsewhere.
+    func pullEscalations() async -> [Escalation]? {
         guard isReady else { return nil }
         do {
-            let decoded = CloudRecords.decode(try await fetchAll("Escalation") + (try await fetchAll("Project")))
+            let decoded = CloudRecords.decode(try await fetchAll("Escalation"))
             lastSync = .now
             lastError = nil
-            return (decoded.escalations, decoded.projects)
+            return decoded.escalations
         } catch {
             lastError = "Could not read iCloud: \(error.localizedDescription)"
             return nil
         }
-    }
-
-    /// Only the questions.
-    func pullEscalations() async -> [Escalation]? {
-        await pullEscalationsAndProjects()?.escalations
     }
 
     /// Tasks in iCloud, for the Mac to adopt any added on the phone away from it.
@@ -196,14 +190,6 @@ final class CloudSync {
             lastError = "Could not read iCloud: \(error.localizedDescription)"
             return nil
         }
-    }
-
-    /// One project as iCloud has it, for adding a note to it from the phone.
-    func pullProject(_ id: String) async -> Project? {
-        guard isReady else { return nil }
-        let name = CloudRecords.encode(Snapshot(projects: [Project(name: "", id: id)]))[0].recordName
-        guard let record = try? await database.record(for: CKRecord.ID(recordName: name)), let encoded = Self.encoded(record) else { return nil }
-        return CloudRecords.decode([encoded]).projects.first
     }
 
     private func fetchAll(_ type: String) async throws -> [CloudRecords.Encoded] {

@@ -1,0 +1,14 @@
+{
+  "name": "software-factory-plugins",
+  "owner": {
+    "name": "Alex Collins"
+  },
+  "plugins": [
+    {
+      "name": "software-factory",
+      "source": "./Plugins/software-factory",
+      "description": "Connect an agent to a local Software Factory and work its backlog.",
+      "version": "0.1.0"
+    }
+  ]
+}

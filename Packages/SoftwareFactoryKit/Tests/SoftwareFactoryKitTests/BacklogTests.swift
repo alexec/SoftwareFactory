@@ -33,6 +33,44 @@ import Testing
         #expect(Backlog.set(task("a", rank: 0, state: .inProgress), to: .parked).agentID == nil)
     }
 
+    /// A task in an agent's name is that agent's next piece of work, and nobody else's.
+    @Test func anAssignedTaskGoesToThatAgentAndIsPassedOverByOthers() {
+        let mine = UUID(), theirs = UUID()
+        let day = Date(timeIntervalSince1970: 1_789_259_200)
+        let first = task("first", rank: 0)
+        var second = task("second", rank: 1)
+        second = Backlog.assign(second, to: mine, named: "A12", by: "Alex", at: day)
+        var third = task("third", rank: 2)
+        third = Backlog.assign(third, to: theirs, named: "A13", by: "Alex", at: day)
+        let all = [first, second, third]
+
+        #expect(second.state == .backlog)                       // still waiting, not claimed
+        #expect(second.note.hasSuffix("assigned to A12"))
+        #expect(Backlog.next(for: p, in: all, agentID: mine)?.title == "second")
+        #expect(Backlog.next(for: p, in: all, agentID: theirs)?.title == "third")
+        // Anyone else gets the top task nobody's name is on.
+        #expect(Backlog.next(for: p, in: all, agentID: UUID())?.title == "first")
+        #expect(Backlog.next(for: p, in: all)?.title == "first")
+
+        // Taking the name off puts it back in the open pile.
+        let freed = Backlog.assign(third, to: nil, named: nil, by: "Alex", at: day)
+        #expect(freed.agentID == nil)
+        #expect(freed.note.hasSuffix("unassigned"))
+        #expect(Backlog.next(for: p, in: [first, freed], agentID: UUID())?.title == "first")
+        // Assigning what is already assigned to them changes nothing.
+        #expect(Backlog.assign(second, to: mine, named: "A12", by: "Alex", at: day) == second)
+    }
+
+    /// The person takes a task back from an agent that gave up or went quiet.
+    @Test func takingAnInProgressTaskBackClearsTheAgent() {
+        var running = task("running", rank: 0, state: .inProgress)
+        running.agentID = UUID()
+        let back = Backlog.set(running, to: .backlog)
+        #expect(back.state == .backlog)
+        #expect(back.agentID == nil)
+        #expect(Backlog.personMaySet.contains(.backlog))
+    }
+
     @Test func visibleKeepsThreeDoneAndTenParkedInBlocks() {
         var all = [task("open", rank: 0), task("now", rank: 1, state: .inProgress)]
         for n in 0..<8 { all.append(task("done \(n)", rank: 9, state: .done, updated: TimeInterval(n))) }
@@ -259,16 +297,78 @@ import Testing
         #expect(d.inProgress == 2)
         #expect(d.openEscalations.count == 1)
         #expect(d.projects.map(\.project.name) == ["a", "b"])   // /c's agent has left
-        #expect(d.projects[0].activity == .working)
+        // Its agent has a question open, so the project waits with it.
+        #expect(d.projects[0].activity == .waiting)   // grey, not orange: nothing is stuck
         #expect(d.projects[0].doing == "on it")
         #expect(d.projects[0].backlogCount == 1)
         #expect(d.projects[0].openEscalations == 1)
-        #expect(d.projects[1].activity == .waiting)
+        // Its agent has said nothing for fifteen minutes: nothing is moving.
+        #expect(d.projects[1].activity == .idle)
         #expect(d.projects[1].doing == "also on it")
-        #expect(d.workingCount == 1)
+        #expect(d.workingCount == 0)
         #expect(d.agents.map(\.agent.name) == ["one", "two"])
         #expect(d.agents[0].waitingOnYou)
         #expect(!d.agents[1].waitingOnYou)
+    }
+
+    /// An agent the app starts knows its name before it registers. The number is taken
+    /// off the factory's counter, so nothing about the agents still in the store can
+    /// hand the same one out twice.
+    @Test func anAgentCanBeReservedBeforeItRegisters() {
+        let reserved = Agents.reserve(number: 5, projectID: "/p", session: "sf-1234", now: now)
+        #expect(reserved.name == "A5" && reserved.number == 5)
+        #expect(reserved.label == "A5")
+        #expect(reserved.projectID == "/p" && reserved.session == "sf-1234")
+        #expect(reserved.isRegistered)
+        #expect(Agents.reserve(number: 1, projectID: nil, session: nil, now: now).name == "A1")
+    }
+
+    /// The cards keep their places: agents read in the order they registered, whatever
+    /// order they happen to speak in.
+    @Test func agentsStayInTheOrderTheyRegistered() {
+        var first = Agent(number: 1, name: "A1", projectID: nil, registered: now.addingTimeInterval(-300))
+        first.lastSeen = now.addingTimeInterval(-120)          // spoke a while ago
+        var second = Agent(number: 2, name: "A2", projectID: nil, registered: now.addingTimeInterval(-200))
+        second.lastSeen = now                                   // spoke just now
+        var third = Agent(number: 3, name: "A3", projectID: nil, registered: now.addingTimeInterval(-100))
+        third.lastSeen = now.addingTimeInterval(-60)
+        let d = Dashboard.make(snapshot: Snapshot(agents: [third, second, first]), now: now)
+        #expect(d.agents.map(\.agent.name) == ["A1", "A2", "A3"])
+    }
+
+    /// A project reads the way its agents do: green working, orange waiting or blocked,
+    /// grey for anything else.
+    @Test func aProjectReadsTheWayItsAgentsDo() {
+        let project = Project(name: "p", id: "/p")
+        var agent = Agent(number: 1, name: "A1", projectID: "/p", registered: now.addingTimeInterval(-500))
+        agent.lastSeen = now.addingTimeInterval(-10)
+        var task = FactoryTask(projectID: "/p", title: "on it", state: .inProgress, rank: 0)
+        task.agentID = agent.id
+        agent.taskID = task.id
+
+        func dot(_ tasks: [FactoryTask], _ escalations: [Escalation] = [], agent: Agent) -> Dashboard.ProjectActivity {
+            Dashboard.make(snapshot: Snapshot(projects: [project], tasks: tasks, escalations: escalations, agents: [agent]), now: now)
+                .projects[0].activity
+        }
+
+        #expect(dot([task], agent: agent) == .working)
+
+        var blocked = task
+        blocked.state = .blocked
+        blocked.blockers = [.init(kind: .person, why: "the answer")]
+        #expect(dot([blocked], agent: agent) == .blocked)
+
+        // A question open is the agent waiting, and the project waits with it.
+        let question = Escalation(projectID: "/p", question: "?", options: [.init(title: "a")], agentID: agent.id, raised: now)
+        #expect(dot([task], [question], agent: agent) == .waiting)
+        // A project nobody is on says so, and draws no dot.
+        let empty = Dashboard.make(snapshot: Snapshot(projects: [project]), now: now).projects[0]
+        #expect(empty.activity == .idle && empty.isEmpty)
+
+        var silent = agent
+        silent.lastSeen = now.addingTimeInterval(-900)
+        #expect(dot([task], agent: silent) == .idle)
+        #expect(Dashboard.make(snapshot: Snapshot(projects: [project]), now: now).projects[0].activity == .idle)
     }
 
     @Test func aProjectOnHoldShowsItsNameAndNothingElse() {
@@ -293,7 +393,7 @@ import Testing
         #expect(h.inProgressCount == 0 && h.blockedCount == 0 && h.backlogCount == 0 && h.doneCount == 0)
         #expect(h.openEscalations == 1)
         #expect(d.inProgress == 1)
-        // The agent is still on the floor; it is the project that is quiet.
+        // The agent is still registered; it is the project that is quiet.
         #expect(d.agents.map(\.agent.name) == ["one"])
     }
 
@@ -307,6 +407,75 @@ import Testing
         #expect(same.note == task.note)
         let fresh = Backlog.comment(on: FactoryTask(projectID: "/a", title: "t", rank: 1), "hi", by: "one", at: day)
         #expect(fresh.note.hasPrefix("one, 12 Sep") && fresh.note.hasSuffix(": hi"))
+    }
+
+    @Test func editingChangesOnlyPersonOwnedTaskDetails() {
+        let day = Date(timeIntervalSince1970: 1_789_259_200)
+        var task = FactoryTask(projectID: "/a", title: "before", state: .inProgress, rank: 1, note: "old")
+        task.agentID = UUID()
+        task.blockers = [.init(kind: .person, why: "the answer")]
+        let edited = Backlog.edit(task, title: "  after  ", note: "  new note\n", at: day)
+        #expect(edited.title == "after" && edited.note == "new note")
+        #expect(edited.state == .inProgress && edited.agentID == task.agentID && edited.blockers == task.blockers)
+        #expect(edited.updated == day)
+        #expect(Backlog.edit(edited, title: " ", note: "ignored").title == "after")
+    }
+
+    /// The four states behind an agent's dot: working, blocked, waiting, idle.
+    @Test func anAgentsDotSaysWorkingBlockedWaitingOrIdle() {
+        let project = Project(name: "a", id: "/a")
+        var agent = Agent(number: 1, name: "A1", projectID: project.id, registered: now.addingTimeInterval(-500))
+        agent.lastSeen = now.addingTimeInterval(-10)
+        var task = FactoryTask(projectID: project.id, title: "on it", state: .inProgress, rank: 0)
+        task.agentID = agent.id
+        agent.taskID = task.id
+
+        func activity(_ agent: Agent, _ tasks: [FactoryTask], _ escalations: [Escalation] = []) -> Dashboard.AgentActivity {
+            Dashboard.make(snapshot: Snapshot(projects: [project], tasks: tasks, escalations: escalations, agents: [agent]), now: now)
+                .agents[0].activity
+        }
+
+        #expect(activity(agent, [task]) == .working)
+
+        // A blocked task beats everything but silence: the block is what to clear.
+        var blocked = task
+        blocked.state = .blocked
+        blocked.blockers = [.init(kind: .person, why: "the answer")]
+        #expect(activity(agent, [blocked]) == .blocked)
+
+        // Nothing in hand, or a question open: waiting.
+        var empty = agent
+        empty.taskID = nil
+        #expect(activity(empty, []) == .waiting)
+        let question = Escalation(projectID: project.id, question: "?", options: [.init(title: "x")], agentID: agent.id, raised: now)
+        #expect(activity(agent, [task], [question]) == .waiting)
+
+        // Ten minutes without a word and no connection open: idle, task or no task.
+        var quiet = agent
+        quiet.lastSeen = now.addingTimeInterval(-700)
+        #expect(activity(quiet, [task]) == .idle)
+        #expect(activity(quiet, [blocked]) == .idle)
+    }
+
+    /// A folder under home reads as "~/…"; anything else reads as it is.
+    @Test func aFolderUnderHomeReadsWithATilde() {
+        let home = "/Users/alex"
+        #expect(Projects.shortPath("/Users/alex/SoftwareFactory", home: home) == "~/SoftwareFactory")
+        #expect(Projects.shortPath("/Users/alex", home: home) == "~")
+        #expect(Projects.shortPath("/Volumes/Work/App", home: home) == "/Volumes/Work/App")
+        // A longer name that merely starts the same is not home.
+        #expect(Projects.shortPath("/Users/alexander/App", home: home) == "/Users/alexander/App")
+        #expect(Projects.shortPath("/Users/alex/App", home: "") == "/Users/alex/App")
+    }
+
+    /// Who holds a resource reads as the agent's name, the same name the cards show.
+    @Test func whoHoldsAResourceReadsAsItsName() {
+        let phone = Resource(name: "iPhone", slots: 1, maxLease: 7200)
+        var holder = Agent(number: 12, name: "A12", projectID: nil, registered: now)
+        holder.lastSeen = now
+        let lease = Lease(resourceID: phone.id, agentID: holder.id, why: "a capture run", since: now, until: now.addingTimeInterval(600))
+        let d = Dashboard.make(snapshot: Snapshot(agents: [holder], resources: [phone], leases: [lease]), now: now)
+        #expect(d.resources[0].held.map(\.agentName) == ["A12"])
     }
 
     @Test func idleProjectWithNothingOnShowsNothing() {
