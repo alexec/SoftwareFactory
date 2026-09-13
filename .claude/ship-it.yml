@@ -41,7 +41,15 @@ archive:
     scheme: SoftwareFactory
     export_plist: AppStore/ExportOptions-macOS.plist
     path: build/SoftwareFactory.xcarchive
-  build_number_key: CURRENT_PROJECT_VERSION                 # in project.yml; build 1 has never been uploaded
+  build_number_key: CURRENT_PROJECT_VERSION                 # in project.yml; build 2 uploaded 13 Sep 2026, iOS only
+  macos_blocked: >
+    The Mac app is not sandboxed on purpose, so it can start an agent in Alex's own
+    environment. App Store Connect refuses an unsandboxed Mac build, so macOS cannot go
+    to TestFlight as it stands: archive and upload the iPhone only. Build 1 predates the
+    sandbox coming off, which is why that one was accepted. Filed as T160.
 asc_api_key: ~/.private_keys/asc.env                       # proved 12 Sep 2026: doctor, builds, testers all answer
 store:
-  record: none yet                                          # Alex creates it: Apps > + > New App, iOS + macOS, name Software Factory, SKU SoftwareFactory, English (U.S.) - his standing rule, apps are USA not UK; corrected 12 Sep 2026, this card had it wrong as U.K.
+  record: "Taktu: Software Factory"                         # created 12 Sep 2026, iOS + macOS
+  groups: Internal Testers (internal, automatic distribution) - Alex only. Automatic
+    distribution means a VALID build reaches him with no assignment step. Do not add
+    external testers or submit for external-testing review without asking him again.
