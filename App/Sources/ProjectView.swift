@@ -7,6 +7,7 @@ struct ProjectView: View {
     var project: Project
 
     @State private var newTitle = ""
+    @State private var newParkedTitle = ""
     @State private var steer = ""
 
     private var tasks: [FactoryTask] { model.tasks(for: project.id) }
@@ -48,12 +49,15 @@ struct ProjectView: View {
                         addRow
                     }
                     .dropDestination(for: String.self) { ids, _ in drop(ids, atEndOf: .backlog) }
-                } else if !group.isEmpty || state == .parked {
-                    Section(state.word) {
-                        ForEach(group) { task in row(task, reorderable: state == .parked) }
+                } else if state == .parked {
+                    Section("Parked") {
+                        ForEach(group) { task in row(task, reorderable: true) }
+                        parkedAddRow
                     }
-                    .dropDestination(for: String.self) { ids, _ in
-                        state == .parked ? drop(ids, atEndOf: .parked) : false
+                    .dropDestination(for: String.self) { ids, _ in drop(ids, atEndOf: .parked) }
+                } else if !group.isEmpty {
+                    Section(state.word) {
+                        ForEach(group) { task in row(task, reorderable: false) }
                     }
                 }
             }
@@ -120,6 +124,20 @@ struct ProjectView: View {
             .help("Add at the bottom; the arrow adds at the top")
         }
         .onSubmit { add(at: .bottom) }
+        .padding(.vertical, 4)
+    }
+
+    /// Straight into Parked, never through the backlog or task_next, same as the
+    /// backlog's own add row lands there. (Alex, 12 Sep 2026.)
+    private var parkedAddRow: some View {
+        HStack(alignment: .top, spacing: 8) {
+            TextField("Add a parked task", text: $newParkedTitle, axis: .vertical)
+                .lineLimit(1...5)
+            Button("Add") { addParked() }
+                .buttonStyle(.glass)
+                .fixedSize()
+        }
+        .onSubmit { addParked() }
         .padding(.vertical, 4)
     }
 
@@ -194,6 +212,12 @@ struct ProjectView: View {
         let text = newTitle
         newTitle = ""
         _Concurrency.Task { await model.addTask(to: project.id, from: text, at: position) }
+    }
+
+    private func addParked() {
+        let text = newParkedTitle
+        newParkedTitle = ""
+        _Concurrency.Task { await model.addTask(to: project.id, from: text, at: .parked) }
     }
 }
 
