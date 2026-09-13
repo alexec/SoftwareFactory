@@ -8,6 +8,10 @@ public enum Records {
     /// 3: an agent no longer carries a name. It was always its label and nothing ever
     /// set it to anything else. A reader from version 2 wanted one and would skip the
     /// record. (T158, 13 Sep 2026.)
+    /// Work (design, plan, implement, fix, review, investigate, ship) is a new optional
+    /// field on a task, default implement. An older record without it reads as implement;
+    /// the old `kind` of feature/bug/chore is still ignored. No bump: an older reader
+    /// skips a key it does not know. (T166, 13 Sep 2026.)
     public static let version = 3
 }
 
@@ -76,6 +80,59 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         case blocked
     }
 
+    /// What the agent is being asked to do. Named `work` so it never collides with the
+    /// old `kind` (feature, bug, chore) that may still sit on a version-1 record.
+    public enum Work: String, Codable, CaseIterable, Sendable {
+        /// Produce a design brief, then stop for a look.
+        case design
+        /// Plan the implementation, then stop for approval.
+        case plan
+        /// Do the work. The default.
+        case implement
+        /// Find the cause and fix it.
+        case fix
+        /// Look at the result. Fix what the review says to fix; log the rest.
+        case review
+        /// Find out. Don't change anything.
+        case investigate
+        /// Put a build in someone's hands: the device, testers, or the store.
+        case ship
+
+        /// The word on the picker and the row.
+        public var word: String {
+            switch self {
+            case .design: "Design"
+            case .plan: "Plan"
+            case .implement: "Implement"
+            case .fix: "Fix"
+            case .review: "Review"
+            case .investigate: "Investigate"
+            case .ship: "Ship"
+            }
+        }
+
+        /// One line for an agent, a tooltip, the full task view.
+        public var brief: String {
+            switch self {
+            case .design: "Produce a design brief for review, then stop. Don't implement."
+            case .plan: "Plan the implementation for review and approval, then stop. Don't implement."
+            case .implement: "Do the work."
+            case .fix: "Find the cause and fix it."
+            case .review: "Look at the result. Fix what the review says to fix; log the rest."
+            case .investigate: "Find out. Don't change anything."
+            case .ship: "Put a build in someone's hands: the device, testers, or the store."
+            }
+        }
+
+        /// Fits after "Claim it, read its note." in the launch words.
+        public var instruction: String {
+            switch self {
+            case .implement: "Do it, and say when it is done."
+            default: "\(brief) Say when it is done."
+            }
+        }
+    }
+
     /// What a blocked task waits on. A decision or a task clears on its own; a person or
     /// anything else clears when someone says so.
     public struct Blocker: Codable, Hashable, Sendable {
@@ -106,6 +163,10 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
     /// Position on the backlog. Lower comes first.
     public var rank: Int
     public var note: String
+    /// What the agent should produce. Not the old feature/bug/chore kind, which came out
+    /// because nothing read it: this one is read. Default implement, which is what every
+    /// task was before the field existed. (T166, 13 Sep 2026.)
+    public var work: Work
     /// The agent on it, when one is.
     public var agentID: UUID?
     /// Everything the task waits on while the state is `blocked`. It clears when the
@@ -126,7 +187,7 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
     public var label: String? { number.map { "T\($0)" } }
 
     enum CodingKeys: String, CodingKey {
-        case version, id, number, projectID, title, state, rank, note, agentID, blockers, removed, created, updated
+        case version, id, number, projectID, title, state, rank, note, work, agentID, blockers, removed, created, updated
         case legacyBlocker = "blocker"
     }
 
@@ -140,6 +201,7 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         try c.encode(state, forKey: .state)
         try c.encode(rank, forKey: .rank)
         try c.encode(note, forKey: .note)
+        try c.encode(work, forKey: .work)
         try c.encodeIfPresent(agentID, forKey: .agentID)
         if !blockers.isEmpty { try c.encode(blockers, forKey: .blockers) }
         try c.encodeIfPresent(removed, forKey: .removed)
@@ -149,8 +211,8 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
 
     public init(
         id: UUID = UUID(), number: Int? = nil, projectID: String, title: String,
-        state: State = .backlog, rank: Int, note: String = "", agentID: UUID? = nil,
-        created: Date = .now
+        state: State = .backlog, rank: Int, note: String = "", work: Work = .implement,
+        agentID: UUID? = nil, created: Date = .now
     ) {
         self.id = id
         self.number = number
@@ -159,6 +221,7 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         self.state = state
         self.rank = rank
         self.note = note
+        self.work = work
         self.agentID = agentID
         self.created = created
         self.updated = created
@@ -173,6 +236,7 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         state = try c.decode(State.self, forKey: .state)
         rank = try c.decode(Int.self, forKey: .rank)
         note = try c.decode(String.self, forKey: .note)
+        work = try c.decodeIfPresent(Work.self, forKey: .work) ?? .implement
         agentID = try c.decodeIfPresent(UUID.self, forKey: .agentID)
         // Version 1 wrote one `blocker`; it reads as a list of one.
         blockers = try c.decodeIfPresent([Blocker].self, forKey: .blockers)
@@ -256,6 +320,21 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
     /// Whether the factory can speak for this agent's process at all. An agent that
     /// never reported a pid is not dead, it is simply not something we can see.
     public var knowsItsProcess: Bool { pid != nil && pidStartedAt != nil }
+
+    /// Whether the factory started this agent, or it joined from outside.
+    ///
+    /// Two kinds of agent, and they have different lives. An embedded one was written
+    /// down before it launched, told the name to register as, and put in a terminal the
+    /// factory owns: its page shows it working, you can type to it, and the factory can
+    /// stop it. An external one registered over MCP from wherever it already was. It is
+    /// just as real and does the same work; there is simply nothing here to watch and
+    /// nothing here to stop. (Alex, 13 Sep 2026.)
+    ///
+    /// This is the agent's origin, not whether there is a terminal on screen right now.
+    /// An embedded agent whose tmux session has been killed is still ours; it is only
+    /// out of sight. Ask the app whether it holds a terminal for it, and ask this what
+    /// kind of agent it is.
+    public var isEmbedded: Bool { session != nil }
 
     /// Registered, said it was running here, and its process has gone. The one state the
     /// factory used to have no way of telling from a quiet agent.

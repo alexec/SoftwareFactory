@@ -38,7 +38,7 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
 
 - `Packages/SoftwareFactoryKit` (Foundation only, `swift test`):
   - `Models`: `Project` (id is the folder path), `FactoryTask` (a task; named so because
-    `Task` is Swift's; feature/bug/chore; backlog/inProgress/done/parked/blocked with a
+    `Task` is Swift's; work is design/plan/implement/fix/review/investigate/ship, default implement; backlog/inProgress/done/parked/blocked with a
     `Blocker` saying what on; rank), `Agent` (number, self-description,
     project, task, lastSeen, deregistered, and the `pid` it reported with the
     `pidStartedAt` the factory read for it; working within 10 min of any call it made.
@@ -78,6 +78,12 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     backlog), `task` (one task, already in its name, to claim), `free` (no project,
     the person says what for).
   - `Escalations.visible`: open questions in full, the newest three answered ones.
+  - Two kinds of agent, and `Agent.isEmbedded` (it has a `session`) is the question.
+    An embedded one the factory wrote down, named and started in a terminal it owns: its
+    page shows it working, you can type to it, the factory can stop it, and tmux keeps it
+    alive across a restart. An external one registered over MCP from wherever it already
+    was; it does the same work and there is simply nothing here to watch or stop. Origin
+    is not the same as having a terminal on screen: ours can be out of sight.
   - `ProcessCheck`: whether a process is alive, asked of the kernel. An agent reports
     its own `pid` at `agent_register` (Claude Code has it in `CLAUDE_PID`) and the
     factory reads when that process started, because a pid on its own is recycled and

@@ -182,12 +182,17 @@ struct AgentCard: View {
     var status: Dashboard.AgentStatus
     var select: (UUID) -> Void
 
-    /// Whether this app holds the agent's terminal, so its page can show it working and
-    /// you can type to it. An agent started anywhere else registers over MCP like any
-    /// other and is just as real; there is simply nothing here to watch.
-    private var isHere: Bool {
+    /// Whose agent this is. One the factory started and put in a terminal of its own, or
+    /// one that registered over MCP from wherever it already was. An external agent is
+    /// just as real and does the same work; there is simply nothing here to watch.
+    private var isOurs: Bool { status.agent.isEmbedded }
+
+    /// Whether there is a terminal to look at right now. Not the same question as whose
+    /// agent it is: ours can be out of sight, if the app was restarted without tmux to
+    /// hold the session, or if the session was killed. Saying "outside" then would be a
+    /// lie about where the agent came from. (Alex, 13 Sep 2026: two kinds of agent.)
+    private var hasTerminal: Bool {
         if terminals.session(for: status.agent) != nil { return true }
-        // The app has been restarted, and tmux is still holding the session for it.
         return status.agent.session.map(terminals.isHeld) ?? false
     }
 
@@ -235,9 +240,12 @@ struct AgentCard: View {
                     // symbol says it and the tooltip spells it out: the words sat on
                     // every card saying the same thing, and the time needs the room.
                     // (Alex, 13 Sep 2026.)
-                    Image(systemName: isHere ? "macwindow" : "arrow.up.forward.app")
-                        .help(isHere ? "Runs in this app: its page shows the terminal, and you can type to it"
-                                     : "Runs outside this app: its page shows what it has told the factory, and no terminal")
+                    Image(systemName: isOurs ? "macwindow" : "arrow.up.forward.app")
+                        .help(isOurs
+                              ? (hasTerminal
+                                 ? "The factory started this one: its page shows the terminal, and you can type to it"
+                                 : "The factory started this one, but its terminal has gone: its page shows what it has told the factory")
+                              : "This one joined from outside: its page shows what it has told the factory, and there is no terminal to watch")
                     // The cards go down to 190 points wide, so on the narrowest one the
                     // time drops its prefix rather than losing its last characters;
                     // "2 minutes ago" reads as a last seen on its own.

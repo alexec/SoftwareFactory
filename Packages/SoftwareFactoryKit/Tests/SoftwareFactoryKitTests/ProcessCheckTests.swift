@@ -92,4 +92,32 @@ import Testing
         unknown.pidStartedAt = nil
         #expect(Dashboard.activity(of: unknown, task: nil, hasOpenQuestion: false, now: now) == .waiting)
     }
+
+    /// Two kinds of agent. One the factory started and put in a terminal of its own, one
+    /// that turned up over MCP from wherever it already was. Origin is not the same
+    /// question as whether there is a terminal to look at right now.
+    @Test func anAgentIsEitherOursOrOneThatJoined() {
+        let joined = Agent(number: 1, projectID: nil)
+        #expect(!joined.isEmbedded)
+
+        var ours = Agent(number: 2, projectID: nil)
+        ours.session = "sf-1234abcd"
+        #expect(ours.isEmbedded)
+
+        // Reserved before it ever registers, and already ours.
+        #expect(Agents.reserve(number: 3, projectID: "/p", session: "sf-beef", now: .now).isEmbedded)
+        // Reserved with no terminal to put it in is not ours to watch.
+        #expect(!Agents.reserve(number: 4, projectID: "/p", session: nil, now: .now).isEmbedded)
+
+        // Losing the terminal does not change whose agent it is. A killed tmux session
+        // puts it out of sight, not out of the factory.
+        var lost = ours
+        lost.deregistered = nil
+        #expect(lost.isEmbedded)
+
+        // And the factory clearing the session off a record, when a newcomer takes the
+        // window, does hand the agent back: it is no longer in a terminal of ours.
+        let claim = Agents.claimSession("sf-1234abcd", for: joined, in: [ours], now: .now)
+        #expect(claim.released.allSatisfy { !$0.isEmbedded })
+    }
 }
