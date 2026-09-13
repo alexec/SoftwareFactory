@@ -15,7 +15,7 @@ settings:
     SWIFT_STRICT_CONCURRENCY: complete
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    CURRENT_PROJECT_VERSION: "2"
   # This xcodegen install has no bundled setting presets, so the per-configuration
   # settings are spelled out. DEBUG gates the Developer section of Settings; release
   # builds must not define it.
