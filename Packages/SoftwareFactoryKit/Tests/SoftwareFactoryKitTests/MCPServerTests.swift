@@ -129,6 +129,35 @@ private final class ResultBox: @unchecked Sendable {
     /// An agent is its A<n> and nothing else: registration takes no name, a name sent
     /// anyway is ignored, and nothing the factory says back carries one.
     /// (A9, 13 Sep 2026: T137.)
+    /// Registering with a pid is what lets the factory tell a crashed agent from a quiet
+    /// one. The agent gives the number; the factory reads when that process started, so
+    /// a recycled pid cannot later pass for it. (Alex, 13 Sep 2026.)
+    @Test func registeringWithAPidRecordsTheProcess() throws {
+        let s = try server()
+        let me = ProcessInfo.processInfo.processIdentifier
+        let a = id(after: "", in: call(s, "agent_register", ["pid": Int(me)]).text)
+        let stored = try #require(try s.store.load().agents.first { $0.label == a })
+        #expect(stored.pid == me)
+        // Within a second, not to the microsecond: the record goes through JSON, which
+        // rounds the date. That rounding is why ProcessCheck.isRunning has a tolerance
+        // at all, so the two belong together.
+        let live = try #require(ProcessCheck.startTime(of: me))
+        let recorded = try #require(stored.pidStartedAt)
+        #expect(abs(recorded.timeIntervalSince(live)) < 1)
+        #expect(stored.knowsItsProcess && stored.isProcessRunning && !stored.hasExited)
+
+        // A pid nobody is using is not recorded at all: better to say nothing about an
+        // agent's process than to write down one that was never there.
+        let b = id(after: "", in: call(s, "agent_register", ["pid": 0x7FFF_FFFE]).text)
+        let other = try #require(try s.store.load().agents.first { $0.label == b })
+        #expect(other.pid == nil && !other.knowsItsProcess && !other.hasExited)
+
+        // And registering without one still works: most agents will not know it.
+        let c = id(after: "", in: call(s, "agent_register", [:]).text)
+        let third = try #require(try s.store.load().agents.first { $0.label == c })
+        #expect(third.pid == nil && !third.hasExited)
+    }
+
     @Test func anAgentIsOnlyItsNumber() throws {
         let s = try server()
         let registration = try #require(MCPServer.Tool.all.first { $0.name == "agent_register" })

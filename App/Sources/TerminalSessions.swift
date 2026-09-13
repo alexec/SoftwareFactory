@@ -145,6 +145,11 @@ final class TerminalSessions {
     /// Asks tmux what it is holding, off the main thread, and remembers the answer. Safe
     /// to call as often as you like: one look runs at a time, and a wedged server times
     /// out rather than piling up.
+    ///
+    /// Whether an agent is still *running* is not asked here. That is the agent's pid on
+    /// its record, and `Agent.hasExited` answers it: a terminal outliving its agent is
+    /// the normal case, and an agent that has been resumed is not in the session it was
+    /// launched in. (Alex, 13 Sep 2026.)
     func lookForHeldSessions() async {
         guard Tmux.isOn, !isLooking else { return }
         isLooking = true

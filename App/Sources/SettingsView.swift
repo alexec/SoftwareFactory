@@ -6,7 +6,6 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(TerminalSessions.self) private var terminals
     @State private var showingIntro = false
-    @State private var copied = false
     @State private var copiedInstall = false
     @State private var installError: String?
 
@@ -47,13 +46,6 @@ struct SettingsView: View {
             }
 
             Section("Agent") {
-                Picker("Runs", selection: preferredAgentBinding) {
-                    ForEach(AppModel.PreferredAgent.allCases) { agent in
-                        Text(agent.title).tag(agent)
-                    }
-                }
-                Text("Launch an agent, on a project with a folder, starts this one.")
-                    .foregroundStyle(.secondary)
                 Picker("Runs", selection: launchStyleBinding) {
                     ForEach(AppModel.LaunchStyle.allCases) { style in
                         Text(style.title).tag(style)
@@ -66,24 +58,6 @@ struct SettingsView: View {
                     Text("This build is sandboxed, so it copies the command for you to paste instead of starting anything itself.")
                         .foregroundStyle(.secondary)
                 }
-                LabeledContent("How to install \(model.preferredAgent.title)") {
-                    Link(model.preferredAgent.installURL.absoluteString, destination: model.preferredAgent.installURL)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                LabeledContent("Register the factory with it") {
-                    Button(copied ? "Copied" : "Copy") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(model.preferredAgent.setupCommand, forType: .string)
-                        copied = true
-                    }
-                }
-                Text(model.preferredAgent.setupCommand)
-                    .font(.callout.monospaced())
-                    .textSelection(.enabled)
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.quaternary, in: .rect(cornerRadius: 8))
             }
 
             // Sessions that outlive the app, when tmux is here to hold them.
@@ -154,10 +128,6 @@ struct SettingsView: View {
 
     private var launchStyleBinding: Binding<AppModel.LaunchStyle> {
         Binding(get: { model.launchStyle }, set: { model.launchStyle = $0 })
-    }
-
-    private var preferredAgentBinding: Binding<AppModel.PreferredAgent> {
-        Binding(get: { model.preferredAgent }, set: { model.preferredAgent = $0; copied = false })
     }
 
 }

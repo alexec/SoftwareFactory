@@ -191,6 +191,13 @@ struct AgentCard: View {
         return status.agent.session.map(terminals.isHeld) ?? false
     }
 
+    /// Its process has gone. Worth saying out loud: the terminal outlives the agent by
+    /// design, so a window that is still there proves nothing, and until now a stopped
+    /// agent looked exactly like a quiet one for the hour it takes the factory to give
+    /// up on it. An agent that never reported a pid says nothing either way rather than
+    /// being called dead. (Alex, 13 Sep 2026.)
+    private var hasStopped: Bool { status.activity == .stopped }
+
     var body: some View {
         Button { select(status.agent.id) } label: {
             VStack(alignment: .leading, spacing: 8) {
@@ -198,6 +205,7 @@ struct AgentCard: View {
                     AgentActivityDot(activity: status.activity)
                     Text(status.agent.label)
                         .font(.headline)
+                    if hasStopped { StoppedMark() }
                     Spacer(minLength: 0)
                 }
                 Text(status.project?.name ?? "No project")
@@ -344,6 +352,7 @@ struct AgentView: View {
             AgentActivityDot(activity: status.activity)
             Text(agent.label)
                 .font(.title3.weight(.semibold))
+            if status.activity == .stopped { StoppedMark() }
             if let project = status.project {
                 Text(project.name)
                     .font(.callout)
@@ -574,6 +583,18 @@ struct AgentChip: View {
     }
 }
 
+/// An agent whose process has gone, on a card or a page header. One symbol, and the
+/// tooltip says what it means and what is still true: the terminal is there, the last
+/// words are readable, the agent is not running. (Alex, 13 Sep 2026.)
+struct StoppedMark: View {
+    var body: some View {
+        Image(systemName: "stop.circle")
+            .foregroundStyle(.secondary)
+            .help("Stopped: its terminal is still here and you can read what it said, but the agent is not running in it any more")
+            .accessibilityLabel("Stopped")
+    }
+}
+
 struct AgentActivityDot: View {
     var activity: Dashboard.AgentActivity
 
@@ -590,6 +611,7 @@ struct AgentActivityDot: View {
         case .blocked: .orange
         case .waiting: .gray
         case .idle: .primary
+        case .stopped: .red
         }
     }
 
@@ -599,6 +621,7 @@ struct AgentActivityDot: View {
         case .blocked: "Its task is blocked"
         case .waiting: "Waiting for a task, for mail, or for you"
         case .idle: "Idle: nothing said for ten minutes"
+        case .stopped: "Stopped: its process has gone"
         }
     }
 }

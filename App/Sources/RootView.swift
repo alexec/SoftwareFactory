@@ -97,9 +97,16 @@ struct RootView: View {
         .navigationTitle(title)
         // Agents turn up a second or two after the session that started them.
         .onChange(of: model.dashboard.agents.map(\.id)) { terminals.adopt(model.dashboard.agents) }
-        // What tmux is holding, kept fresh off the main thread so the cards can say
-        // whether an agent's terminal is here without anybody waiting on tmux.
-        .task(id: model.dashboard.agents.map(\.id)) { await terminals.lookForHeldSessions() }
+        // What tmux is holding and which agents are actually running, kept fresh off
+        // the main thread so the cards can say so without anybody waiting on tmux or ps.
+        // A process dies between one look and the next, so this is on a clock rather
+        // than waiting for the set of agents to change. (Alex, 13 Sep 2026.)
+        .task {
+            while !Task.isCancelled {
+                await terminals.lookForHeldSessions()
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
         .sheet(isPresented: Binding(get: { !model.hasSeenIntro }, set: { model.hasSeenIntro = !$0 })) {
             IntroSheet()
         }

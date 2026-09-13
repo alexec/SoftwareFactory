@@ -126,6 +126,7 @@ struct PhoneRootView: View {
         case .blocked: .orange
         case .waiting: .gray
         case .idle: .primary
+        case .stopped: .red
         }
     }
 

@@ -201,7 +201,19 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
     /// The terminal session this agent runs in, when the app started it: the name it
     /// passes at registration from SOFTWARE_FACTORY_SESSION. The app attaches to it to
     /// show the agent working. Nil for an agent started by hand.
+    ///
+    /// Do not use this to decide whether the agent is running. It lives on the launch
+    /// wrapper and nowhere else, so an agent that has been resumed has lost it while
+    /// still working perfectly well. `pid` is the question about running.
     public var session: String?
+    /// The agent's own process, reported at registration, and when that process started.
+    /// The pair is what makes an answer about running trustworthy: a pid on its own can
+    /// be recycled and turn up wearing a dead agent's number, and a start time settles
+    /// which process is really there. The factory fills in the start time itself, so an
+    /// agent only has to know its own pid. Nil for an agent that did not say.
+    /// (Alex, 13 Sep 2026.)
+    public var pid: Int32?
+    public var pidStartedAt: Date?
     public var registered: Date
     public var lastSeen: Date
     /// The quiet and gone timers start only after the MCP session disconnects.
@@ -234,6 +246,20 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
     public static let quietAfter: TimeInterval = 10 * 60
     /// An hour after disconnect, an agent that never said goodbye is marked gone.
     public static let goneAfter: TimeInterval = 60 * 60
+
+    /// Whether this agent's process is alive. Only an answer when the agent told us its
+    /// pid and the process is on this machine; `knowsItsProcess` says whether to ask.
+    public var isProcessRunning: Bool {
+        ProcessCheck.isRunning(pid: pid, startedAt: pidStartedAt)
+    }
+
+    /// Whether the factory can speak for this agent's process at all. An agent that
+    /// never reported a pid is not dead, it is simply not something we can see.
+    public var knowsItsProcess: Bool { pid != nil && pidStartedAt != nil }
+
+    /// Registered, said it was running here, and its process has gone. The one state the
+    /// factory used to have no way of telling from a quiet agent.
+    public var hasExited: Bool { isRegistered && knowsItsProcess && !isProcessRunning }
 
     public func isWorking(now: Date) -> Bool {
         isRegistered && (isConnected || now.timeIntervalSince(lastSeen) <= Self.quietAfter)
@@ -268,6 +294,10 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
         taskID = try c.decodeIfPresent(UUID.self, forKey: .taskID)
         note = try c.decode(String.self, forKey: .note)
         session = try c.decodeIfPresent(String.self, forKey: .session)
+        // Added after the fact, so a record written before this simply has no pid and
+        // reads as an agent whose running we cannot speak for. No version bump needed.
+        pid = try c.decodeIfPresent(Int32.self, forKey: .pid)
+        pidStartedAt = try c.decodeIfPresent(Date.self, forKey: .pidStartedAt)
         registered = try c.decode(Date.self, forKey: .registered)
         lastSeen = try c.decode(Date.self, forKey: .lastSeen)
         isConnected = try c.decodeIfPresent(Bool.self, forKey: .isConnected) ?? false

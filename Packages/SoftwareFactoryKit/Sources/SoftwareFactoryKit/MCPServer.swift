@@ -276,7 +276,8 @@ public struct MCPServer: Sendable {
         public static var all: [Tool] { [
             // Agents
             Tool(name: "agent_register", description: "Register this MCP session with the factory. Leave agent_id out and the factory gives you the next A<n>. Every call you make counts as a sign of life; there is no separate check-in. Call again to update this registration.",
-                 properties: ["agent_id": str("The name you were told to register as, when you were told one, like A6. Leave it out and the factory gives you the next free name. A name a live session is working as is refused, and so is one that has been used before: a number belongs to one agent for the life of the factory"),
+                 properties: ["pid": ["type": "integer", "description": "Your own process id, so the factory can tell whether you are still running rather than merely quiet. Claude Code has it in CLAUDE_PID; otherwise it is the process id of the agent itself, not of a shell you ran something in"],
+                              "agent_id": str("The name you were told to register as, when you were told one, like A6. Leave it out and the factory gives you the next free name. A name a live session is working as is refused, and so is one that has been used before: a number belongs to one agent for the life of the factory"),
                               "about": str("Optional self-description for other agents"),
                               "project": str("The project you work on, by name: an app, a role across apps, a piece of tooling. Leave it out if your work belongs to no project. A name close to an existing project's is refused; a genuinely new name makes a new project"),
                               "session": str("The value of SOFTWARE_FACTORY_SESSION, when it is set: the terminal session the app started you in, so it can show you working")],
@@ -483,6 +484,15 @@ public struct MCPServer: Sendable {
                 let claim = Agents.claimSession(session, for: agent, in: snap.agents, now: now())
                 agent.session = claim.session
                 for released in claim.released { try store.save(released) }
+            }
+            // The process it runs in, so the factory can answer whether it is still
+            // running rather than guess from silence. The agent gives its pid; the start
+            // time is read here, because a pid on its own is recycled and the pair is
+            // what makes the answer trustworthy. (Alex, 13 Sep 2026.)
+            if let reported = (args["pid"] as? NSNumber)?.int32Value ?? (args["pid"] as? Int).map(Int32.init),
+               let started = ProcessCheck.startTime(of: reported) {
+                agent.pid = reported
+                agent.pidStartedAt = started
             }
             agent.isConnected = true
             try store.save(agent)

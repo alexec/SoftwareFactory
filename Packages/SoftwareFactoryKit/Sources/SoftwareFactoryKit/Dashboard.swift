@@ -42,6 +42,11 @@ public struct Dashboard: Sendable, Equatable {
         case waiting
         /// Nothing said for ten minutes, and no connection open.
         case idle
+        /// Its process has gone. The one state silence could never tell you: a crashed
+        /// agent and a thinking one both say nothing, and this asks the kernel instead
+        /// of waiting an hour to assume. Only for an agent that told us its process.
+        /// (Alex, 13 Sep 2026.)
+        case stopped
     }
 
     public struct AgentStatus: Identifiable, Sendable, Equatable {
@@ -62,6 +67,9 @@ public struct Dashboard: Sendable, Equatable {
     public static func activity(
         of agent: Agent, task: FactoryTask?, hasOpenQuestion: Bool, now: Date
     ) -> AgentActivity {
+        // Gone beats everything, and beats it whatever the agent last said: an agent
+        // whose process has exited is not working, not waiting and not merely quiet.
+        if agent.hasExited { return .stopped }
         guard agent.isWorking(now: now) else { return .idle }
         if task?.state == .blocked { return .blocked }
         if hasOpenQuestion || task == nil { return .waiting }
@@ -130,6 +138,8 @@ public struct Dashboard: Sendable, Equatable {
                 return Dashboard.activity(of: agent, task: task,
                                           hasOpenQuestion: open.contains { $0.agentID == agent.id }, now: now)
             }
+            // A stopped agent does not make its project stopped: the project is idle,
+            // which is what it is until somebody picks it back up.
             let activity: ProjectActivity =
                 doing.contains(.working) ? .working
                 : doing.contains(.blocked) ? .blocked
@@ -191,6 +201,8 @@ public struct Dashboard: Sendable, Equatable {
         case .blocked: 1
         case .waiting: 2
         case .idle: 3
+        // A project never reads stopped, only an agent does; it sorts with the quiet.
+        case .stopped: 3
         }
     }
 }

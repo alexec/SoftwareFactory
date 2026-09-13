@@ -40,7 +40,8 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
   - `Models`: `Project` (id is the folder path), `FactoryTask` (a task; named so because
     `Task` is Swift's; feature/bug/chore; backlog/inProgress/done/parked/blocked with a
     `Blocker` saying what on; rank), `Agent` (number, self-description,
-    project, task, lastSeen, deregistered; working within 10 min of any call it made.
+    project, task, lastSeen, deregistered, and the `pid` it reported with the
+    `pidStartedAt` the factory read for it; working within 10 min of any call it made.
     Its `label` is its name everywhere: "A<n>", or its raw id for one that registered
     before numbers. There is no separate `name` field, and never should be again: it
     was always the label and the two could only ever drift, T158),
@@ -77,6 +78,15 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     backlog), `task` (one task, already in its name, to claim), `free` (no project,
     the person says what for).
   - `Escalations.visible`: open questions in full, the newest three answered ones.
+  - `ProcessCheck`: whether a process is alive, asked of the kernel. An agent reports
+    its own `pid` at `agent_register` (Claude Code has it in `CLAUDE_PID`) and the
+    factory reads when that process started, because a pid on its own is recycled and
+    the pair is what makes the answer trustworthy. `Agent.hasExited` is the question,
+    and `Dashboard.AgentActivity.stopped` is how the floor says it. This is the one
+    state silence could never tell you: a crashed agent and a thinking one are both
+    quiet. Do not use `session` for this. It lives on the launch wrapper, so an agent
+    that has been resumed has lost it while still working. An agent that never reported
+    a pid is never called stopped: not seen is not dead.
   - `Sweep.goneAgents`: an hour of silence and an agent is marked gone, leases released.
   - `Sweep.unblocked`: a task blocked on a decision now made, or a task now done, goes
     back to the backlog with a line saying so. A block on a person clears by hand.
@@ -129,8 +139,10 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     with add, drag reorder, state menu, notes under rows, and Start an agent on this,
     on a backlog row: it reserves an agent, puts the task in its name and starts it on
     that one task), `AgentLauncher` and `StartAgent` (reserve, assign, launch: one path
-    for every launch), `IntroSheet`, `SettingsView`
-    (How it works on top, the register command, iCloud, the store, Developer in DEBUG).
+    for every launch), `LaunchChooser` (pick Claude Code, GitHub Copilot or Grok
+    at launch, with that agent's install link and plugin command, then Launch
+    <name>; no preferred-agent setting), `IntroSheet`, `SettingsView`
+    (How it works on top, in-app vs Terminal, iCloud, the store, Developer in DEBUG).
   - `TerminalSessions` and `Tmux`: an agent the app launches runs in a terminal the app
     owns (SwiftTerm), so its page shows it working and you can type to it. tmux holds the
     session on a server of its own, so the agent outlives the app: quit, rebuild, come
