@@ -462,7 +462,7 @@ final class AppModel {
     /// Puts a task in one agent's name, so task_next hands it to that agent and nobody
     /// else. Nil takes the name off again.
     func assign(_ task: FactoryTask, to agent: Agent?) {
-        let assigned = Backlog.assign(task, to: agent?.id, named: agent?.name, by: "Alex")
+        let assigned = Backlog.assign(task, to: agent?.id, named: agent?.label, by: "Alex")
         guard assigned != task else { return }
         persist { try $0.save(assigned) }
     }
@@ -519,7 +519,7 @@ final class AppModel {
 
     func agentName(_ id: UUID?) -> String? {
         guard let id else { return nil }
-        return snapshot.agents.first { $0.id == id }?.name
+        return snapshot.agents.first { $0.id == id }?.label
     }
 
     /// Records the choice, with a note for the agent if there is one. The agent waiting

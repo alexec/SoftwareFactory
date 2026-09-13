@@ -39,8 +39,11 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
 - `Packages/SoftwareFactoryKit` (Foundation only, `swift test`):
   - `Models`: `Project` (id is the folder path), `FactoryTask` (a task; named so because
     `Task` is Swift's; feature/bug/chore; backlog/inProgress/done/parked/blocked with a
-    `Blocker` saying what on; rank), `Agent` (name, self-description,
-    project, task, lastSeen, deregistered; working within 10 min of any call it made),
+    `Blocker` saying what on; rank), `Agent` (number, self-description,
+    project, task, lastSeen, deregistered; working within 10 min of any call it made.
+    Its `label` is its name everywhere: "A<n>", or its raw id for one that registered
+    before numbers. There is no separate `name` field, and never should be again: it
+    was always the label and the two could only ever drift, T158),
     `AgentMessage` (recipient, from, subject, contents, sent; private to the recipient's
     MCP inbox),
     `Escalation` (options, one recommended; `decide(_:by:)` records a `Decision`),

@@ -104,7 +104,7 @@ struct AgentsView: View {
         writingPrompt = false
         let session = "sf-\(UUID().uuidString.prefix(8).lowercased())"
         let reserved = model.reserveAgent(for: nil, session: session)
-        let name = reserved?.name ?? "an agent"
+        let name = reserved?.label ?? "an agent"
         let command = { (prompt: String) in
             model.preferredAgent.command(for: LaunchPrompt.free(prompt, as: name))
         }

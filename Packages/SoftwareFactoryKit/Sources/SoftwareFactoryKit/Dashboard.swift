@@ -107,7 +107,7 @@ public struct Dashboard: Sendable, Equatable {
         // In the order they registered, A1 first. Sorting by who spoke last made the
         // cards swap places every couple of seconds. (Alex, 12 Sep 2026.)
         let registered = snapshot.agents.filter(\.isRegistered).sorted {
-            ($0.number ?? .max, $0.name) < ($1.number ?? .max, $1.name)
+            ($0.number ?? .max, $0.label) < ($1.number ?? .max, $1.label)
         }
         let open = snapshot.escalations.filter(\.isOpen)
 
@@ -167,7 +167,7 @@ public struct Dashboard: Sendable, Equatable {
         }
 
         // Who holds a resource reads as the agent's name, the same name the cards show.
-        let names = Dictionary(uniqueKeysWithValues: snapshot.agents.map { ($0.id, $0.name) })
+        let names = Dictionary(uniqueKeysWithValues: snapshot.agents.map { ($0.id, $0.label) })
         let resources = snapshot.resources.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }.map { r in
             ResourceStatus(resource: r, held: Leases.held(for: r.id, in: snapshot.leases, agents: snapshot.agents, now: now).map {
                 Holding(lease: $0, agentName: names[$0.agentID] ?? "someone", isOverdue: $0.until <= now)

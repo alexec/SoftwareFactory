@@ -136,8 +136,10 @@ private final class ResultBox: @unchecked Sendable {
 
         _ = call(s, "project_add", ["name": "Named", "description": "Work for named agents."])
         let a = id(after: "", in: call(s, "agent_register", ["name": "lead", "project": "Named"]).text)
+        // There is no second name to disagree with the label: the record has only its
+        // number, and the label is made from it. (T158, 13 Sep 2026.)
         let stored = try #require(try s.store.load().agents.first { $0.label == a })
-        #expect(stored.name == a)
+        #expect(stored.number.map { "A\($0)" } == a)
 
         // A second agent, so the first has someone to read about.
         let b = id(after: "", in: call(s, "agent_register", ["name": "hand", "about": "Builds it", "project": "Named"]).text)

@@ -30,7 +30,7 @@ import Testing
 
     @Test func anExpiredLeaseFreesTheSlotOnlyWhenTheHolderHasGone() throws {
         let old = Lease(resourceID: phone.id, agentID: a, why: "a long run", since: now.addingTimeInterval(-9000), until: now.addingTimeInterval(-1))
-        var holder = Agent(name: "holder", projectID: nil, registered: now.addingTimeInterval(-9000))
+        var holder = Agent(number: 1, projectID: nil, registered: now.addingTimeInterval(-9000))
         holder.id = a
         holder.lastSeen = now
 

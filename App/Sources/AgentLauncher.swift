@@ -97,7 +97,7 @@ enum StartAgent {
             return "The agent could not be written down. The store said no."
         }
         if let task { model.assign(task, to: reserved) }
-        let command = model.preferredAgent.launchCommand(for: project, task: task, as: reserved.name)
+        let command = model.preferredAgent.launchCommand(for: project, task: task, as: reserved.label)
         guard !AgentLauncher.isSandboxed else {
             AgentLauncher.copy(project, command: command)
             return nil

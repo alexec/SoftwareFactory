@@ -196,7 +196,7 @@ struct AgentCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     AgentActivityDot(activity: status.activity)
-                    Text(status.agent.name)
+                    Text(status.agent.label)
                         .font(.headline)
                     Spacer(minLength: 0)
                 }
@@ -251,9 +251,9 @@ struct AgentCard: View {
         }
         .buttonStyle(.plain)
         .glassEffect(.regular, in: .rect(cornerRadius: 18))
-        .help("Show \(status.agent.name)")
+        .help("Show \(status.agent.label)")
         .contextMenu {
-            Button("Delete \(status.agent.name)", role: .destructive) { model.delete(status.agent) }
+            Button("Delete \(status.agent.label)", role: .destructive) { model.delete(status.agent) }
         }
     }
 }
@@ -342,7 +342,7 @@ struct AgentView: View {
     private var header: some View {
         HStack(spacing: 10) {
             AgentActivityDot(activity: status.activity)
-            Text(agent.name)
+            Text(agent.label)
                 .font(.title3.weight(.semibold))
             if let project = status.project {
                 Text(project.name)
@@ -525,7 +525,7 @@ private struct SendMessage: View {
                 .lineLimit(3...8)
             HStack {
                 if sent {
-                    Text("Sent. It is in \(agent.name)'s inbox, read the next time it looks.")
+                    Text("Sent. It is in \(agent.label)'s inbox, read the next time it looks.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -560,7 +560,7 @@ struct AgentChip: View {
                 } else {
                     AgentActivityDot(activity: status.activity)
                 }
-                Text(status.agent.name)
+                Text(status.agent.label)
             }
             .font(.caption.weight(.medium))
             .foregroundStyle(waiting ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
@@ -569,8 +569,8 @@ struct AgentChip: View {
             .background(waiting ? AnyShapeStyle(.quaternary.opacity(0.6)) : AnyShapeStyle(.quaternary), in: .capsule)
         }
         .buttonStyle(.plain)
-        .help(waiting ? "Waiting for \(status.agent.name): task_next hands it to them and nobody else"
-                      : "\(status.agent.name) is on it")
+        .help(waiting ? "Waiting for \(status.agent.label): task_next hands it to them and nobody else"
+                      : "\(status.agent.label) is on it")
     }
 }
 

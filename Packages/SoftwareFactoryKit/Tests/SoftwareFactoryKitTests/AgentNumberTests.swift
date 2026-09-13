@@ -29,7 +29,7 @@ import Testing
 
     @Test func aStoreFromBeforeTheCounterStartsAboveItsAgents() throws {
         let store = try temporaryStore()
-        try store.save(Agent(number: 7, name: "A7", projectID: nil))
+        try store.save(Agent(number: 7, projectID: nil))
         #expect(try store.takeAgentNumber() == 8)
     }
 

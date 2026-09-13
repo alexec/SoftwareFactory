@@ -567,7 +567,7 @@ struct TaskRow: View {
                 if task.state == .backlog {
                     Menu("Assign to") {
                         ForEach(registeredAgents) { status in
-                            Button(status.agent.name) { model.assign(task, to: status.agent) }
+                            Button(status.agent.label) { model.assign(task, to: status.agent) }
                         }
                         if task.agentID != nil {
                             Divider()

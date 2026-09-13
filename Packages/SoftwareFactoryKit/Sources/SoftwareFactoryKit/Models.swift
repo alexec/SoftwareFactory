@@ -5,7 +5,10 @@ import Foundation
 public enum Records {
     /// 2: a task no longer carries a kind. A reader from version 1 wanted one and would
     /// skip the record, so the number goes up. (Alex, 12 Sep 2026: we never used it.)
-    public static let version = 2
+    /// 3: an agent no longer carries a name. It was always its label and nothing ever
+    /// set it to anything else. A reader from version 2 wanted one and would skip the
+    /// record. (T158, 13 Sep 2026.)
+    public static let version = 3
 }
 
 /// A product being built, identified by its folder. The path is the id because it is the
@@ -188,7 +191,6 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
     /// The short public identifier used by MCP callers. The UUID remains the stable
     /// storage and relationship key.
     public var number: Int?
-    public var name: String
     public var about: String
     public var projectID: String?
     /// The latest instructions read for each project, keyed by the stable project id.
@@ -206,10 +208,9 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
     public var isConnected: Bool
     public var deregistered: Date?
 
-    public init(id: UUID = UUID(), number: Int? = nil, name: String, about: String = "", projectID: String?, registered: Date = .now) {
+    public init(id: UUID = UUID(), number: Int? = nil, about: String = "", projectID: String?, registered: Date = .now) {
         self.id = id
         self.number = number
-        self.name = name
         self.about = about
         self.projectID = projectID
         self.seenInstructions = [:]
@@ -221,8 +222,10 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
 
     public var isRegistered: Bool { deregistered == nil }
 
-    /// What an agent gives back as its agent_id: its number, or its raw id for one
-    /// that registered before numbers.
+    /// What an agent is called, everywhere: its agent_id, the name on its card, the name
+    /// in a sentence. Its number, or its raw id for one that registered before numbers.
+    /// There is no second name: an agent used to carry one and it was only ever this,
+    /// which made the next reader think the two could differ. (T158, 13 Sep 2026.)
     public var label: String {
         number.map { "A\($0)" } ?? id.uuidString
     }
@@ -257,7 +260,8 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
         id = try c.decode(UUID.self, forKey: .id)
         number = try c.decodeIfPresent(Int.self, forKey: .number)
-        name = try c.decode(String.self, forKey: .name)
+        // A record written before T158 carries a name. It is read and thrown away: it
+        // was always the label, and an agent from before numbers falls back to its id.
         about = try c.decodeIfPresent(String.self, forKey: .about) ?? ""
         projectID = try c.decodeIfPresent(String.self, forKey: .projectID)
         seenInstructions = try c.decodeIfPresent([String: String].self, forKey: .seenInstructions) ?? [:]
@@ -288,7 +292,7 @@ public enum Agents {
     /// The number comes from the factory's counter on disk, not from the agents still in
     /// the store, so a number is never handed out twice.
     public static func reserve(number: Int, projectID: String?, session: String?, now: Date = .now) -> Agent {
-        var agent = Agent(number: number, name: "A\(number)", projectID: projectID, registered: now)
+        var agent = Agent(number: number, projectID: projectID, registered: now)
         agent.session = session
         return agent
     }

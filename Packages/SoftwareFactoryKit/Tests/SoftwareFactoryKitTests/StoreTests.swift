@@ -26,7 +26,7 @@ func wholeSecond() -> Date {
             projectID: project.id, question: "Which?", options: [.init(title: "A", recommended: true), .init(title: "B")],
             raised: now)
         try escalation.decide(escalation.options[1], at: now)
-        let agent = Agent(name: "agent-1", projectID: project.id, registered: now)
+        let agent = Agent(number: 1, projectID: project.id, registered: now)
         let message = AgentMessage(recipientID: agent.id, from: "agent-2", subject: "Hello", contents: "Can you help?", sent: now)
 
         try store.save(project)
@@ -63,7 +63,7 @@ func wholeSecond() -> Date {
 
         #expect(FactoryTask(projectID: "/a", title: "t", rank: 0).version == Records.version)
         #expect(Escalation(projectID: "/a", question: "q", options: []).version == Records.version)
-        #expect(Agent(name: "a", projectID: nil).version == Records.version)
+        #expect(Agent(number: 1, projectID: nil).version == Records.version)
         #expect(AgentMessage(recipientID: UUID(), from: "a", subject: "s", contents: "c").version == Records.version)
         #expect(Resource(name: "r").version == Records.version)
         #expect(Lease(resourceID: UUID(), agentID: UUID(), why: "", since: .now, until: .now).version == Records.version)
@@ -154,12 +154,12 @@ func wholeSecond() -> Date {
 @Suite struct AgentTests {
     @Test func anHourOfSilenceIsGoneWhateverTheConnectionSays() {
         let now = Date()
-        var silent = Agent(name: "silent", projectID: nil, registered: now.addingTimeInterval(-3600))
+        var silent = Agent(number: 1, projectID: nil, registered: now.addingTimeInterval(-3600))
         silent.lastSeen = now.addingTimeInterval(-61 * 60)
         silent.isConnected = true
-        var talking = Agent(name: "talking", projectID: nil, registered: now.addingTimeInterval(-3600))
+        var talking = Agent(number: 2, projectID: nil, registered: now.addingTimeInterval(-3600))
         talking.lastSeen = now.addingTimeInterval(-60)
-        var left = Agent(name: "left", projectID: nil, registered: now.addingTimeInterval(-3600))
+        var left = Agent(number: 3, projectID: nil, registered: now.addingTimeInterval(-3600))
         left.lastSeen = now.addingTimeInterval(-3600)
         left.deregistered = now.addingTimeInterval(-1800)
         let phone = Resource(name: "iPhone")
@@ -170,11 +170,11 @@ func wholeSecond() -> Date {
         #expect(silent.isWorking(now: now))
         // But it does not keep it alive for ever. A session that died with the app never
         // says goodbye, so an hour without a call is gone either way.
-        #expect(Sweep.goneAgents(in: snap, now: now).agents.map(\.name) == ["silent"])
+        #expect(Sweep.goneAgents(in: snap, now: now).agents.map(\.label) == ["A1"])
         silent.isConnected = false
         let disconnected = Snapshot(agents: [silent, talking, left], resources: [phone], leases: [held])
         let changes = Sweep.goneAgents(in: disconnected, now: now)
-        #expect(changes.agents.map(\.name) == ["silent"])
+        #expect(changes.agents.map(\.label) == ["A1"])
         #expect(changes.agents[0].deregistered == now)
         #expect(changes.leases.map(\.id) == [held.id])
         #expect(changes.leases[0].released == now)
@@ -183,7 +183,7 @@ func wholeSecond() -> Date {
 
     @Test func quietAfterTwoMinutes() {
         let now = Date()
-        var a = Agent(name: "x", projectID: nil, registered: now.addingTimeInterval(-1000))
+        var a = Agent(number: 1, projectID: nil, registered: now.addingTimeInterval(-1000))
         a.lastSeen = now.addingTimeInterval(-30)
         #expect(a.isWorking(now: now))
         a.lastSeen = now.addingTimeInterval(-11 * 60)
@@ -196,7 +196,7 @@ func wholeSecond() -> Date {
 
     @Test func olderAgentsStartTheirQuietTimerFromLastSeen() throws {
         let now = Date()
-        let agent = Agent(name: "old", projectID: nil, registered: now.addingTimeInterval(-3600))
+        let agent = Agent(number: 1, projectID: nil, registered: now.addingTimeInterval(-3600))
         var json = try #require(try JSONSerialization.jsonObject(with: FileStore.encoder.encode(agent)) as? [String: Any])
         json.removeValue(forKey: "isConnected")
         let decoded = try FileStore.decoder.decode(Agent.self, from: JSONSerialization.data(withJSONObject: json))

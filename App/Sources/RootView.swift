@@ -111,7 +111,7 @@ struct RootView: View {
         if case .factory = selection { return "Capacity" }
         if case .agent(let id) = selection,
            let agent = model.dashboard.agents.first(where: { $0.id == id }) {
-            return agent.agent.name
+            return agent.agent.label
         }
         return "Taktu: Software Factory"
     }

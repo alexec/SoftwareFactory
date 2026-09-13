@@ -6,10 +6,10 @@ public enum SampleData {
         let where_ = Project(name: "Where", added: now.addingTimeInterval(-86400 * 3))
         let packed = Project(name: "Packed", added: now.addingTimeInterval(-86400 * 2))
 
-        var agent1 = Agent(name: "agent-1", projectID: where_.id, registered: now.addingTimeInterval(-3000))
+        var agent1 = Agent(number: 1, projectID: where_.id, registered: now.addingTimeInterval(-3000))
         agent1.lastSeen = now.addingTimeInterval(-20)
         agent1.note = "second attempt at splitting on pauses; testing on the simulator"
-        var packedLead = Agent(name: "packed-lead", projectID: packed.id, registered: now.addingTimeInterval(-6000))
+        var packedLead = Agent(number: 2, projectID: packed.id, registered: now.addingTimeInterval(-6000))
         packedLead.lastSeen = now.addingTimeInterval(-1700)
 
         var rooms = FactoryTask(projectID: where_.id, title: "Rooms run together when dictated",

@@ -143,7 +143,7 @@ struct PhoneRootView: View {
                             .frame(width: 8, height: 8)
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 6) {
-                                Text(status.agent.name).font(.headline)
+                                Text(status.agent.label).font(.headline)
                                 if let project = status.project {
                                     Text(project.name).font(.caption).foregroundStyle(.secondary)
                                 }

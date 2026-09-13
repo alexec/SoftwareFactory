@@ -469,10 +469,9 @@ public struct MCPServer: Sendable {
                 agent.lastSeen = now()
                 if let about { agent.about = about.trimmingCharacters(in: .whitespacesAndNewlines) }
                 if project != nil { agent.projectID = project?.id }
-                agent.name = agent.label
             } else {
                 let number = try store.takeAgentNumber()
-                agent = Agent(number: number, name: "A\(number)",
+                agent = Agent(number: number,
                               about: about?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
                               projectID: project?.id, registered: now())
             }
@@ -521,7 +520,7 @@ public struct MCPServer: Sendable {
             let message = AgentMessage(recipientID: recipient.id, from: sender.label,
                                        subject: try string("subject", args), contents: try string("contents", args), sent: now())
             try store.save(message)
-            return "Sent to \(recipient.name)."
+            return "Sent to \(recipient.label)."
 
         case "inbox":
             let recipient = try agent(args, in: snap)
@@ -1029,7 +1028,7 @@ public struct MCPServer: Sendable {
         guard try store.agentNumbers().claim(number) else {
             throw ToolError(message: "A\(number) has been given out before, and a number belongs to one agent for good. Register with no agent_id and the factory will give you the next one.")
         }
-        return Agent(number: number, name: "A\(number)", projectID: nil, registered: now)
+        return Agent(number: number, projectID: nil, registered: now)
     }
 
     func setConnection(connected: Bool, for agentID: String) throws {

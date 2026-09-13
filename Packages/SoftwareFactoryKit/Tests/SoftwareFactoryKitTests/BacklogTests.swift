@@ -276,11 +276,11 @@ import Testing
 
     @Test func countsAndActivity() {
         let a = Project(name: "a", id: "/a")
-        var fresh = Agent(name: "one", projectID: "/a", registered: now.addingTimeInterval(-500))
+        var fresh = Agent(number: 1, projectID: "/a", registered: now.addingTimeInterval(-500))
         fresh.lastSeen = now.addingTimeInterval(-10)
-        var quiet = Agent(name: "two", projectID: "/b", registered: now.addingTimeInterval(-500))
+        var quiet = Agent(number: 2, projectID: "/b", registered: now.addingTimeInterval(-500))
         quiet.lastSeen = now.addingTimeInterval(-900)
-        var gone = Agent(name: "three", projectID: "/c", registered: now.addingTimeInterval(-500))
+        var gone = Agent(number: 3, projectID: "/c", registered: now.addingTimeInterval(-500))
         gone.deregistered = now
         let snap = Snapshot(
             projects: [a],
@@ -306,7 +306,7 @@ import Testing
         #expect(d.projects[1].activity == .idle)
         #expect(d.projects[1].doing == "also on it")
         #expect(d.workingCount == 0)
-        #expect(d.agents.map(\.agent.name) == ["one", "two"])
+        #expect(d.agents.map(\.agent.label) == ["A1", "A2"])
         #expect(d.agents[0].waitingOnYou)
         #expect(!d.agents[1].waitingOnYou)
     }
@@ -316,31 +316,31 @@ import Testing
     /// hand the same one out twice.
     @Test func anAgentCanBeReservedBeforeItRegisters() {
         let reserved = Agents.reserve(number: 5, projectID: "/p", session: "sf-1234", now: now)
-        #expect(reserved.name == "A5" && reserved.number == 5)
+        #expect(reserved.number == 5)
         #expect(reserved.label == "A5")
         #expect(reserved.projectID == "/p" && reserved.session == "sf-1234")
         #expect(reserved.isRegistered)
-        #expect(Agents.reserve(number: 1, projectID: nil, session: nil, now: now).name == "A1")
+        #expect(Agents.reserve(number: 1, projectID: nil, session: nil, now: now).label == "A1")
     }
 
     /// The cards keep their places: agents read in the order they registered, whatever
     /// order they happen to speak in.
     @Test func agentsStayInTheOrderTheyRegistered() {
-        var first = Agent(number: 1, name: "A1", projectID: nil, registered: now.addingTimeInterval(-300))
+        var first = Agent(number: 1, projectID: nil, registered: now.addingTimeInterval(-300))
         first.lastSeen = now.addingTimeInterval(-120)          // spoke a while ago
-        var second = Agent(number: 2, name: "A2", projectID: nil, registered: now.addingTimeInterval(-200))
+        var second = Agent(number: 2, projectID: nil, registered: now.addingTimeInterval(-200))
         second.lastSeen = now                                   // spoke just now
-        var third = Agent(number: 3, name: "A3", projectID: nil, registered: now.addingTimeInterval(-100))
+        var third = Agent(number: 3, projectID: nil, registered: now.addingTimeInterval(-100))
         third.lastSeen = now.addingTimeInterval(-60)
         let d = Dashboard.make(snapshot: Snapshot(agents: [third, second, first]), now: now)
-        #expect(d.agents.map(\.agent.name) == ["A1", "A2", "A3"])
+        #expect(d.agents.map(\.agent.label) == ["A1", "A2", "A3"])
     }
 
     /// A project reads the way its agents do: green working, orange waiting or blocked,
     /// grey for anything else.
     @Test func aProjectReadsTheWayItsAgentsDo() {
         let project = Project(name: "p", id: "/p")
-        var agent = Agent(number: 1, name: "A1", projectID: "/p", registered: now.addingTimeInterval(-500))
+        var agent = Agent(number: 1, projectID: "/p", registered: now.addingTimeInterval(-500))
         agent.lastSeen = now.addingTimeInterval(-10)
         var task = FactoryTask(projectID: "/p", title: "on it", state: .inProgress, rank: 0)
         task.agentID = agent.id
@@ -374,7 +374,7 @@ import Testing
     @Test func aProjectOnHoldShowsItsNameAndNothingElse() {
         var held = Project(name: "held", id: "/held")
         held.onHold = true
-        var agent = Agent(name: "one", projectID: held.id, registered: now)
+        var agent = Agent(number: 1, projectID: held.id, registered: now)
         agent.lastSeen = now
         var task = FactoryTask(projectID: held.id, title: "still going", rank: 1)
         task.state = .inProgress
@@ -394,7 +394,7 @@ import Testing
         #expect(h.openEscalations == 1)
         #expect(d.inProgress == 1)
         // The agent is still registered; it is the project that is quiet.
-        #expect(d.agents.map(\.agent.name) == ["one"])
+        #expect(d.agents.map(\.agent.label) == ["A1"])
     }
 
     @Test func aCommentIsSignedDatedAndAppended() {
@@ -424,7 +424,7 @@ import Testing
     /// The four states behind an agent's dot: working, blocked, waiting, idle.
     @Test func anAgentsDotSaysWorkingBlockedWaitingOrIdle() {
         let project = Project(name: "a", id: "/a")
-        var agent = Agent(number: 1, name: "A1", projectID: project.id, registered: now.addingTimeInterval(-500))
+        var agent = Agent(number: 1, projectID: project.id, registered: now.addingTimeInterval(-500))
         agent.lastSeen = now.addingTimeInterval(-10)
         var task = FactoryTask(projectID: project.id, title: "on it", state: .inProgress, rank: 0)
         task.agentID = agent.id
@@ -471,7 +471,7 @@ import Testing
     /// Who holds a resource reads as the agent's name, the same name the cards show.
     @Test func whoHoldsAResourceReadsAsItsName() {
         let phone = Resource(name: "iPhone", slots: 1, maxLease: 7200)
-        var holder = Agent(number: 12, name: "A12", projectID: nil, registered: now)
+        var holder = Agent(number: 12, projectID: nil, registered: now)
         holder.lastSeen = now
         let lease = Lease(resourceID: phone.id, agentID: holder.id, why: "a capture run", since: now, until: now.addingTimeInterval(600))
         let d = Dashboard.make(snapshot: Snapshot(agents: [holder], resources: [phone], leases: [lease]), now: now)
