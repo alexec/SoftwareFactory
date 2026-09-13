@@ -15,12 +15,19 @@ presets; `DEBUG` gates the Developer section of Settings.
 ```bash
 xcodegen generate
 xcodebuild -project SoftwareFactory.xcodeproj -scheme SoftwareFactory -configuration Debug \
-  -destination "platform=macOS" -derivedDataPath build/DerivedData build
+  -destination "platform=macOS" -derivedDataPath build/DerivedData \
+  -skipPackagePluginValidation -skipMacroValidation build
 xcodebuild -project SoftwareFactory.xcodeproj -scheme SoftwareFactoryPhone -configuration Debug \
-  -destination "generic/platform=iOS Simulator" -derivedDataPath build/DerivedData build
+  -destination "generic/platform=iOS Simulator" -derivedDataPath build/DerivedData \
+  -skipPackagePluginValidation -skipMacroValidation build
 cd Packages/SoftwareFactoryKit && swift test
 open "build/DerivedData/Build/Products/Debug/Software Factory.app"
 ```
+
+`-skipPackagePluginValidation -skipMacroValidation` are required, not optional: SwiftTerm
+ships the `SwiftTermBuildInfoPlugin` build tool plugin, and without them Xcode fails the
+build outright with "Validate plug-in SwiftTermBuildInfoPlugin in package swiftterm"
+because nothing can answer its trust prompt from the command line.
 
 Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately before
 `xcodebuild`; if the Mac is claimed, do not build.
@@ -30,12 +37,14 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
 - `Packages/SoftwareFactoryKit` (Foundation only, `swift test`):
   - `Models`: `Project` (id is the folder path), `FactoryTask` (a task; named so because
     `Task` is Swift's; feature/bug/chore; backlog/inProgress/done/parked/blocked with a
-    `Blocker` saying what on; rank), `Agent` (name,
+    `Blocker` saying what on; rank), `Agent` (name, self-description,
     project, task, lastSeen, deregistered; working within 10 min of any call it made),
+    `AgentMessage` (recipient, from, subject, contents, sent; private to the recipient's
+    MCP inbox),
     `Escalation` (options, one recommended; `decide(_:by:)` records a `Decision`),
     `Resource` (slots, maxLease), `Lease` (one slot, one agent, until; `isActive(now:)`).
   - `FileStore`: one JSON file per record under `projects/`, `tasks/`, `escalations/`,
-    `agents/`, `resources/`, `leases/`; atomic writes; unreadable files skipped. Tasks
+    `agents/`, `messages/`, `resources/`, `leases/`; atomic writes; unreadable files skipped. Tasks
     carry a short `number` (T509), unique across projects, given on add and settable
     (`task_number`); any `task_id` argument also takes "T509" or "509". A removed
     project (`project_remove`, or the header's Remove project) keeps its record with
@@ -54,15 +63,9 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     contains the other, a couple of characters apart, or a shared word of five letters:
     "NightSleeper" is a slip for "Sleeper Train"). `resolveProject` refuses a near miss
     unless `project_add` is called with `force`.
-  - `Agent.provider` ("claude-code" only), `Agent.url` (a claude://code/continue link to
-    its session; the Floor's Open), `Agent.nudged` (set by Nudge on the Floor or `POST
-    /api/nudge`; handed over once by `steering(after:)`, which also asks an agent that
-    has not given provider and url to register again with its `agent_id`, in place).
-  - `Steering`: notes from the person on a project (`Project.notes`); `handOver` gives
-    the text to append to a reply and clears them, remembering ids in `sentNoteIDs`;
-    `notesToAdopt` merges a copy from iCloud. `MCPServer.steering(after:)` runs after
-    every successful tool call and picks the project from agent_id, task_id, or the
-    `project` of task_next and task_list. `POST /api/note` adds one.
+  - `LaunchPrompt`: the words an agent starts with, in one place: `project` (work the
+    backlog), `task` (one task, already in its name, to claim), `free` (no project,
+    the person says what for).
   - `Escalations.visible`: open questions in full, the newest three answered ones.
   - `Sweep.goneAgents`: an hour of silence and an agent is marked gone, leases released.
   - `Sweep.unblocked`: a task blocked on a decision now made, or a task now done, goes
@@ -77,10 +80,6 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     table; `call(_:_:)` does the work. `escalation_await` polls the store.
   - `HTTP`: `HTTPRequest.parse`, `HTTPResponse.serialized`, and `HTTPRouter` (`POST /mcp`,
     `GET /api/snapshot`, `POST /api/decide`, `POST /api/task`; browser origins refused).
-    `POST /api/stop_hook` is Claude Code's own Stop hook contract: given a
-    `session_id`, `StopHook.check` finds the agent whose `url` carries it and, once per
-    agent, blocks the stop with the top of its project's backlog as the reason, so an
-    idle session hears about new work without waiting on its next MCP call.
   - `SampleData`: records for a Debug build to look at.
   - `Shared/CloudSync.swift` (both apps, not the package): the CloudKit calls. Container
     `iCloud.com.alexecollins.softwarefactory`, private database, query on `updated`.
@@ -113,7 +112,10 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     that held new work on swap or memory are out for the moment, to be refined),
     `Notifier` (one banner per new question, options as actions; `Presence.isAtTheMac`), `FloorView` (stat tiles, Needs
     you as a horizontal strip, On the floor), `EscalationCard`, `ProjectView` (backlog
-    with add, drag reorder, state menu, notes under rows), `IntroSheet`, `SettingsView`
+    with add, drag reorder, state menu, notes under rows, and Start an agent on this,
+    on a backlog row: it reserves an agent, puts the task in its name and starts it on
+    that one task), `AgentLauncher` and `StartAgent` (reserve, assign, launch: one path
+    for every launch), `IntroSheet`, `SettingsView`
     (How it works on top, the register command, iCloud, the store, Developer in DEBUG).
 - `Phone/Sources`: `PhoneModel` (NWBrowser finds the factory; `FactoryClient` speaks the
   package's HTTP over the Bonjour endpoint, polling `/api/snapshot` every 3 s and posting
