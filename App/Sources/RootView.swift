@@ -22,7 +22,7 @@ struct RootView: View {
                     .tag(Destination.floor)
                 Label("Resources", systemImage: "lock.rectangle.stack")
                     .tag(Destination.resources)
-                Label("Factory", systemImage: "building.2")
+                Label("Capacity", systemImage: "building.2")
                     .tag(Destination.factory)
 
                 // Alex, 12 Sep 2026: the count in the heading.
@@ -86,7 +86,7 @@ struct RootView: View {
     private var title: String {
         if case .project(let id) = selection, let p = model.project(for: id) { return p.name }
         if case .resources = selection { return "Resources" }
-        if case .factory = selection { return "Factory" }
+        if case .factory = selection { return "Capacity" }
         return "Software Factory"
     }
 }
