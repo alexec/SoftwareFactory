@@ -3,7 +3,6 @@ import SoftwareFactoryKit
 
 enum Destination: Hashable {
     case floor
-    case resources
     case factory
     case project(String)
 }
@@ -20,8 +19,6 @@ struct RootView: View {
             List(selection: $selection) {
                 Label("Floor", systemImage: "square.grid.2x2")
                     .tag(Destination.floor)
-                Label("Resources", systemImage: "lock.rectangle.stack")
-                    .tag(Destination.resources)
                 Label("Capacity", systemImage: "building.2")
                     .tag(Destination.factory)
 
@@ -63,8 +60,6 @@ struct RootView: View {
             }
         } detail: {
             switch selection {
-            case .resources:
-                ResourcesView()
             case .factory:
                 FactoryView()
             case .project(let id):
@@ -85,7 +80,6 @@ struct RootView: View {
 
     private var title: String {
         if case .project(let id) = selection, let p = model.project(for: id) { return p.name }
-        if case .resources = selection { return "Resources" }
         if case .factory = selection { return "Capacity" }
         return "Software Factory"
     }

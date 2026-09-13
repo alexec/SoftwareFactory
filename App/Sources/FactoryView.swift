@@ -1,25 +1,32 @@
 import SwiftUI
 import SoftwareFactoryKit
 
-/// The factory is this Mac. What it is under, the verdict agents get when they ask, and
-/// the throttle only you set.
+/// The factory's capacity: this Mac's own resources and anything else only so many agents
+/// can share at once (a phone, a simulator, the browser), side by side as one set of cards.
 struct FactoryView: View {
     @Environment(AppModel.self) private var model
+
+    @State private var newName = ""
+    @State private var newSlots = 1
+    @State private var newMinutes = 60
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 if let r = model.machine {
                     capacity(r)
-                    gauges(r)
-                    DisclosureGroup("Throttle") {
-                        throttle
-                            .padding(.top, 8)
+                    GlassEffectContainer(spacing: 16) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 16)], spacing: 16) {
+                            systemCards(r)
+                            ForEach(model.dashboard.resources) { status in
+                                LeasableResourceCard(status: status)
+                            }
+                        }
                     }
-                    .font(.title2.weight(.semibold))
                 } else {
                     EmptyLine(text: "Reading the Mac.", symbol: "gauge.with.dots.needle.33percent")
                 }
+                addResource
             }
             .padding(24)
             .frame(maxWidth: 900, alignment: .leading)
@@ -27,21 +34,18 @@ struct FactoryView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func gauges(_ r: MachineReading) -> some View {
+    @ViewBuilder
+    private func systemCards(_ r: MachineReading) -> some View {
         let t = model.throttle
-        return GlassEffectContainer(spacing: 16) {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 16)], spacing: 16) {
-                Gauge(title: "Memory free", value: r.memoryFreeFraction, text: percent(r.memoryFreeFraction),
-                      tint: r.memoryFreeFraction <= t.memoryFloor ? .red : (r.memoryFreeFraction <= t.memoryFloor * 2 ? .orange : .green))
-                Gauge(title: "Swap", value: r.swapFraction, text: "\(gigabytes(r.swapUsed)) of \(gigabytes(r.swapTotal))",
-                      tint: r.swapFraction >= t.swapCeiling ? .red : (r.swapFraction >= t.swapCeiling * 0.66 ? .orange : .green))
-                Gauge(title: "Load", value: min(1, r.loadPerCore), text: "\(String(format: "%.1f", r.load)) on \(r.cores) cores",
-                      tint: r.loadPerCore >= 0.9 ? .orange : .green)
-                Gauge(title: "Compiles", value: t.compileSlots == 0 ? 0 : Double(r.compiles) / Double(t.compileSlots),
-                      text: "\(r.compiles) of \(t.compileSlots) · \(r.simulators) \(r.simulators == 1 ? "simulator" : "simulators")",
-                      tint: r.compiles >= t.compileSlots ? .orange : .green)
-            }
-        }
+        ResourceCard(title: "Memory free", value: r.memoryFreeFraction, text: percent(r.memoryFreeFraction),
+              tint: r.memoryFreeFraction <= t.memoryFloor ? .red : (r.memoryFreeFraction <= t.memoryFloor * 2 ? .orange : .green))
+        ResourceCard(title: "Swap", value: r.swapFraction, text: "\(gigabytes(r.swapUsed)) of \(gigabytes(r.swapTotal))",
+              tint: r.swapFraction >= t.swapCeiling ? .red : (r.swapFraction >= t.swapCeiling * 0.66 ? .orange : .green))
+        ResourceCard(title: "Load", value: min(1, r.loadPerCore), text: "\(String(format: "%.1f", r.load)) on \(r.cores) cores",
+              tint: r.loadPerCore >= 0.9 ? .orange : .green)
+        ResourceCard(title: "Compiles", value: t.compileSlots == 0 ? 0 : Double(r.compiles) / Double(t.compileSlots),
+              text: "\(r.compiles) of \(t.compileSlots) · \(r.simulators) \(r.simulators == 1 ? "simulator" : "simulators")",
+              tint: r.compiles >= t.compileSlots ? .orange : .green)
     }
 
     /// What could start now. The verdict and the reason, then the room in numbers.
@@ -91,24 +95,26 @@ struct FactoryView: View {
         .glassEffect(.regular.tint(color(v).opacity(0.10)), in: .rect(cornerRadius: 18))
     }
 
-    private var throttle: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Throttle")
-                .font(.title2.weight(.semibold))
-            Text("Only you set these. An agent that asks gets yes, wait or no from them.")
-                .foregroundStyle(.secondary)
-            Slider(value: Binding(get: { Double(model.throttle.compileSlots) }, set: { v in model.setThrottle { $0.compileSlots = Int(v) } }),
-                   in: 1...12, step: 1) { Text("Compiles at once: \(model.throttle.compileSlots)") }
-            Slider(value: Binding(get: { Double(model.throttle.simulatorSlots) }, set: { v in model.setThrottle { $0.simulatorSlots = Int(v) } }),
-                   in: 1...8, step: 1) { Text("Simulators at once: \(model.throttle.simulatorSlots)") }
-            Slider(value: Binding(get: { model.throttle.swapCeiling }, set: { v in model.setThrottle { $0.swapCeiling = v } }),
-                   in: 0.3...0.95, step: 0.05) { Text("Hold new work when swap is above \(percent(model.throttle.swapCeiling))") }
-            Slider(value: Binding(get: { model.throttle.memoryFloor }, set: { v in model.setThrottle { $0.memoryFloor = v } }),
-                   in: 0.05...0.4, step: 0.05) { Text("Hold new work when memory free is below \(percent(model.throttle.memoryFloor))") }
+    private var addResource: some View {
+        HStack(spacing: 10) {
+            TextField("Add a resource", text: $newName)
+                .textFieldStyle(.plain)
+                .onSubmit(addResourceNow)
+            Stepper("\(newSlots) \(newSlots == 1 ? "slot" : "slots")", value: $newSlots, in: 1...32)
+                .fixedSize()
+            Stepper("up to \(newMinutes) min", value: $newMinutes, in: 5...720, step: 5)
+                .fixedSize()
+            Button("Add", action: addResourceNow)
+                .buttonStyle(.glass)
+                .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
         }
         .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
         .glassEffect(.regular, in: .rect(cornerRadius: 18))
+    }
+
+    private func addResourceNow() {
+        model.addResource(name: newName, slots: newSlots, maxMinutes: newMinutes)
+        newName = ""
     }
 
     private func word(_ v: Capacity.Verdict) -> String {
@@ -155,7 +161,24 @@ private struct Room: View {
     }
 }
 
-private struct Gauge: View {
+/// The colored utilization line every resource card shares, system or leasable alike.
+private struct UtilizationBar: View {
+    var value: Double
+    var tint: Color
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.quaternary)
+                Capsule().fill(tint).frame(width: max(0, min(1, value)) * geo.size.width)
+            }
+        }
+        .frame(height: 8)
+    }
+}
+
+/// A reading on the Mac itself: a name, a number, and how full it is.
+private struct ResourceCard: View {
     var title: String
     var value: Double
     var text: String
@@ -168,13 +191,53 @@ private struct Gauge: View {
                 Spacer()
                 Text(text).font(.callout.weight(.medium)).monospacedDigit()
             }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(.quaternary)
-                    Capsule().fill(tint).frame(width: max(0, min(1, value)) * geo.size.width)
+            UtilizationBar(value: value, tint: tint)
+        }
+        .padding(16)
+        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+    }
+}
+
+/// A resource you added, leased by agents: the same card as a system reading, its
+/// utilization the slots in use, with who is holding it underneath.
+private struct LeasableResourceCard: View {
+    @Environment(AppModel.self) private var model
+    var status: Dashboard.ResourceStatus
+
+    private var value: Double {
+        status.resource.slots == 0 ? 0 : Double(status.held.count) / Double(status.resource.slots)
+    }
+    private var tint: Color {
+        if status.held.contains(where: \.isOverdue) { return .red }
+        return status.held.isEmpty ? .green : .orange
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(status.resource.name).font(.callout).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(status.free) of \(status.resource.slots) free").font(.callout.weight(.medium)).monospacedDigit()
+                Menu {
+                    Button("Remove", role: .destructive) { model.remove(status.resource) }
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .menuStyle(.button)
+                .buttonStyle(.borderless)
+                .fixedSize()
+            }
+            UtilizationBar(value: value, tint: tint)
+            ForEach(status.held) { holding in
+                HStack(spacing: 6) {
+                    Circle().fill(holding.isOverdue ? Color.red : Color.orange).frame(width: 6, height: 6)
+                    Text(holding.agentName).font(.caption.weight(.medium))
+                    Spacer()
+                    Button("Take back") { model.end(holding.lease) }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
                 }
             }
-            .frame(height: 8)
         }
         .padding(16)
         .glassEffect(.regular, in: .rect(cornerRadius: 18))

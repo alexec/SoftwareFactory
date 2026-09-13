@@ -104,13 +104,15 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     through `persist`; starts `FactoryServer` on port 4747.
   - `FactoryServer`: `NWListener` on the port, one queue per connection (a request can
     block for minutes), Bonjour `_softwarefactory._tcp`.
-  - `RootView` (split view: Floor, Resources, Factory, projects), `FactoryView` (gauges,
-    verdict, what each kind of work would be told, the throttle sliders), `Notifier`
-    (one banner per new question, options as actions; `Presence.isAtTheMac`), `FloorView` (stat tiles, Needs
+  - `RootView` (split view: Floor, Capacity, projects), `FactoryView` (the Capacity page:
+    verdict and what each kind of work would be told, then one grid of cards for the
+    Mac's own readings and every leasable resource alike, each a name and a colored
+    utilization line; add a resource, see who holds it, Take back. The throttle sliders
+    that held new work on swap or memory are out for the moment, to be refined),
+    `Notifier` (one banner per new question, options as actions; `Presence.isAtTheMac`), `FloorView` (stat tiles, Needs
     you as a horizontal strip, On the floor), `EscalationCard`, `ProjectView` (backlog
-    with add, drag reorder, state menu, notes under rows), `ResourcesView` (add, slots,
-    holders, Take back), `IntroSheet`, `SettingsView` (How it works on top, the register
-    command, iCloud, the store, Developer in DEBUG).
+    with add, drag reorder, state menu, notes under rows), `IntroSheet`, `SettingsView`
+    (How it works on top, the register command, iCloud, the store, Developer in DEBUG).
 - `Phone/Sources`: `PhoneModel` (NWBrowser finds the factory; `FactoryClient` speaks the
   package's HTTP over the Bonjour endpoint, polling `/api/snapshot` every 3 s and posting
   `/api/decide` and `/api/task`; when the factory is out of reach it reads, decides and
