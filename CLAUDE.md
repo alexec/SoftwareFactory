@@ -94,6 +94,8 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     send. Tapping (Mac) or holding (phone) the microphone records; a popover above it
     shows the words live and throbs while listening; letting go settles them into the
     field. The primer and the denied and unavailable states live in the popover too.
+    Not called from either add row as of 12 Sep 2026 (T91: it did not work well); the
+    Mac and phone add rows are a plain `TextField` until it is revisited.
   - `Shared/TaskTitler.swift`: the first line of what was typed or dictated is the
     title; anything after it is the note. No model involved any more — Apple
     Intelligence's title extraction was unreliable enough to be worse than the words
@@ -119,7 +121,7 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
   adds tasks through `CloudSync` instead, so adding works anywhere iCloud does, not only
   on the Mac's own network; a task added that way carries no number until the Mac adopts
   it and gives it one), `PhoneRootView` (network primer in place, Needs you, On the floor),
-  `PhoneBacklogView` (a project's backlog; type or hold the mic to add, anywhere iCloud reaches),
+  `PhoneBacklogView` (a project's backlog; type to add, anywhere iCloud reaches),
   `PhoneIntroSheet`, `PhoneSettingsView`, `PhoneNotifier` (a banner per new question
   with the options as actions; announced ids kept in UserDefaults so a cold launch by a
   push still knows what is news; the primer on the floor asks), `PhoneAppDelegate`

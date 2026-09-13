@@ -61,7 +61,9 @@ struct PhoneBacklogView: View {
             }
             if model.source == .factory || model.cloud.isReady {
                 Section("Add") {
-                    DictateField(placeholder: "Add a task", text: $newTitle, dictation: model.dictation) {
+                    HStack(alignment: .top, spacing: 8) {
+                        TextField("Add a task", text: $newTitle, axis: .vertical)
+                            .lineLimit(1...5)
                         Menu {
                             Button("Add to the top") { add(at: .top) }
                             Button("Add to the bottom") { add(at: .bottom) }

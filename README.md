@@ -115,10 +115,9 @@ Notifications are next.
   view, and only the newest three stay; the store keeps them all.
 - **A banner at the Mac.** Each new question is a macOS notification with the options as
   its actions. Asked for once, in place, before the system alert.
-- **Dictate a task.** The add row shows a mic when it is empty; hold it on the phone, or
-  click it on the Mac, and say the task. The words show live above the button as you
-  speak, recognised on the device; nothing is recorded. Let go (or click again) and they
-  settle into the field, ready to add. The first line becomes the title; anything after
-  it is the note.
+- **Adding a task.** Type it into the add row; the first line becomes the title,
+  anything after it is the note. Dictating one is out for the moment (`DictateField`
+  is still in `Shared/`, not called from either add row); it did not work well and
+  will come back once that is fixed.
 
 MIT licence. © 2026 Alex Collins.
