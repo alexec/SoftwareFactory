@@ -155,6 +155,12 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     it. Otherwise it reads the list, likes the look of something, claims that too, and
     the task it forgot sits in progress with nobody on it until a person notices. Not
     when it asked for its own list with `mine`: it is looking at them. (T270.)
+  - `WorkInProgress`: what is being worked on right now, on every project, for the In
+    progress page. The floor says who is here and a project says what is left; this is
+    the question between them, which used to mean opening every project in turn. A task
+    in progress with nobody on it comes first and is marked, because an agent took it and
+    then stopped or was deleted and nothing has come back to it since; that is also what
+    the sidebar badge counts. (T287.)
   - `Escalations.visible`: open questions in full, the newest three answered ones.
   - `Artifacts`: live (not removed) documents on a project, newest first; `notes` and
     `statusReports` split them by kind, and `statusReport(by:on:)` is the one an agent
@@ -278,7 +284,8 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     the agents on the floor as cards; `AgentCard` is one of them and `AgentView` is the
     page behind it; an agent that is not stopped has Nudge, its messages and terminal),
     `AgentsView` (every agent registered, and the button that starts a
-    new one), `StatusReportsView` (what everybody is doing on one page, off
+    new one), `InProgressView` (every task underway on every project, the ones nobody is
+    on at the top; the project name opens its backlog, T287), `StatusReportsView` (what everybody is doing on one page, off
     `StatusReportBoard`; an agent that has filed nothing says so rather than being left
     out, and a report past its hour has its age in orange. T288), `FactoryView` (the Capacity page: verdict and what each kind of work would
     be told, then one grid of cards for the Mac's own readings and every leasable

@@ -5,6 +5,7 @@ enum Destination: Hashable {
     case dashboard
     case agents
     case statusReports
+    case inProgress
     case factory
     case noProject
     case project(String)
@@ -37,6 +38,11 @@ struct RootView: View {
                 Label("Status reports", systemImage: "text.document")
                     .badge(StatusReportBoard.quiet(in: model.snapshot, now: .now))
                     .tag(Destination.statusReports)
+                // The badge counts what is in progress with nobody on it, for the same
+                // reason the one above counts the quiet agents. (T287.)
+                Label("In progress", systemImage: "hammer")
+                    .badge(WorkInProgress.orphaned(in: model.snapshot))
+                    .tag(Destination.inProgress)
                 HStack {
                     Label("Capacity", systemImage: "building.2")
                     Spacer()
@@ -116,6 +122,8 @@ struct RootView: View {
                 AgentsView { showAgent($0) }
             case .statusReports:
                 StatusReportsView { showAgent($0) }
+            case .inProgress:
+                InProgressView { selection = .project($0) }
             case .factory:
                 FactoryView()
             case .noProject:
@@ -252,6 +260,7 @@ struct RootView: View {
         if case .project(let id) = selection, let p = model.project(for: id) { return p.name }
         if case .agents = selection { return "Agents" }
         if case .statusReports = selection { return "Status reports" }
+        if case .inProgress = selection { return "In progress" }
         if case .factory = selection { return "Capacity" }
         if case .noProject = selection { return "No project" }
         if case .agent(let id) = selection,
