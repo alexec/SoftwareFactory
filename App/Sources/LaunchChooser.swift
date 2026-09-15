@@ -101,9 +101,6 @@ struct LaunchChooser<Extra: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Nothing is said to a shell, so the words are not offered for one.
-            if agent.isCodingAgent { extra }
-
             Picker("Agent", selection: $agent) {
                 ForEach(LaunchAgent.allCases) { Text($0.title).tag($0) }
             }
@@ -112,6 +109,13 @@ struct LaunchChooser<Extra: View>: View {
             .accessibilityLabel("Agent")
 
             AgentHelp(agent: agent)
+
+            // Last thing before the button, because it is the last thing you decide and
+            // it changes with the agent above it: pick what to start, see what it needs,
+            // then read the words it will go with and press Launch. It used to sit at the
+            // top, where you read it before you had chosen who was going to get it.
+            // Nothing is said to a shell, so the words are not offered for one. (T273.)
+            if agent.isCodingAgent { extra }
 
             HStack {
                 Spacer()
