@@ -205,10 +205,14 @@ public struct MCPServer: Sendable {
         (escalation_raise) with two or more \
         options and your recommendation, then wait for the answer (escalation_await). Put a document \
         on the project (artifact_add) when they should read it here; a link on the question is filed \
-        as an artifact too. Say how your work is going: file a status report (artifact_add with kind \
-        "status report") saying what you have done, what you are on and what is in your way. You keep \
-        one, and filing another replaces it, so it is always the current picture rather than a log. \
-        The factory asks you for one when an hour has gone by without it. If a task is \
+        as an artifact too. A document is a kilobyte, about two paragraphs: say the short version \
+        here and put the long one in the repo with a link to it. Say how your work is going: file a \
+        status report (artifact_add with kind "status report") and keep it short: what you have \
+        finished since your last one, what you decided, and anything you are waiting on Alex for. \
+        Check where your questions stand while you are there (escalation_list) and raise any new ones \
+        you need answered. You keep one report, and filing another replaces it, so it is always the \
+        current picture rather than a log. The factory asks you for one when an hour has gone by \
+        without it. If a task is \
         blocked (waiting on a decision, another task, or a person), mark it (task_block) and pick up \
         the next one (task_next); the factory unblocks it when the wait is over. Before using \
         anything shared (a phone, a simulator, the browser, the whole Mac) lease it (resource_lease) and \
@@ -939,7 +943,7 @@ public struct MCPServer: Sendable {
             } catch Artifacts.AddError.emptyTitle {
                 throw ToolError(message: "title is required")
             } catch Artifacts.AddError.bodyTooLong {
-                throw ToolError(message: "body is too long; keep it under \(Artifacts.maxBody) characters")
+                throw ToolError(message: Artifacts.tooLongMessage)
             } catch Artifacts.AddError.atCap {
                 throw ToolError(message: Artifacts.fullMessage)
             } catch Artifacts.AddError.badLink {
@@ -1005,7 +1009,7 @@ public struct MCPServer: Sendable {
             } catch Artifacts.SetError.emptyTitle {
                 throw ToolError(message: "title is required")
             } catch Artifacts.SetError.bodyTooLong {
-                throw ToolError(message: "body is too long; keep it under \(Artifacts.maxBody) characters")
+                throw ToolError(message: Artifacts.tooLongMessage)
             } catch Artifacts.SetError.badLink {
                 throw ToolError(message: "link must be an http or https URL")
             } catch Artifacts.SetError.titleTaken {

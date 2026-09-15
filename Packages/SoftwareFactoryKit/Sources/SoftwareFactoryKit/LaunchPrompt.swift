@@ -59,10 +59,21 @@ public enum LaunchPrompt {
     /// What the factory asks an agent that has not said how its work is going for an
     /// hour. It goes in as a message like any other, so it is typed into the terminal
     /// and the agent answers by filing its status report. (T262.)
+    ///
+    /// The ask names what to put in it, because "how is it going" gets an essay from one
+    /// agent and a shrug from the next. Four things: what is finished, what you decided,
+    /// what you are waiting on Alex for, and where your questions stand. The last one is
+    /// there because an agent that raised a question two hours ago and never looked at
+    /// the answer is stuck without knowing it. (T274, Alex, 15 Sep 2026.)
     public static func statusReport(on project: Project) -> String {
         "Please provide a status report on your recent work on project \"\(project.name)\"."
-            + " File it with artifact_add, kind \"status report\": it replaces the one you"
-            + " filed before, so there is only ever the current one."
+            + " Keep it short: what you have finished since your last report, what you decided,"
+            + " and anything you are waiting on Alex for."
+            + " Check where your questions stand while you are there (escalation_list), and raise"
+            + " any new ones you need answered."
+            + " File it with artifact_add, kind \"status report\", under \(Artifacts.maxBody)"
+            + " characters. It replaces the one you filed before, so there is only ever the"
+            + " current one."
     }
 
     /// The subject the ask goes under, and what the person sees in the Messages panel.

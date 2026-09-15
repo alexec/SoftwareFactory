@@ -88,7 +88,16 @@ public struct Artifact: Codable, Identifiable, Hashable, Sendable {
 public enum Artifacts {
     public static let cap = 20
     public static let fullMessage = "Twenty documents is the cap for a project. Status reports do not count."
-    public static let maxBody = 100_000
+    /// Said in one place, because a refusal that only says no leaves the agent to guess.
+    public static var tooLongMessage: String {
+        "That is too long. A document is \(maxBody) characters, about two paragraphs:"
+            + " say the short version here, and put the long one in the repo with a link to it."
+    }
+    /// How long a document may be. A kilobyte, which is a couple of paragraphs: an
+    /// artifact is something the person reads on a card while deciding what to do, not
+    /// somewhere to put a transcript. An agent with more to say than this has a file in
+    /// the repo to put it in and a link to file instead. (T274, Alex, 15 Sep 2026.)
+    public static let maxBody = 1024
 
     public static func live(for projectID: String, in artifacts: [Artifact]) -> [Artifact] {
         artifacts

@@ -29,6 +29,20 @@ import Testing
         #expect(wanted.agents.first?.statusAskedAt == now)
     }
 
+    /// "How is it going" gets an essay from one agent and a shrug from the next, so the
+    /// ask names the four things it wants. (T274.)
+    @Test func theAskNamesWhatToPutInTheReport() {
+        let words = LaunchPrompt.statusReport(on: Project(name: "Software Factory"))
+        #expect(words.contains("Software Factory"))
+        #expect(words.contains("finished since your last report"))
+        #expect(words.contains("what you decided"))
+        #expect(words.contains("waiting on Alex"))
+        #expect(words.contains("escalation_list"))
+        #expect(words.contains("raise"))
+        #expect(words.contains("\(Artifacts.maxBody) characters"))
+        #expect(!words.contains("\u{2014}"))
+    }
+
     @Test func anAgentThatJustStartedIsLeftAlone() {
         let project = Project(name: "Software Factory")
         let a = agent(on: project, registered: now - 60)

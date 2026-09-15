@@ -161,6 +161,25 @@ import Testing
         #expect(Artifacts.produced(by: agent, in: [report, note]).map(\.id) == [report.id, note.id])
     }
 
+    /// A kilobyte, and the refusal says what to do instead rather than only saying no.
+    /// (T274.)
+    @Test func aDocumentIsAKilobyteAndTheRefusalSaysWhereTheLongOneGoes() throws {
+        #expect(Artifacts.maxBody == 1024)
+        let atTheLimit = String(repeating: "x", count: Artifacts.maxBody)
+        #expect(try Artifacts.add(projectID: "/p", title: "Just fits", body: atTheLimit, in: [])
+            .artifact.body.count == Artifacts.maxBody)
+        #expect(throws: Artifacts.AddError.bodyTooLong) {
+            try Artifacts.add(projectID: "/p", title: "One over", body: atTheLimit + "x", in: [])
+        }
+        // The same limit on the way through artifact_set, not only on the way in.
+        let existing = try Artifacts.add(projectID: "/p", title: "Plan", body: "v1", in: []).artifact
+        #expect(throws: Artifacts.SetError.bodyTooLong) {
+            try Artifacts.set(existing, body: atTheLimit + "x", in: [existing])
+        }
+        #expect(Artifacts.tooLongMessage.contains("1024"))
+        #expect(Artifacts.tooLongMessage.contains("link"))
+    }
+
     @Test func titleFromALinkDropsWwwAndKeepsThePath() {
         #expect(Artifacts.title(fromLink: "https://www.example.com/brief.md") == "example.com/brief.md")
         #expect(Artifacts.title(fromLink: "https://example.com/") == "example.com")
