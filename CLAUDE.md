@@ -226,14 +226,18 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     appending all happen on the pipe's own serial queue, through one file handle: two
     handles on one file each keep their own offset, and that is how every prompt went
     missing from the log once. (T373.)
-  - `Agent.runtime` is `terminal`, `acp` or `external`, and both ways of running an agent
-    work at once. Checked against the real binaries on 16 Sep 2026, which is the only way
-    to know, because the ACP registry lists all four of ours and a registry is not a
-    release note: Claude Code speaks it through
-    `npm i -g @agentclientprotocol/claude-agent-acp` and reports `loadSession` and
-    `resume`; Copilot speaks it, `copilot --acp`; Grok emits ACP updates in headless mode
-    but has no server mode; Cursor has neither. So those two keep their terminals, and a
-    plain Terminal always will. `Agent.acpSession` is the id the agent minted for itself:
+  - `Agent.runtime` is `terminal`, `acp` or `external`. **All four coding agents speak
+    ACP**, each behind a different word: `claude-agent-acp` (Zed's adapter, the one you
+    install, `npm i -g @agentclientprotocol/claude-agent-acp`), `copilot --acp`,
+    `grok agent stdio`, `cursor-agent acp`. Grok is the most forthcoming, reporting
+    `resume` as well as `loadSession`; Cursor has `loadSession` only, so Start replays
+    rather than picking up where it left off, which still closes T206 because it is the
+    protocol answering rather than `--continue` and a guess about which chat was this
+    agent's. Only Terminal does not speak it, because a shell has nothing to say.
+    Checked by handshaking with each binary rather than by grepping its help, which found
+    two of them and missed the two that put it behind a subcommand. (Alex, 16 Sep 2026.)
+    The terminal path stays for the Terminal kind, for the Runs in Terminal setting, and
+    for the sandboxed build, which is a separate feature from how an agent runs. `Agent.acpSession` is the id the agent minted for itself:
     `Agent.id` is still the record's key and still what the agent signs its factory calls
     with, which is two ids rather than one, the compromise Cursor already forced in T206.
   - Three things keep the rest of the floor from having to know ACP from tmux. The

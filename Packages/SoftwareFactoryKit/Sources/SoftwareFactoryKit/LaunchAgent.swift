@@ -137,9 +137,9 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
         case .copilot:
             "GitHub's CLI. It speaks ACP, so the factory hands it the tools as it starts and its page shows the work it is doing rather than a terminal."
         case .grok:
-            "xAI's CLI. It runs in a terminal on its page, and the factory registers itself with it once through a plugin."
+            "xAI's CLI. It speaks ACP, so the factory hands it the tools as it starts and its page shows the work it is doing rather than a terminal."
         case .cursor:
-            "Cursor's CLI. It runs in a terminal on its page, and makes its own chat id, so the factory's session reaches it in the words it starts with."
+            "Cursor's CLI. It speaks ACP, so the factory hands it the tools as it starts and its page shows the work it is doing rather than a terminal."
         case .terminal:
             "Not an agent. A shell in the project's folder that shows up on the floor like anything else, so you can run something by hand and watch it from the same page as the rest. Nothing is started in it and nothing is said to it."
         }
@@ -159,20 +159,25 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
     /// What to run to get this agent as an ACP server on a pipe, or nil for one that
     /// does not speak it and has to keep its terminal.
     ///
-    /// Checked against the real binaries on 16 Sep 2026, which is the only way to know:
-    /// the ACP registry lists all four of ours and the registry is not a release note.
-    /// Claude Code and Copilot answer; Grok has the update format but no server mode,
-    /// and Cursor has neither. Those two keep the terminal, which is why `Agent.runtime`
-    /// exists rather than a flag day. (T373.)
+    /// Checked against the real binaries on 16 Sep 2026, and then checked again: all four
+    /// answer, each behind a different word. Reading `--help` for "acp" found two of them
+    /// and missed the two that put it behind a subcommand, which is a good argument for
+    /// handshaking with a thing rather than grepping its help. (T373, Alex, 16 Sep 2026.)
     public var acp: ACPLaunch? {
         switch self {
         // Zed's adapter on the Claude Agent SDK, `npm i -g @agentclientprotocol/claude-agent-acp`.
-        // It reports loadSession and resume, so Start is the protocol's own rather than
-        // `--resume` and a guess.
         case .claudeCode: ACPLaunch(command: "claude-agent-acp", arguments: [])
-        // First-party, and the one every shape in `ACP` was read off.
+        // First-party, and the one every shape in `ACP` was first read off.
         case .copilot: ACPLaunch(command: "copilot", arguments: ["--acp"])
-        case .grok, .cursor, .terminal: nil
+        // First-party, and the most forthcoming of the four: it reports resume as well as
+        // loadSession, and hands back its models and its commands at initialize.
+        case .grok: ACPLaunch(command: "grok", arguments: ["agent", "stdio"])
+        // First-party. loadSession but no resume, so Start replays rather than picking up
+        // where it left off, which is still the protocol answering instead of `--continue`
+        // and a guess about which chat was this agent's. (T206 is finally closed.)
+        case .cursor: ACPLaunch(command: "cursor-agent", arguments: ["acp"])
+        // Not an agent. A shell has nothing to say to anybody.
+        case .terminal: nil
         }
     }
 
@@ -181,9 +186,10 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
     /// How to get the ACP half of this agent, for the agent that has not got it.
     public var acpInstall: String? {
         switch self {
+        // The only one of the four that speaks it through something you install
+        // separately. The rest have it built in.
         case .claudeCode: "npm install -g @agentclientprotocol/claude-agent-acp"
-        case .copilot: nil
-        case .grok, .cursor, .terminal: nil
+        case .copilot, .grok, .cursor, .terminal: nil
         }
     }
 

@@ -188,17 +188,29 @@ struct LaunchAgentHelpTests {
         for agent in LaunchAgent.allCases where agent.speaksACP {
             #expect(agent.setUp.contains { $0.what.contains("Register") } == false)
         }
-        // Claude Code speaks it through an adapter you install; Copilot has it built in
-        // and so has nothing to set up beyond Copilot itself.
+        // Claude Code speaks it through an adapter you install; the other three have it
+        // built in and so have nothing to set up beyond themselves.
         #expect(LaunchAgent.claudeCode.setUp.map(\.what) == ["The part that speaks ACP"])
-        #expect(LaunchAgent.copilot.setUp.isEmpty)
+        for agent in [LaunchAgent.copilot, .grok, .cursor] {
+            #expect(agent.setUp.isEmpty, "\(agent.title) should need nothing extra.")
+        }
     }
 
-    @Test func oneThatDoesNotSpeakItStillRegistersTheOldWay() {
-        for agent in LaunchAgent.allCases where !agent.speaksACP && agent.isCodingAgent {
-            #expect(agent.setUp.contains { $0.what.contains("Register") })
+    @Test func everyAgentSpeaksItAndOnlyTheShellDoesNot() {
+        // Checked by handshaking with each binary rather than by grepping its help,
+        // which found two and missed the two that put it behind a subcommand.
+        for agent in LaunchAgent.allCases where agent.isCodingAgent {
+            #expect(agent.speaksACP, "\(agent.title) has to speak ACP.")
             #expect(agent.installURL != nil)
         }
+        #expect(LaunchAgent.terminal.speaksACP == false)
+    }
+
+    @Test func eachOneIsStartedByItsOwnWord() {
+        #expect(LaunchAgent.claudeCode.acp?.arguments == [])
+        #expect(LaunchAgent.copilot.acp?.arguments == ["--acp"])
+        #expect(LaunchAgent.grok.acp?.arguments == ["agent", "stdio"])
+        #expect(LaunchAgent.cursor.acp?.arguments == ["acp"])
     }
 
     @Test func everyStepHasSomethingToRun() {

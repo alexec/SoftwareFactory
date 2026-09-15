@@ -196,12 +196,18 @@ connection. The durable thing was going to be a file either way, and a socket th
 streams is a second copy of the truth that can disagree with the first. It also meant the
 app needed no new refresh machinery: it already polls.
 
-**Two of the four speak ACP, not four.** Step one was to check the binaries rather than
-the registry, and it paid for itself. Claude Code does, through
-`@agentclientprotocol/claude-agent-acp`, and it reports `loadSession` and `resume`, so
-Start is the protocol's own. Copilot does, `copilot --acp`. Grok emits ACP updates as a
-headless output format but has no server mode. Cursor has neither. So `Agent.runtime` is
-not a crossover measure to be removed later: it is the shape of the thing.
+**All four speak ACP, each behind a different word.** Step one was to check the binaries
+rather than the registry. I did that and got it half wrong, because I grepped `--help`
+for "acp": that finds `copilot --acp` and misses `grok agent stdio` and `cursor-agent acp`,
+which put it behind a subcommand. Handshaking with the thing is the check; reading its
+help is not. Claude Code goes through Zed's adapter,
+`npm i -g @agentclientprotocol/claude-agent-acp`, and is the only one needing anything
+installed. Grok reports `resume` as well as `loadSession`; Cursor has `loadSession` only,
+so Start replays rather than resumes, which still closes T206.
+
+So no agent has to be removed, and `Agent.runtime` is not carrying two kinds of coding
+agent after all. What it carries is the Terminal kind, which is a shell rather than an
+agent and a separate feature from how agents run.
 
 Three bugs, all found by running it rather than by reading it, and all three the kind that
 a test written from the documentation would have missed:
@@ -221,6 +227,10 @@ fixtures are real recordings for that reason.
 **Still to do.** The launch from the app's own buttons is wired and compiles but has not
 been clicked: everything below it is proven live, including start, prompt, permission,
 stop and a resume that came back knowing a number it was told before it was stopped.
-Grok and Cursor keep their terminals until they ship a server mode. The permission
-setting in stage 5 is not built: the daemon takes the recommended option after ten
-minutes and every agent still launches allowed, which is today's behaviour.
+The permission setting in stage 5 is not built: the daemon takes the recommended option
+after ten minutes and every agent still launches allowed, which is today's behaviour.
+
+Grok and Cursor are wired and were driven through the daemon, and both got as far as
+answering: Grok said "Grok Build usage balance exhausted" and Cursor said "Upgrade your
+plan to continue". That is an account, not an integration, but it does mean neither has
+done a piece of work here yet.

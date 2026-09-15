@@ -223,11 +223,12 @@ struct AgentFloorTests {
         _ = root
     }
 
-    @Test func anAgentThatDoesNotSpeakItSaysSo() async throws {
+    @Test func aShellIsNotAnAgentAndTheDaemonSaysSo() async throws {
         let (store, root) = try Self.scratch()
         let quiet = AgentFloor(store: store, launch: { _ in nil })
-        let reply = await quiet.handle(AgentDaemon.Request(op: .start, agent: UUID(), kind: "grok", cwd: root.path))
-        #expect(reply.error == "Grok does not speak ACP.")
+        let reply = await quiet.handle(AgentDaemon.Request(op: .start, agent: UUID(),
+                                                           kind: "terminal", cwd: root.path))
+        #expect(reply.error == "Terminal does not speak ACP.")
     }
 
     @Test func theLineTheCardShowsComesOffTheWire() async throws {
