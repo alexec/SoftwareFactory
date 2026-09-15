@@ -25,9 +25,13 @@ The exception is reading. "What is A61 doing" changes nothing, so it just answer
 
 ## What you say, and what happens
 
-Hold the microphone, or hold a hotkey anywhere in the Mac app. The words appear as you
-say them, the way `DictateField` already shows them. Let go, and the factory shows you
-what it understood:
+Press the microphone. It listens until you close it, and what you say lands in one row
+you can correct while it is still listening: the project on top, the task in the middle,
+Add at the bottom. A pause does not end anything. It is where the factory reads the
+project out of what you have said so far. (T363 changed this: it used to listen on one
+screen and propose on another, so a second thought after the pause had nowhere to go.)
+
+The row it fills in:
 
 > **Sleeper Train** · Add · Fix &nbsp;&nbsp; *Fix the timetable scrolling past the end*
 > &nbsp;&nbsp; [Confirm] [Throw away]

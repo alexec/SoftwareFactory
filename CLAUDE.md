@@ -283,6 +283,20 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
   - `Shared/CloudSync.swift` (both apps, not the package): the CloudKit calls. Container
     `iCloud.com.alexecollins.softwarefactory`, private database, query on `updated`.
   - `Shared/Dictation.swift`: `SpeechAnalyzer` on device; `volatile` and `settled` text.
+  - `Spoken` and `App/Sources/DictateButton.swift`: talking to the factory. One view, not
+    two: the project on the top line, the task in the middle, Add at the bottom, and it
+    goes on listening the whole time. It used to listen on one screen and show what it
+    understood on another, so you spoke to a box that was about to be replaced and a
+    second thought after the pause had nowhere to go, because it had stopped listening.
+    Words land in the task as they settle (`Spoken.appended`, added rather than written
+    over, so a correction typed into the field survives the next sentence); the words
+    still being recognised sit under the field in grey rather than in it, because a field
+    that rewrites itself under the cursor cannot be corrected. A pause files nothing: it
+    is where `Spoken.settling` reads the project out of what was said and takes the naming
+    of it out of the task. Naming a project wins over the page you are looking at, on the
+    second sentence as much as the first. Add files it and keeps listening, so the next
+    thing you say is the next task. `Spoken.filing` splits it: first sentence the title,
+    the whole of it in the note, a line break winning over a full stop. (T363, was T340.)
   - A project is a name (`Project(name:)`, id a UUID string; projects from before 12 Sep
     2026 keep their folder path as id). `resolveProject` takes a name, an id, or an old
     folder path (meaning the folder's name). Putting a project on hold stops the agents

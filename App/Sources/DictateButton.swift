@@ -1,38 +1,52 @@
 import SwiftUI
 import SoftwareFactoryKit
 
-/// Talking to the factory. A microphone in the corner of the window: hold it, say what
-/// you want, and what it understood comes back as a row you can correct.
+/// Talking to the factory. A microphone in the corner of the window: press it, say what
+/// you want, and the words land in a task you can correct before it is filed.
 ///
-/// It proposes and it never files. What was heard lands in a field with the project
-/// beside it, and nothing happens until Add. A misheard project name that quietly filed
-/// work on the wrong backlog would be worse than typing it, because you would not find
-/// out for a week. (T340, and design/dictation.md.)
+/// One view rather than two. It listened on one screen and showed what it understood on
+/// another, so you said your piece to a box that was about to be replaced, and a second
+/// thought after the pause had nowhere to go: it had already stopped listening. Now the
+/// project is the top line, the task is the middle, Add is the bottom, and it goes on
+/// listening the whole time. A pause is not the end of anything; it is where the factory
+/// looks at what you have said so far and works out which project you meant.
+/// (T363, was T340, and design/dictation.md.)
+///
+/// It still proposes and never files. Nothing happens until Add. A misheard project name
+/// that quietly filed work on the wrong backlog would be worse than typing it, because
+/// you would not find out for a week.
 struct DictateButton: View {
     @Environment(AppModel.self) private var model
-    /// The project whose page is open, which is the project when the words name none.
+    /// The project whose page is open, which is the project until the words name one.
     var lookingAt: String?
 
     @State private var showing = false
-    @State private var heard: Spoken.Heard?
-    @State private var title = ""
+    /// The task, as it will be filed. Dictation lands in it; you can edit it where it is.
+    @State private var words = ""
     @State private var projectID: String?
-    /// Everything said, kept for the task's note.
-    @State private var said = ""
+    /// How much of what the recogniser has settled is already in `words`, so the next
+    /// burst is appended rather than the lot being written over your corrections.
+    @State private var folded = ""
     /// When the words last changed, so a pause can be told from a thought. (T351.)
     @State private var lastWords = Date()
+    /// What `words` held when the last pause was read, so one pause is read once.
+    @State private var lastSettled = ""
     @State private var watching: Task<Void, Never>?
 
-    /// How long a silence has to be before it is the end of what you were saying. Short
-    /// enough not to sit there afterwards, long enough to think mid-sentence.
+    /// How long a silence has to be before the factory takes a look at what was said.
+    /// Long enough to think mid-sentence.
     private static let pause: TimeInterval = 2.5
 
     private var dictation: Dictation { model.dictation }
 
+    private var canAdd: Bool {
+        projectID != nil && !words.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     var body: some View {
         Button {
             showing = true
-            start()
+            begin()
         } label: {
             Image(systemName: dictation.isListening ? "waveform" : "mic.fill")
                 .font(.title3)
@@ -51,12 +65,9 @@ struct DictateButton: View {
     private var sheet: some View {
         VStack(alignment: .leading, spacing: 12) {
             switch dictation.standing {
-            case .allowed:
-                if dictation.isListening { listening } else { proposal }
-            case .notAsked:
-                primer
-            case .denied:
-                denied
+            case .allowed: row
+            case .notAsked: primer
+            case .denied: denied
             case .unavailable(let why):
                 Text(why).foregroundStyle(.secondary)
             }
@@ -65,73 +76,62 @@ struct DictateButton: View {
         .frame(width: 380)
     }
 
-    /// The words as they are recognised, so you can see it is hearing you.
-    ///
-    /// Room for a paragraph, not a line: a dictated task is often three sentences, and a
-    /// box that scrolls after one of them hides what you have already said just as you
-    /// are deciding whether to keep going. It scrolls once it is past that. (T351.)
-    private var listening: some View {
+    /// The whole of it: which project, what to add, and Add.
+    private var row: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Text("Listening")
-                    .font(.headline)
-                Spacer(minLength: 0)
-                Text("Stops on its own when you do")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-            ScrollView {
-                Text(dictation.text.isEmpty ? "Say what to add, and which project it is for." : dictation.text)
-                    .font(.callout)
-                    .foregroundStyle(dictation.text.isEmpty ? .secondary : .primary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
-            .frame(height: 180)
-            HStack {
-                Spacer()
-                Button("Stop", systemImage: "stop.fill") { stop() }
-                    .buttonStyle(.glassProminent)
-            }
-        }
-        // A pause is the end of what you were saying. Nothing is filed by it: it stops
-        // the listening and shows you the row, which is where it was always going.
-        .onChange(of: dictation.text) { lastWords = .now }
-    }
-
-    /// What it understood, as something to correct rather than something that happened.
-    @ViewBuilder
-    private var proposal: some View {
-        if let heard {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(heard.projectWasSaid ? "You said which project" : "On the project you are looking at")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                 Picker("Project", selection: $projectID) {
-                    Text("Pick a project").tag(String?.none)
+                    Text("Which project?").tag(String?.none)
                     ForEach(model.snapshot.projects, id: \.id) { project in
                         Text(project.name).tag(String?.some(project.id))
                     }
                 }
                 .labelsHidden()
-                TextField("What to add", text: $title, axis: .vertical)
-                    .lineLimit(2...8)
+                Spacer(minLength: 0)
+                listeningMark
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                TextField("Say what to add, and which project it is for", text: $words, axis: .vertical)
+                    .lineLimit(3...10)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(add)
-                HStack {
-                    Button("Say it again", systemImage: "mic") { start() }
-                        .buttonStyle(.glass)
-                    Spacer()
-                    Button("Throw away") { showing = false }
-                    Button("Add", action: add)
-                        .buttonStyle(.glassProminent)
-                        .disabled(projectID == nil || title.trimmingCharacters(in: .whitespaces).isEmpty)
+                // The words still being recognised, under the field rather than in it:
+                // they are revised as you speak, and a field that rewrites itself under
+                // the cursor cannot be corrected. They join the task when they settle.
+                if !dictation.volatile.isEmpty {
+                    Text(dictation.volatile)
+                        .font(.callout)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(2)
+                        .transition(.opacity)
                 }
             }
-        } else {
-            Text("Nothing was heard.")
-                .foregroundStyle(.secondary)
+
+            HStack {
+                Button("Clear") { words = ""; folded = dictation.settled }
+                    .buttonStyle(.glass)
+                    .disabled(words.isEmpty)
+                Spacer()
+                Button("Add", action: add)
+                    .buttonStyle(.glassProminent)
+                    .disabled(!canAdd)
+                    .keyboardShortcut(.defaultAction)
+            }
         }
+        // Every burst of recognised words is added to the task rather than replacing it,
+        // so a correction typed into the field survives the next sentence.
+        .onChange(of: dictation.settled) { fold() }
+        .onChange(of: words) { lastWords = .now }
+    }
+
+    private var listeningMark: some View {
+        Label(dictation.isListening ? "Listening" : "Not listening",
+              systemImage: dictation.isListening ? "waveform" : "mic.slash")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .labelStyle(.titleAndIcon)
+            .symbolEffect(.variableColor, isActive: dictation.isListening)
     }
 
     /// The app's own words before the system alert, the way every other permission here
@@ -146,7 +146,7 @@ struct DictateButton: View {
                 .foregroundStyle(.secondary)
             HStack {
                 Spacer()
-                Button("Continue") { Task { await dictation.ask(); start() } }
+                Button("Continue") { Task { await dictation.ask(); begin() } }
                     .buttonStyle(.glassProminent)
             }
         }
@@ -171,36 +171,62 @@ struct DictateButton: View {
         }
     }
 
-    private func start() {
-        heard = nil
+    /// Opens on the project you are looking at, so the top line is right before you have
+    /// said anything. Naming another one in the words still wins.
+    private func begin() {
+        words = ""
+        folded = ""
+        lastSettled = ""
+        projectID = lookingAt
         lastWords = .now
-        Task { await dictation.start() }
+        listen()
+    }
+
+    /// Listening, and staying listening. The recogniser ends its own session now and
+    /// then, and an agent who has stopped mid-thought to think should not find the
+    /// microphone off when they start again. (T363.)
+    private func listen() {
         watching?.cancel()
         watching = Task { @MainActor in
+            await dictation.start()
+            folded = dictation.settled
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(300))
-                guard dictation.isListening else { continue }
-                // Only after something has been said: opening it and thinking for three
-                // seconds should not close it again.
-                guard !dictation.text.isEmpty,
-                      Date().timeIntervalSince(lastWords) >= Self.pause else { continue }
-                stop()
-                return
+                guard showing else { return }
+                if !dictation.isListening {
+                    await dictation.start()
+                    folded = dictation.settled
+                    continue
+                }
+                readThePause()
             }
         }
     }
 
-    private func stop() {
-        watching?.cancel()
-        watching = nil
-        Task {
-            await dictation.stop()
-            let understood = Spoken.heard(dictation.text, projects: model.snapshot.projects,
-                                          lookingAt: lookingAt)
-            heard = understood
-            title = understood.title
-            said = understood.said
-            projectID = understood.projectID
+    /// A burst of settled words, added to the task.
+    private func fold() {
+        let settled = dictation.settled
+        guard settled != folded else { return }
+        // A restarted session begins its transcript again, so anything that is not more
+        // of what we have already folded is new words rather than a revision.
+        let addition = settled.hasPrefix(folded) ? String(settled.dropFirst(folded.count)) : settled
+        folded = settled
+        words = Spoken.appended(words, addition)
+    }
+
+    /// A silence, and what the factory makes of what was said. It never files and it
+    /// never stops the listening: it reads the project out of the words, takes the naming
+    /// of it out of the task, and leaves everything else where it is.
+    private func readThePause() {
+        guard Date().timeIntervalSince(lastWords) >= Self.pause else { return }
+        let said = words.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !said.isEmpty, said != lastSettled else { return }
+        lastSettled = said
+        let settled = Spoken.settling(words, projects: model.snapshot.projects, project: projectID)
+        projectID = settled.projectID
+        if settled.projectWasSaid {
+            words = settled.words
+            lastSettled = words.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 
@@ -209,22 +235,25 @@ struct DictateButton: View {
         watching?.cancel()
         watching = nil
         if dictation.isListening { Task { await dictation.stop() } }
-        heard = nil
-        title = ""
-        said = ""
+        words = ""
+        folded = ""
+        lastSettled = ""
         projectID = nil
     }
 
+    /// Files it, and goes on listening: the next thing you say is the next task, on the
+    /// same project until you name another.
     private func add() {
-        guard let projectID, !title.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        // The first word is the work, exactly as it is when the row is typed. Saying
-        // "fix the timetable" files a Fix without dictation knowing about work at all.
-        let parsed = FactoryTask.Work.reading(title: title)
-        // Everything said goes in the note, whole, unless the title already is all of
-        // it. If the split into a title was wrong the words are still there to read.
-        let whole = said.trimmingCharacters(in: .whitespacesAndNewlines)
-        let note = (whole.isEmpty || whole == title) ? "" : "Said: \(whole)"
-        model.addTask(to: projectID, title: parsed.title, note: note, work: parsed.work)
-        showing = false
+        guard let projectID, canAdd else { return }
+        // The first sentence is the title and the whole of it goes in the note, so a bad
+        // split loses nothing. The first word is the work, exactly as it is when the row
+        // is typed: saying "fix the timetable" files a Fix without dictation knowing
+        // about work at all.
+        let filed = Spoken.filing(words)
+        let parsed = FactoryTask.Work.reading(title: filed.title)
+        model.addTask(to: projectID, title: parsed.title, note: filed.note, work: parsed.work)
+        words = ""
+        folded = dictation.settled
+        lastSettled = ""
     }
 }

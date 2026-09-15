@@ -68,6 +68,78 @@ public enum Spoken {
             title: firstSentence(of: left), said: left)
     }
 
+    /// What is on the row while somebody is still talking: the project, and the words of
+    /// the task so far.
+    ///
+    /// One row rather than two screens. It used to listen on one view and then show what
+    /// it understood on another, so you said your piece to a box that was about to be
+    /// replaced, and a second thought after the pause had nowhere to go. Now the words
+    /// land in the task as they are recognised and you can correct them where they are.
+    /// (T363, Alex, 16 Sep 2026.)
+    public struct Settling: Equatable, Sendable {
+        public var projectID: String?
+        /// Whether that project came out of the words just now, rather than being the one
+        /// already on the row. Only then have the words changed underneath.
+        public var projectWasSaid: Bool
+        public var words: String
+
+        public init(projectID: String?, projectWasSaid: Bool, words: String) {
+            self.projectID = projectID
+            self.projectWasSaid = projectWasSaid
+            self.words = words
+        }
+    }
+
+    /// What a pause settles. Naming a project wins whenever it happens, whatever was on
+    /// the row before: saying the name is the one way to put work somewhere other than
+    /// the page you are looking at, and it has to work on the second sentence as well as
+    /// the first. Naming none leaves everything alone, so a pause mid-thought costs
+    /// nothing.
+    ///
+    /// The naming comes out of the words only where `named` would take it out: at one
+    /// end, or a sentence that is only the name. In the middle of a sentence it routes
+    /// the task and the words are left as they were said.
+    public static func settling(
+        _ words: String, projects: [Project], project: String?
+    ) -> Settling {
+        let live = projects.filter { $0.removed == nil }
+        guard let found = named(in: words, among: live) else {
+            return Settling(projectID: project, projectWasSaid: false, words: words)
+        }
+        return Settling(projectID: found.project.id, projectWasSaid: true, words: found.rest)
+    }
+
+    /// Words landing in the task as they are recognised. Joined with a space, and nothing
+    /// is rewritten: not the capital at the front, not the stop at the end. Every edit to
+    /// what somebody said is a chance to make a transcription worse. (T351, T363.)
+    public static func appended(_ words: String, _ addition: String) -> String {
+        let more = addition.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !more.isEmpty else { return words }
+        guard !words.isEmpty else { return more }
+        // A field the person left with a space or a newline at the end keeps it: they
+        // were making room for what comes next.
+        return words.last?.isWhitespace == true ? words + more : words + " " + more
+    }
+
+    /// What gets filed, out of the words on the row: a title, and the rest as a note.
+    ///
+    /// A task is a line and a dictated thought is often several, so the first sentence is
+    /// the title and the whole of what was said goes underneath it. Nothing is lost if
+    /// that split is wrong. A line break wins over a full stop, because a person who put
+    /// one there was saying where the title ends. (T363.)
+    public static func filing(_ words: String) -> (title: String, note: String) {
+        let said = words.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !said.isEmpty else { return ("", "") }
+        if let newline = said.firstIndex(where: \.isNewline) {
+            let title = String(said[..<newline]).trimmingCharacters(in: .whitespaces)
+            let rest = String(said[said.index(after: newline)...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return (title, rest)
+        }
+        let title = firstSentence(of: said)
+        return (title, title == said ? "" : "Said: \(said)")
+    }
+
     /// The project a sentence names, and what is left once the naming is out of the way.
     ///
     /// The words themselves are not touched beyond that. They were: openers came off the
@@ -122,7 +194,7 @@ public enum Spoken {
     /// The title: the first sentence of what is left. Nothing is rewritten; the whole of
     /// what was said goes in the note, so if this split is wrong the words are still
     /// there. A task is a line and a dictated thought is often several.
-    static func firstSentence(of text: String) -> String {
+    public static func firstSentence(of text: String) -> String {
         sentences(text).first ?? text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
