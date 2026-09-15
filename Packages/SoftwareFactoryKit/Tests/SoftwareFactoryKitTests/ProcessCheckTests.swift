@@ -216,3 +216,37 @@ import Testing
         #expect(one.isRegistered && !one.isConnected)
     }
 }
+
+@Suite("The floor in two groups")
+struct FloorGroupingTests {
+    /// The sidebar shows the agents that are running apart from the ones that have
+    /// stopped. Both stay on the floor: a stopped agent can be started back up. (T268.)
+    @Test func runningAndStoppedAreSeparate() {
+        let now = Date()
+        var running = Agent(id: UUID(), number: 1, projectID: nil, registered: now)
+        running.lastSeen = now
+        running.isConnected = true
+        running.pid = ProcessInfo.processInfo.processIdentifier
+        running.pidStartedAt = ProcessCheck.startTime(of: running.pid!)
+
+        var stopped = Agent(id: UUID(), number: 2, projectID: nil, registered: now)
+        stopped.lastSeen = now
+        stopped.pid = 0x7FFF_FFFE
+        stopped.pidStartedAt = now
+
+        let dashboard = Dashboard.make(snapshot: Snapshot(agents: [running, stopped]), now: now)
+        #expect(dashboard.agents.count == 2)
+        #expect(dashboard.runningAgents.map(\.agent.number) == [1])
+        #expect(dashboard.stoppedAgents.map(\.agent.number) == [2])
+    }
+
+    /// Nothing is lost between the two groups, whatever an agent is doing.
+    @Test func everyAgentIsInOneGroup() {
+        let now = Date()
+        var quiet = Agent(id: UUID(), number: 3, projectID: nil, registered: now)
+        quiet.lastSeen = now.addingTimeInterval(-700)
+        let dashboard = Dashboard.make(snapshot: Snapshot(agents: [quiet]), now: now)
+        #expect(dashboard.runningAgents.count + dashboard.stoppedAgents.count == dashboard.agents.count)
+        #expect(dashboard.stoppedAgents.isEmpty)
+    }
+}

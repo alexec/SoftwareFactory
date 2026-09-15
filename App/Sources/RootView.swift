@@ -54,9 +54,17 @@ struct RootView: View {
 
                 // The floor, in a group of its own. (Alex, 14 Sep 2026: back out of the
                 // projects, two lines each.)
-                if !model.dashboard.agents.isEmpty {
-                    Section("Agents (\(model.dashboard.agents.count))") {
-                        ForEach(model.dashboard.agents) { agentRow($0) }
+                // Running and stopped are kept apart: a stopped agent is not gone, it
+                // is waiting to be started back up, and among the working ones it read
+                // as one of them. (T268.)
+                if !model.dashboard.runningAgents.isEmpty {
+                    Section("Agents (\(model.dashboard.runningAgents.count))") {
+                        ForEach(model.dashboard.runningAgents) { agentRow($0) }
+                    }
+                }
+                if !model.dashboard.stoppedAgents.isEmpty {
+                    Section("Stopped (\(model.dashboard.stoppedAgents.count))") {
+                        ForEach(model.dashboard.stoppedAgents) { agentRow($0) }
                     }
                 }
 

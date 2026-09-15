@@ -8,6 +8,8 @@ struct DashboardView: View {
     @Environment(AppModel.self) private var model
     @State private var addingProject = false
     @State private var newProjectName = ""
+    /// How much room the Needs you strip has, so a question can take it. (T263.)
+    @State private var stripWidth: CGFloat = 0
 
     var body: some View {
         ScrollView {
@@ -69,15 +71,35 @@ struct DashboardView: View {
                     HStack(alignment: .top, spacing: 14) {
                         ForEach(open) { escalation in
                             EscalationCard(escalation: escalation, showsProject: true)
-                                .frame(width: 380)
+                                .frame(width: cardWidth(for: open.count))
                         }
                     }
                     .padding(.vertical, 4)
                 }
                 .scrollIndicators(.automatic)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { stripWidth = $0 }
             }
         }
     }
+
+    /// How wide one question gets. A question is words with options under them, and at
+    /// 380 points they were a column of two-word lines with the wrapping doing the
+    /// reading for you. The cards take the window instead: one question has the whole
+    /// strip, and several share it, down to a width worth reading at and never wider
+    /// than a paragraph should be. (T263.)
+    private func cardWidth(for count: Int) -> CGFloat {
+        guard stripWidth > 0 else { return Self.narrowestCard }
+        let fits = max(1, Int(stripWidth / Self.narrowestCard))
+        let columns = CGFloat(max(1, min(count, fits)))
+        let gaps = 14 * (columns - 1)
+        let each = (stripWidth - gaps) / columns
+        return min(max(each, Self.narrowestCard), Self.widestCard)
+    }
+
+    /// Narrower than this and the options wrap into a stack of fragments; wider and a
+    /// line of the question is too long to take in at a glance.
+    private static let narrowestCard: CGFloat = 420
+    private static let widestCard: CGFloat = 760
 
     /// A project is a name: an app, a role that spans apps, a piece of tooling.
     private var newProject: some View {
@@ -470,17 +492,41 @@ struct AgentView: View {
         }
     }
 
+    /// The facts that are nowhere else on the page. The project it is on and when it
+    /// last said anything are across the top, so they are not said again down here:
+    /// what is left is what is running, since when, and the session id to give it in a
+    /// tool call. (Alex, 15 Sep 2026.)
     private var details: some View {
         AgentPanel("Details") {
-            LabeledContent("Project", value: status.project?.name ?? "No project")
-                .lineLimit(1)
-            LabeledContent("Registered") {
+            LabeledContent("Running", value: running)
+            LabeledContent("Since") {
                 Text(agent.registered, format: .dateTime.month().day().hour().minute())
             }
-            LabeledContent(agent.isConnected ? "Connected" : "Disconnected") {
-                Text(agent.lastSeen, format: .relative(presentation: .named))
+            LabeledContent("Connection", value: agent.isConnected ? "Open" : "Closed")
+                .help("Whether its MCP session is connected right now. Closed between calls is normal.")
+            if let pid = agent.pid {
+                LabeledContent("Process", value: String(pid))
+                    .help("The process the factory watches, and stops when you stop it")
             }
+            LabeledContent("Session") {
+                Text(agent.id.uuidString)
+                    .font(.callout.monospaced())
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+            .help("Its session id: the name it goes by in a tool call, and the terminal session it runs in")
         }
+        .lineLimit(1)
+    }
+
+    /// What the factory started in the terminal, or the plain truth that it did not
+    /// start this one at all.
+    private var running: String {
+        guard let kind = agent.launchedWith.flatMap(LaunchAgent.init(rawValue:)) else {
+            return "Registered from elsewhere"
+        }
+        return kind.title
     }
 
     private var assignedTasks: some View {

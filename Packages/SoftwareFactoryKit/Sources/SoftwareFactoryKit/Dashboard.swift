@@ -120,6 +120,15 @@ public struct Dashboard: Sendable, Equatable {
 
     public var workingCount: Int { projects.filter { $0.activity == .working }.count }
 
+    /// The floor in two groups: the ones with a process still running, and the ones
+    /// whose process has gone. A stopped agent stays on the list, because it can be
+    /// started back up in the conversation it was having; it simply stops sitting
+    /// among the agents that are working. Order inside each group is the order they
+    /// registered, the same as `agents`. (T268.)
+    public var runningAgents: [AgentStatus] { agents.filter { $0.activity != .stopped } }
+
+    public var stoppedAgents: [AgentStatus] { agents.filter { $0.activity == .stopped } }
+
     /// Agents on no project: the sidebar's No project row. (T176, 13 Sep 2026.)
     public var unassignedAgents: [AgentStatus] { agents.filter { $0.project == nil } }
 
