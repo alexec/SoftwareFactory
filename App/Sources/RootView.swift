@@ -52,6 +52,41 @@ struct RootView: View {
                 }
                 .tag(Destination.noProject)
 
+                // The floor in the sidebar: an agent is one click from wherever you
+                // are, not only from the Agents page. Its dot says how it is, and it
+                // rings here too. (T222.)
+                if !model.dashboard.agents.isEmpty {
+                    Section("Agents (\(model.dashboard.agents.count))") {
+                        ForEach(model.dashboard.agents) { status in
+                            HStack(spacing: 6) {
+                                AgentActivityDot(activity: status.activity)
+                                Text(status.agent.label)
+                                    .foregroundStyle(status.activity == .stopped ? .secondary : .primary)
+                                if let project = status.project {
+                                    Text(project.name)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                }
+                                Spacer()
+                                if status.agent.bel { AgentBellMark() }
+                                if status.waitingOnYou {
+                                    Image(systemName: "questionmark.circle.fill")
+                                        .foregroundStyle(.orange)
+                                        .help("It asked you something")
+                                }
+                            }
+                            .tag(Destination.agent(status.id))
+                            .contextMenu {
+                                Button("Delete \(status.agent.label)", role: .destructive) {
+                                    model.delete(status.agent)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Alex, 12 Sep 2026: the count in the heading.
                 Section("Projects (\(model.dashboard.projects.count))") {
                     ForEach(model.dashboard.projects) { status in

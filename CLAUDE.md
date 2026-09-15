@@ -175,8 +175,9 @@ before you mark the task done. Build the phone too when the change is in it.
     through `persist`; starts `FactoryServer` on port 4747.
   - `FactoryServer`: `NWListener` on the port, one queue per connection (a request can
     block for minutes), Bonjour `_softwarefactory._tcp`.
-  - `RootView` (split view: Dashboard, Agents, Capacity, No project, then the projects; a page per
-    agent hangs off it), `DashboardView` (stat tiles, Needs you as a horizontal strip,
+  - `RootView` (split view: Dashboard, Agents, Capacity, No project, then the agents on
+    the floor, then the projects; a page per agent hangs off it, and an agent's sidebar
+    row opens it from anywhere, dot, project, bell and all, T222), `DashboardView` (stat tiles, Needs you as a horizontal strip,
     the agents on the floor as cards; `AgentCard` is one of them and `AgentView` is the
     page behind it; an agent that is not stopped has Nudge, inbox and terminal),
     `AgentsView` (every agent registered, and the button that starts a
