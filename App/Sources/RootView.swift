@@ -112,7 +112,12 @@ struct RootView: View {
             // An agent that has left, or one just deleted, lands you back on Agents.
             case .agent(let id):
                 if let agent = model.dashboard.agents.first(where: { $0.id == id }) {
+                    // One page per agent, not one page that changes agents: the terminal
+                    // inside it is a view SwiftUI holds on to, and going straight from
+                    // one agent's row to another's left the old one on screen.
+                    // (Alex, 14 Sep 2026.)
                     AgentView(status: agent, back: goBack)
+                        .id(agent.id)
                 } else {
                     AgentsView { showAgent($0) }
                 }

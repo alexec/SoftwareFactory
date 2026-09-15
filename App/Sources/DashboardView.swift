@@ -306,7 +306,13 @@ struct AgentView: View {
             Divider()
             if let session = terminals.session(for: agent) {
                 HStack(spacing: 0) {
+                    // The pane is the terminal it was made with: a representable hands
+                    // its view over once and SwiftUI keeps it. Going from one agent to
+                    // the next in the sidebar reuses this position, so without an
+                    // identity of its own the pane went on showing the agent you came
+                    // from. (Alex, 14 Sep 2026.)
                     TerminalPanel(terminal: session.terminal)
+                        .id(session.id)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     if showsDetails {
                         Divider()
