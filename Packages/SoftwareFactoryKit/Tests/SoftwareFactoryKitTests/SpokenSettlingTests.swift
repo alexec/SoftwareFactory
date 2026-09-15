@@ -82,3 +82,41 @@ import Testing
         #expect(Spoken.filing("   \n ").title.isEmpty)
     }
 }
+
+/// Dictation lands in the field itself, and the tail still being revised is replaced
+/// rather than repeated. (T372.)
+@Suite struct SpokenLiveTests {
+    @Test func theTailIsReplacedAndWhatSettledStays() {
+        var state = Spoken.live(words: "Fix the timetable", tail: "", volatile: "on the")
+        #expect(state.words == "Fix the timetable on the")
+        #expect(state.tail == " on the")
+
+        // The recogniser thinks again about the same few words.
+        state = Spoken.live(words: state.words, tail: state.tail, volatile: "on the sleeper")
+        #expect(state.words == "Fix the timetable on the sleeper")
+        #expect(state.tail == " on the sleeper")
+    }
+
+    @Test func settlingLeavesNothingBehind() {
+        let live = Spoken.live(words: "Fix the timetable", tail: "", volatile: "on the sleeper")
+        // What settles goes in behind the tail, so the tail comes out first.
+        let bare = Spoken.live(words: live.words, tail: live.tail, volatile: "")
+        #expect(bare.words == "Fix the timetable")
+        #expect(bare.tail.isEmpty)
+        #expect(Spoken.appended(bare.words, "on the sleeper train") == "Fix the timetable on the sleeper train")
+    }
+
+    @Test func aCorrectionInFrontOfTheTailSurvivesIt() {
+        let live = Spoken.live(words: "Fix the timetable", tail: "", volatile: "on the")
+        // The person edits what has already settled while the tail is still moving.
+        let edited = live.words.replacingOccurrences(of: "Fix", with: "Code")
+        let next = Spoken.live(words: edited, tail: live.tail, volatile: "on the sleeper")
+        #expect(next.words == "Code the timetable on the sleeper")
+    }
+
+    @Test func anEmptyFieldTakesTheTailWithNoSpaceInFront() {
+        let live = Spoken.live(words: "", tail: "", volatile: "  fix the timetable ")
+        #expect(live.words == "fix the timetable")
+        #expect(live.tail == "fix the timetable")
+    }
+}

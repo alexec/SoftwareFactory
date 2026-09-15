@@ -141,17 +141,6 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
             return (named(token) ?? .implement, title)
         }
 
-        /// Work words whose spelling starts with `prefix`, excluding an exact match.
-        /// Empty prefix is none: the field is not a picker.
-        public static func completions(prefix: String) -> [Work] {
-            let p = prefix.trimmingCharacters(in: .whitespaces)
-            guard !p.isEmpty else { return [] }
-            return allCases.filter {
-                $0.word.lowercased().hasPrefix(p.lowercased())
-                    && $0.word.lowercased() != p.lowercased()
-            }
-        }
-
         /// True when `title` already begins with this word, so the row should not
         /// print it again.
         public func isPrefix(of title: String) -> Bool {

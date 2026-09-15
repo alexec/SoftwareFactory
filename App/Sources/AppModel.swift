@@ -285,6 +285,17 @@ final class AppModel {
         messages(for: agentID).filter { $0.delivered == nil }.sorted { $0.sent < $1.sent }
     }
 
+    /// Documents nobody has opened yet, across every project that is still here. (T373.)
+    var unreadDocuments: Int {
+        Waiting.unreadDocuments(snapshot.artifacts, on: snapshot.projects)
+    }
+
+    /// Messages still waiting to be typed into a terminal, for agents still on the
+    /// floor. (T373.)
+    var messagesWaiting: Int {
+        Waiting.messages(messagesByAgent.values.flatMap { $0 }, to: snapshot.agents)
+    }
+
     /// Throws one message away. The agent has already had it, or was never going to:
     /// either way the copy in the inbox is the person's to clear. (Alex, 14 Sep 2026.)
     func delete(_ message: AgentMessage) {

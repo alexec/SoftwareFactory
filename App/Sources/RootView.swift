@@ -5,7 +5,6 @@ enum Destination: Hashable {
     case dashboard
     case agents
     case statusReports
-    case inProgress
     case factory
     case noProject
     case project(String)
@@ -29,11 +28,6 @@ struct RootView: View {
                     // What the dashboard is for: the questions waiting on you.
                     .badge(model.dashboard.openEscalations.count)
                     .tag(Destination.dashboard)
-                // The badge counts what is in progress with nobody on it, for the same
-                // reason the one above counts the quiet agents. (T287.)
-                Label("In progress", systemImage: "hammer")
-                    .badge(WorkInProgress.orphaned(in: model.snapshot))
-                    .tag(Destination.inProgress)
                 HStack {
                     Label("Capacity", systemImage: "building.2")
                     Spacer()
@@ -110,8 +104,6 @@ struct RootView: View {
                     selectProject: { id in
                         selection = id.map(Destination.project) ?? .noProject
                     })
-            case .inProgress:
-                InProgressView { selection = .project($0) }
             case .factory:
                 FactoryView()
             case .noProject:
@@ -148,6 +140,7 @@ struct RootView: View {
         }
         .safeAreaInset(edge: .top) { writeFailure }
         .navigationTitle(title)
+        .toolbar { ToolbarItem(placement: .principal) { waiting } }
         // What tmux is holding and which agents are actually running, kept fresh off
         // the main thread so the cards can say so without anybody waiting on tmux or ps.
         // A process dies between one look and the next, so this is on a clock rather
@@ -291,7 +284,6 @@ struct RootView: View {
         if case .project(let id) = selection, let p = model.project(for: id) { return p.name }
         if case .agents = selection { return "Agents" }
         if case .statusReports = selection { return "Status reports" }
-        if case .inProgress = selection { return "In progress" }
         if case .factory = selection { return "Capacity" }
         if case .noProject = selection { return "No project" }
         if case .agent(let id) = selection,
@@ -299,6 +291,43 @@ struct RootView: View {
             return agent.agent.label
         }
         return "Taktu: Software Factory"
+    }
+
+    /// What the factory is holding that has not reached you: documents nobody has opened
+    /// and messages still to be typed into a terminal. Beside the factory's own name,
+    /// because neither has a page of its own to say so from: a document lands on a
+    /// project you are not looking at and a message waits for an agent whose terminal is
+    /// off screen. Nothing is drawn when there is nothing waiting, the way the bell is
+    /// nothing until an agent rings it. (T373.)
+    @ViewBuilder
+    private var waiting: some View {
+        let documents = model.unreadDocuments
+        let messages = model.messagesWaiting
+        if documents > 0 || messages > 0 {
+            HStack(spacing: 6) {
+                if documents > 0 {
+                    waitingChip(documents, systemImage: "doc.text",
+                                help: documents == 1 ? "One document nobody has read"
+                                                     : "\(documents) documents nobody has read")
+                }
+                if messages > 0 {
+                    waitingChip(messages, systemImage: "envelope",
+                                help: messages == 1 ? "One message waiting for a terminal"
+                                                    : "\(messages) messages waiting for a terminal")
+                }
+            }
+        }
+    }
+
+    private func waitingChip(_ count: Int, systemImage: String, help: String) -> some View {
+        Label(count.formatted(), systemImage: systemImage)
+            .font(.caption.weight(.semibold))
+            .monospacedDigit()
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(.quaternary, in: .capsule)
+            .help(help)
+            .accessibilityLabel(help)
     }
 
     private var dashboard: some View {

@@ -121,6 +121,26 @@ public enum Spoken {
         return words.last?.isWhitespace == true ? words + more : words + " " + more
     }
 
+    /// The words in the field while somebody is still speaking, and which part of them
+    /// is still being revised.
+    ///
+    /// Dictation goes straight into the field, tail and all. The recogniser revises its
+    /// last few words before it settles them, so the tail it wrote last comes back out
+    /// before the new one goes in; what settled, and anything typed, sit in front of it
+    /// and are never touched. It used to sit in grey under the field, which kept the
+    /// field still but meant reading the sentence in two places, and the half you were
+    /// watching was the half you could not correct. (T372, was T363.)
+    public static func live(
+        words: String, tail: String, volatile: String
+    ) -> (words: String, tail: String) {
+        var kept = words
+        if !tail.isEmpty, kept.hasSuffix(tail) { kept = String(kept.dropLast(tail.count)) }
+        let more = volatile.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !more.isEmpty else { return (kept, "") }
+        let shown = appended(kept, more)
+        return (shown, String(shown.dropFirst(kept.count)))
+    }
+
     /// What gets filed, out of the words on the row: a title, and the rest as a note.
     ///
     /// A task is a line and a dictated thought is often several, so the first sentence is

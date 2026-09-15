@@ -50,12 +50,4 @@ import Testing
         #expect(!FactoryTask.Work.design.isPrefix(of: "Code the add row"))
         #expect(!FactoryTask.Work.design.isPrefix(of: "the sheet"))
     }
-
-    @Test func completionsMatchAPrefixAndStayQuietWhenEmptyOrExact() {
-        #expect(FactoryTask.Work.completions(prefix: "").isEmpty)
-        #expect(FactoryTask.Work.completions(prefix: "D") == [.design])
-        #expect(FactoryTask.Work.completions(prefix: "c") == [.implement])
-        #expect(FactoryTask.Work.completions(prefix: "Code").isEmpty)
-        #expect(FactoryTask.Work.completions(prefix: "in") == [.investigate])
-    }
 }

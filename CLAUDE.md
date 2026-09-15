@@ -190,12 +190,15 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     it. Otherwise it reads the list, likes the look of something, claims that too, and
     the task it forgot sits in progress with nobody on it until a person notices. Not
     when it asked for its own list with `mine`: it is looking at them. (T270.)
-  - `WorkInProgress`: what is being worked on right now, on every project, for the In
-    progress page. The floor says who is here and a project says what is left; this is
-    the question between them, which used to mean opening every project in turn. A task
-    in progress with nobody on it comes first and is marked, because an agent took it and
-    then stopped or was deleted and nothing has come back to it since; that is also what
-    the sidebar badge counts. (T287.)
+  - `Waiting`: what the factory is holding that has not reached anybody, the two counts
+    beside its own name in the title bar: documents nobody has opened
+    (`unreadDocuments`) and messages not yet typed into a terminal (`messages`). Both are
+    quiet by nature, a document landing on a project you are not looking at and a message
+    waiting for an agent whose terminal is off screen, so neither has a page of its own
+    to say so from. Only live things count: a document on a removed project and a message
+    to a deleted agent are never going to reach anybody, and a number that can only go up
+    is one people learn to ignore. Nothing is drawn when nothing is waiting, the way the
+    bell is nothing until an agent rings it. (T373.)
   - `Escalations.visible`: open questions in full, the newest three answered ones.
   - `Artifacts`: live (not removed) documents on a project, newest first; `notes` and
     `statusReports` split them by kind, and `statusReport(by:on:)` is the one an agent
@@ -299,9 +302,12 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     understood on another, so you spoke to a box that was about to be replaced and a
     second thought after the pause had nowhere to go, because it had stopped listening.
     Words land in the task as they settle (`Spoken.appended`, added rather than written
-    over, so a correction typed into the field survives the next sentence); the words
-    still being recognised sit under the field in grey rather than in it, because a field
-    that rewrites itself under the cursor cannot be corrected. A pause files nothing: it
+    over, so a correction typed into the field survives the next sentence), and the words
+    still being recognised land there too: `Spoken.live` puts them on the end as a tail
+    and the next revision replaces that tail rather than saying it twice, so what has
+    settled and anything typed sit in front of it untouched. They used to sit in grey
+    under the field, which kept the field still and meant reading your own sentence in
+    two places, the half you were watching being the half you could not touch (T372). A pause files nothing: it
     is where `Spoken.settling` reads the project out of what was said and takes the naming
     of it out of the task. Naming a project wins over the page you are looking at, on the
     second sentence as much as the first. Add files it and keeps listening, so the next
@@ -344,8 +350,10 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     rather than taking the pane somewhere else. Reading a file needs the sandbox off, so
     the store build says it could not read it rather than showing a blank page. (T311)
   - `Shared/WorkField.swift`: the add and edit field. The first word is the work
-    (Design, Plan, Code, Fix, Review, Investigate, Ship); a matching word is offered
-    while you type it. There is no picker. (T181)
+    (Design, Plan, Code, Fix, Review, Investigate, Ship). There is no picker and nothing
+    is offered while you type: a row of words under the field is something to read and
+    dismiss on every task you add, and the first word is either one of seven or it is
+    Code. `FactoryTask.Work.completions` went with it. (T181, then T366.)
   - `software-factory` executable: `mcp` (the server over stdio), `status`, `tools`,
     `decide`, `quit` (ends the running Mac app by addressing the quit event to its
     process, which is the only way that works from an agent's terminal, T271).
@@ -354,7 +362,7 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     through `persist`; starts `FactoryServer` on port 4747.
   - `FactoryServer`: `NWListener` on the port, one queue per connection (a request can
     block for minutes), Bonjour `_softwarefactory._tcp`.
-  - `RootView` (split view: Dashboard, In progress, Capacity, No project,
+  - `RootView` (split view: Dashboard, Capacity, No project,
     then the projects, each with the agents on it hanging underneath, working ones first and
     stopped ones after (`Dashboard.agents(on:)`, T359). They were a flat Agents section and
     a Stopped one, which meant reading every row's project name to find the two on the
@@ -397,8 +405,11 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     report on one page). Both came off the sidebar in T360 and neither has another way in
     yet, so they are pages with no door: say whether they should go or get one. Starting
     an agent on no project did not go with them, `FreeAgentCard` moved to the No project
-    page, which was the only other place such an agent could have come from, `InProgressView` (every task underway on every project, the ones nobody is
-    on at the top; the project name opens its backlog, T287), `StatusReportsView` (what everybody is doing on one page, off
+    page, which was the only other place such an agent could have come from. The In
+    progress page went further in T365 and is gone altogether, the view, `WorkInProgress`
+    and its tests: the floor says who is here and a project's backlog says what is left,
+    which between them is the whole of what that page answered,
+    `StatusReportsView` (what everybody is doing on one page, off
     `StatusReportBoard`; an agent that has filed nothing says so rather than being left
     out, and a report past its hour has its age in orange. T288), `FactoryView` (the Capacity page: verdict and what each kind of work would
     be told, then one grid of cards for the Mac's own readings and every leasable

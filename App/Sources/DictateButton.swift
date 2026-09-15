@@ -9,8 +9,9 @@ import SoftwareFactoryKit
 /// thought after the pause had nowhere to go: it had already stopped listening. Now the
 /// project is the top line, the task is the middle, Add is the bottom, and it goes on
 /// listening the whole time. A pause is not the end of anything; it is where the factory
-/// looks at what you have said so far and works out which project you meant.
-/// (T363, was T340, and design/dictation.md.)
+/// looks at what you have said so far and works out which project you meant. Every word
+/// goes in the field, the ones still being revised as well, and the next revision
+/// replaces the tail it wrote last. (T372, T363, was T340, and design/dictation.md.)
 ///
 /// It still proposes and never files. Nothing happens until Add. A misheard project name
 /// that quietly filed work on the wrong backlog would be worse than typing it, because
@@ -27,6 +28,9 @@ struct DictateButton: View {
     /// How much of what the recogniser has settled is already in `words`, so the next
     /// burst is appended rather than the lot being written over your corrections.
     @State private var folded = ""
+    /// The end of `words` that the recogniser is still revising, so the next revision
+    /// replaces it instead of being said twice. (T372.)
+    @State private var tail = ""
     /// When the words last changed, so a pause can be told from a thought. (T351.)
     @State private var lastWords = Date()
     /// What `words` held when the last pause was read, so one pause is read once.
@@ -91,25 +95,17 @@ struct DictateButton: View {
                 listeningMark
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                TextField("Say what to add, and which project it is for", text: $words, axis: .vertical)
-                    .lineLimit(3...10)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(add)
-                // The words still being recognised, under the field rather than in it:
-                // they are revised as you speak, and a field that rewrites itself under
-                // the cursor cannot be corrected. They join the task when they settle.
-                if !dictation.volatile.isEmpty {
-                    Text(dictation.volatile)
-                        .font(.callout)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(2)
-                        .transition(.opacity)
-                }
-            }
+            // Every word goes in the field, including the ones still being revised.
+            // They used to sit in grey underneath it, which kept the field still and
+            // meant reading your own sentence in two places, the half you were watching
+            // being the half you could not touch. (T372.)
+            TextField("Say what to add, and which project it is for", text: $words, axis: .vertical)
+                .lineLimit(3...10)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(add)
 
             HStack {
-                Button("Clear") { words = ""; folded = dictation.settled }
+                Button("Clear") { words = ""; folded = dictation.settled; tail = "" }
                     .buttonStyle(.glass)
                     .disabled(words.isEmpty)
                 Spacer()
@@ -121,7 +117,8 @@ struct DictateButton: View {
         }
         // Every burst of recognised words is added to the task rather than replacing it,
         // so a correction typed into the field survives the next sentence.
-        .onChange(of: dictation.settled) { fold() }
+        .onChange(of: dictation.settled) { speak() }
+        .onChange(of: dictation.volatile) { speak() }
         .onChange(of: words) { lastWords = .now }
     }
 
@@ -176,6 +173,7 @@ struct DictateButton: View {
     private func begin() {
         words = ""
         folded = ""
+        tail = ""
         lastSettled = ""
         projectID = lookingAt
         lastWords = .now
@@ -190,12 +188,14 @@ struct DictateButton: View {
         watching = Task { @MainActor in
             await dictation.start()
             folded = dictation.settled
+            tail = ""
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(300))
                 guard showing else { return }
                 if !dictation.isListening {
                     await dictation.start()
                     folded = dictation.settled
+                    tail = ""
                     continue
                 }
                 readThePause()
@@ -203,15 +203,24 @@ struct DictateButton: View {
         }
     }
 
-    /// A burst of settled words, added to the task.
-    private func fold() {
+    /// Everything the recogniser has said since we last looked, put in the field: what
+    /// has settled goes into the task, and what is still being revised goes in after it
+    /// as a tail the next revision replaces. (T372.)
+    private func speak() {
+        // The tail comes out first: what settles belongs in front of it, and the words
+        // being revised are about to be said again.
+        var base = Spoken.live(words: words, tail: tail, volatile: "").words
         let settled = dictation.settled
-        guard settled != folded else { return }
-        // A restarted session begins its transcript again, so anything that is not more
-        // of what we have already folded is new words rather than a revision.
-        let addition = settled.hasPrefix(folded) ? String(settled.dropFirst(folded.count)) : settled
-        folded = settled
-        words = Spoken.appended(words, addition)
+        if settled != folded {
+            // A restarted session begins its transcript again, so anything that is not
+            // more of what we have already folded is new words rather than a revision.
+            let addition = settled.hasPrefix(folded) ? String(settled.dropFirst(folded.count)) : settled
+            folded = settled
+            base = Spoken.appended(base, addition)
+        }
+        let shown = Spoken.live(words: base, tail: "", volatile: dictation.volatile)
+        words = shown.words
+        tail = shown.tail
     }
 
     /// A silence, and what the factory makes of what was said. It never files and it
@@ -219,14 +228,19 @@ struct DictateButton: View {
     /// of it out of the task, and leaves everything else where it is.
     private func readThePause() {
         guard Date().timeIntervalSince(lastWords) >= Self.pause else { return }
-        let said = words.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The task as it stands, without the tail the recogniser is still revising: the
+        // project is read out of words somebody has finished saying.
+        let bare = Spoken.live(words: words, tail: tail, volatile: "").words
+        let said = bare.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !said.isEmpty, said != lastSettled else { return }
         lastSettled = said
-        let settled = Spoken.settling(words, projects: model.snapshot.projects, project: projectID)
+        let settled = Spoken.settling(bare, projects: model.snapshot.projects, project: projectID)
         projectID = settled.projectID
         if settled.projectWasSaid {
-            words = settled.words
-            lastSettled = words.trimmingCharacters(in: .whitespacesAndNewlines)
+            let shown = Spoken.live(words: settled.words, tail: "", volatile: dictation.volatile)
+            words = shown.words
+            tail = shown.tail
+            lastSettled = settled.words.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 
@@ -237,6 +251,7 @@ struct DictateButton: View {
         if dictation.isListening { Task { await dictation.stop() } }
         words = ""
         folded = ""
+        tail = ""
         lastSettled = ""
         projectID = nil
     }
@@ -254,6 +269,7 @@ struct DictateButton: View {
         model.addTask(to: projectID, title: parsed.title, note: filed.note, work: parsed.work)
         words = ""
         folded = dictation.settled
+        tail = ""
         lastSettled = ""
     }
 }
