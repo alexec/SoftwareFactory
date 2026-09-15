@@ -105,6 +105,7 @@ enum StartAgent {
         }
         let session = reserved.id
         if let task { model.assign(task, to: reserved) }
+        model.remember(agent, for: reserved)
         let asked = words.trimmingCharacters(in: .whitespacesAndNewlines)
         let prompt = asked.isEmpty
             ? (task.map { LaunchPrompt.task($0, in: project, as: reserved.label, session: session) }
@@ -128,6 +129,50 @@ enum StartAgent {
         }
     }
 
+    /// Starts a stopped agent back up, in the conversation it was already having. The
+    /// session id it was launched with is what makes that possible: `--resume <session>`
+    /// finds exactly the one the factory has a record for, and the agent comes back
+    /// knowing who it is and what it was doing. Cursor is the exception and picks up the
+    /// newest chat in the folder, which is that agent's, because a terminal holds one
+    /// agent.
+    ///
+    /// The old tmux session is killed first. It is still there, holding a dead pane, and
+    /// `new-session -A` would attach to that and run nothing. (T262.)
+    @discardableResult
+    static func resume(agent: Agent, model: AppModel, terminals: TerminalSessions) -> String? {
+        guard Agents.mayResume(agent) else { return "\(agent.label) is not stopped." }
+        let kind = LaunchAgent.remembered(agent.launchedWith)
+        let command = kind.resumeCommand(session: agent.id)
+        guard !AgentLauncher.isSandboxed else {
+            if let project = agent.projectID.flatMap({ model.project(for: $0) }) {
+                AgentLauncher.copy(project, command: command)
+            } else {
+                AgentLauncher.copyCommand(command)
+            }
+            return nil
+        }
+        terminals.end(agent.id.uuidString)
+        do {
+            switch model.launchStyle {
+            case .embedded:
+                if let project = agent.projectID.flatMap({ model.project(for: $0) }) {
+                    try terminals.start(in: project, command: command, session: agent.id.uuidString, agentID: agent.id)
+                } else {
+                    terminals.start(prompt: "", session: agent.id.uuidString, agentID: agent.id) { _ in command }
+                }
+            case .terminal:
+                guard let project = agent.projectID.flatMap({ model.project(for: $0) }) else {
+                    return "\(agent.label) is on no project, so there is no folder to start it in. Switch to in-app terminals to start it."
+                }
+                try AgentLauncher.launch(project, command: command)
+            }
+            model.findTheProcess(for: agent)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
     /// Agents `agent_create` asked for: written down already, waiting for a terminal.
     /// Uses the last coding agent the person launched, and the in-app vs Terminal style
     /// they have set. (T179, 13 Sep 2026.)
@@ -139,6 +184,7 @@ enum StartAgent {
                   let project = model.project(for: projectID) else { continue }
             let kind = LaunchAgent.remembered(UserDefaults.standard.string(forKey: lastLaunchAgentKey))
             let task = agent.taskID.flatMap { id in model.snapshot.tasks.first { $0.id == id } }
+            model.remember(kind, for: agent)
             let command = kind.launchCommand(for: project, task: task, as: agent.label, session: agent.id)
             guard !AgentLauncher.isSandboxed else {
                 AgentLauncher.copy(project, command: command)

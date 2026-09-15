@@ -267,6 +267,11 @@ struct AgentCard: View {
         }
         .help("Show \(status.agent.label)")
         .contextMenu {
+            if status.canResume {
+                Button("Start \(status.agent.label)") {
+                    _ = StartAgent.resume(agent: status.agent, model: model, terminals: terminals)
+                }
+            }
             if status.canStop {
                 Button("Stop \(status.agent.label)", role: .destructive) { model.stop(status.agent) }
             }
@@ -285,6 +290,7 @@ struct AgentView: View {
     /// Stopping an agent cannot be taken back, and the header button is one click on a
     /// wide target, so it asks first. (T261.)
     @State private var confirmingStop = false
+    @State private var resumeError: String?
 
     private struct ResourceLease: Identifiable {
         var resource: Resource
@@ -334,6 +340,11 @@ struct AgentView: View {
         // Opening the page is the look it rang for, however you got here: from its card,
         // or from its row in the sidebar. (T225.)
         .onAppear { model.clearBell(agent) }
+        .alert("It did not start", isPresented: Binding(get: { resumeError != nil }, set: { if !$0 { resumeError = nil } })) {
+            Button("OK") { resumeError = nil }
+        } message: {
+            Text(resumeError ?? "")
+        }
         .confirmationDialog("Stop \(agent.label)?", isPresented: $confirmingStop) {
             Button("Stop \(agent.label)", role: .destructive) { model.stop(agent) }
         } message: {
@@ -400,6 +411,14 @@ struct AgentView: View {
                     .buttonStyle(.glass)
                     .controlSize(.small)
                     .help("End this agent's process. What it has said stays on the page.")
+            }
+            // A stopped agent is picked back up where it left off, in the same session,
+            // so it comes back knowing who it is and what it was doing. (T262.)
+            if status.canResume {
+                Button("Start") { resumeError = StartAgent.resume(agent: agent, model: model, terminals: terminals) }
+                    .buttonStyle(.glassProminent)
+                    .controlSize(.small)
+                    .help("Start it back up in the conversation it was having")
             }
             Text(agent.lastSeen, format: .relative(presentation: .named))
                 .font(.callout)

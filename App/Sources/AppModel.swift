@@ -412,6 +412,17 @@ final class AppModel {
         }
     }
 
+    /// Writes down which CLI started an agent. Its conversation lives in that one, under
+    /// the session id the factory gave it, so a restart has to use the same. (T262.)
+    func remember(_ kind: LaunchAgent, for agent: Agent) {
+        guard agent.launchedWith != kind.rawValue else { return }
+        persist { store in
+            guard var found = try store.load().agents.first(where: { $0.id == agent.id }) else { return }
+            found.launchedWith = kind.rawValue
+            try store.save(found)
+        }
+    }
+
     /// Anything a shell has to take literally.
     nonisolated static func quoted(_ words: String) -> String {
         LaunchAgent.quoted(words)

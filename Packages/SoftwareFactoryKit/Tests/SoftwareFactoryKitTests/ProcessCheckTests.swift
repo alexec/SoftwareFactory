@@ -119,6 +119,48 @@ import Testing
         #expect(!ProcessCheck.stop(pid: pid, startedAt: started))
     }
 
+    /// Start is the other half of Stop: offered for an agent the factory launched and
+    /// then watched stop, never for one still running and never for one it never had a
+    /// process for. The CLI that started it is written down, because its conversation is
+    /// only in that one. (T262.)
+    @Test func startIsOfferedForAnAgentTheFactoryWatchedStop() throws {
+        let now = Date()
+        let me = ProcessInfo.processInfo.processIdentifier
+        var live = Agent(number: 1, projectID: "/w", registered: now.addingTimeInterval(-60))
+        live.lastSeen = now
+        live.pid = me
+        live.pidStartedAt = try #require(ProcessCheck.startTime(of: me))
+        live.launchedWith = LaunchAgent.claudeCode.rawValue
+        #expect(!Agents.mayResume(live))
+
+        var stopped = live
+        stopped.pid = 0x7FFF_FFFE
+        #expect(Agents.mayResume(stopped))
+        #expect(Agents.mayStop(live) != Agents.mayResume(live))
+        #expect(LaunchAgent(rawValue: stopped.launchedWith ?? "") == .claudeCode)
+
+        // Nothing was ever launched here, so there is nothing to start.
+        var external = stopped
+        external.pid = nil
+        external.pidStartedAt = nil
+        #expect(!Agents.mayResume(external))
+
+        var gone = stopped
+        gone.deregistered = now
+        #expect(!Agents.mayResume(gone))
+
+        // An agent from before the CLI was written down still starts; it takes the last
+        // one the person picked.
+        var older = stopped
+        older.launchedWith = nil
+        #expect(Agents.mayResume(older))
+        #expect(LaunchAgent.remembered(older.launchedWith) == .claudeCode)
+
+        // And it survives a trip through the store's shape.
+        let read = try JSONDecoder().decode(Agent.self, from: JSONEncoder().encode(stopped))
+        #expect(read.launchedWith == LaunchAgent.claudeCode.rawValue)
+    }
+
     /// Stop is offered for a process the factory knows and can still reach. An agent
     /// that registered from somewhere else never told us one, and one whose process has
     /// already gone has nothing left to stop. (T261.)

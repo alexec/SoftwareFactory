@@ -49,7 +49,9 @@ before you mark the task done. Build the phone too when the change is in it.
     `Task` is Swift's; work is design/plan/implement/fix/review/investigate/ship, default implement, shown as Code (T181); the first word of a title is the type; backlog/inProgress/done/parked/blocked with a
     `Blocker` saying what on; rank), `Agent` (number, terminal `title` from OSC 0/2,
     `bel` when it rang for a look,
-    project, task, lastSeen, deregistered, and the `pid` it reported with the
+    project, task, lastSeen, deregistered, `launchedWith` (which CLI the factory started
+    it with, so a stopped one can be picked back up in the conversation that holds it),
+    and the `pid` it reported with the
     `pidStartedAt` the factory read for it; working within 10 min of any call it made.
     Its `label` is its name everywhere: "A<n>", or its raw id for one that registered
     before numbers. There is no separate `name` field, and never should be again: it
@@ -142,6 +144,13 @@ before you mark the task done. Build the phone too when the change is in it.
     record reads as stopped on the next refresh, which is what hands back its leases and
     puts its task back. Delete stops it first. A deleted agent used to keep working with
     no card, no terminal and no way to reach it. (T261.)
+  - `Agents.mayResume` and `StartAgent.resume`: a stopped agent is started back up in the
+    same session, with the CLI it was launched with, so it comes back knowing who it is
+    and what it was doing. Only for one the factory launched and then watched stop: an
+    agent that never reported a pid is never called stopped, so it is never offered a
+    start. The old tmux session is killed first, because `new-session -A` would attach to
+    its dead pane and run nothing. Start sits beside Stop on the agent's page and in both
+    of its menus. (T262)
   - `Sweep.stoppedAgents`: an agent whose process has gone gives back what it held. This
     replaced an hour of silence, which was a guess: an agent thinking is silent too.
   - `Sweep.unblocked`: a task blocked on a decision now made, or a task now done, goes

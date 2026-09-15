@@ -325,6 +325,12 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
     /// The factory should start this agent. `agent_create` sets it; the app launches
     /// and clears it. (T179, 13 Sep 2026.)
     public var wantsLaunch: Bool = false
+    /// Which CLI the factory started it with, as a `LaunchAgent` raw value. Kept so a
+    /// stopped agent can be picked back up in the one that holds its conversation: a
+    /// session id made by Claude Code means nothing to Grok. Nil for an agent that
+    /// registered from somewhere else, and for every agent started before this was
+    /// written down. (T262.)
+    public var launchedWith: String?
     /// The agent's own process, reported at registration, and when that process started.
     /// The pair is what makes an answer about running trustworthy: a pid on its own can
     /// be recycled and turn up wearing a dead agent's number, and a start time settles
@@ -413,6 +419,7 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case version, id, number, title, bel, projectID, taskID, note, wantsLaunch
+        case launchedWith
         case pid, pidStartedAt, registered, lastSeen, isConnected, deregistered
         case about, name
     }
@@ -430,6 +437,7 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
         try c.encode(wantsLaunch, forKey: .wantsLaunch)
         try c.encodeIfPresent(pid, forKey: .pid)
         try c.encodeIfPresent(pidStartedAt, forKey: .pidStartedAt)
+        try c.encodeIfPresent(launchedWith, forKey: .launchedWith)
         try c.encode(registered, forKey: .registered)
         try c.encode(lastSeen, forKey: .lastSeen)
         try c.encode(isConnected, forKey: .isConnected)
@@ -458,6 +466,7 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
         // reads as an agent whose running we cannot speak for. No version bump needed.
         pid = try c.decodeIfPresent(Int32.self, forKey: .pid)
         pidStartedAt = try c.decodeIfPresent(Date.self, forKey: .pidStartedAt)
+        launchedWith = try c.decodeIfPresent(String.self, forKey: .launchedWith)
         registered = try c.decode(Date.self, forKey: .registered)
         lastSeen = try c.decode(Date.self, forKey: .lastSeen)
         isConnected = try c.decodeIfPresent(Bool.self, forKey: .isConnected) ?? false
@@ -523,6 +532,16 @@ public enum Agents {
     /// agent resumed after a restart is still the process we wrote down. (T261.)
     public static func mayStop(_ agent: Agent) -> Bool {
         agent.isRegistered && agent.knowsItsProcess && !agent.hasExited
+    }
+
+    /// Starting one back up. Only an agent the factory launched and then watched stop:
+    /// its process is one we wrote down, and the kernel says that process has gone. An
+    /// agent that never reported a pid is never called stopped, so it is never offered a
+    /// start either, and one still running is asked to stop first. Its conversation is
+    /// waiting under its session id, which is why the id had to be given at launch.
+    /// (T262.)
+    public static func mayResume(_ agent: Agent) -> Bool {
+        agent.isRegistered && agent.knowsItsProcess && agent.hasExited
     }
 
     /// There used to be a rule here for two agents turning up on one terminal: a shell

@@ -199,6 +199,11 @@ struct RootView: View {
             }
             // Stop ends its process where it stands; Delete takes the record away too.
             // (T261.)
+            if status.canResume {
+                Button("Start \(status.agent.label)") {
+                    _ = StartAgent.resume(agent: status.agent, model: model, terminals: terminals)
+                }
+            }
             if status.canStop {
                 Button("Stop \(status.agent.label)", role: .destructive) {
                     model.stop(status.agent)

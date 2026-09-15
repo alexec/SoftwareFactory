@@ -67,6 +67,10 @@ public struct Dashboard: Sendable, Equatable {
         /// Stop is there only for an agent whose process the factory knows and which is
         /// still running. Everything else has nothing to stop. (T261.)
         public var canStop: Bool { Agents.mayStop(agent) }
+
+        /// The other half of Stop: an agent the factory watched stop can be started back
+        /// up, in the conversation it was already having. (T262.)
+        public var canResume: Bool { Agents.mayResume(agent) }
     }
 
     /// The one rule behind an agent's dot. An agent that has gone quiet is idle
