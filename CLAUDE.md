@@ -294,9 +294,10 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     on a backlog row: it reserves an agent, puts the task in its name and starts it on
     that one task), `AgentLauncher` and `StartAgent` (reserve, assign, launch: one path
     for every launch, including agents `agent_create` asked for), `LaunchChooser` (pick Claude Code, GitHub Copilot, Grok, Cursor or Terminal
-    at launch, with that agent's install link and plugin command, the words it will start
-    with in a field you can edit and Reset, then Launch
-    <name>; remembers the last pick, no preferred-agent setting. `LaunchPrompt.projectWork`
+    at launch, with that agent's install link and plugin command, then the words it will
+    start with in a field you can edit and Reset, then Launch
+    <name>. The words sit last, just above the button: they are the last thing you decide
+    and they change with the agent picked above them (T273). It remembers the last pick, no preferred-agent setting. `LaunchPrompt.projectWork`
     and `taskWork` are what that field starts as, and the line naming the agent and its
     session goes in front of whatever it says, T260), `IntroSheet`, `SettingsView`
     (How it works on top, in-app vs Terminal, iCloud, the store, Developer in DEBUG).
