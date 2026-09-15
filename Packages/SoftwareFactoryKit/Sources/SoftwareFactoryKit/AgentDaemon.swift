@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 
 /// The floor's process holder, and the words the app uses to talk to it.
@@ -255,3 +256,4 @@ public enum AgentDaemon {
         try? decoder.decode(type, from: data)
     }
 }
+#endif
