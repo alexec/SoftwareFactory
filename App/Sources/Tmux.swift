@@ -47,6 +47,11 @@ enum Tmux {
     set -g monitor-activity off
     set -g monitor-bell on
     set -g bell-action any
+    # A bell only reaches this app as a byte while a client is attached, and most agents
+    # run with nobody looking at them. The hook fires whether or not anyone is attached,
+    # and fires again for the next bell, so the factory hears every one: it drops a file
+    # named after the session, which the app picks up and deletes. (Alex, 15 Sep 2026.)
+    set-hook -g alert-bell 'run-shell "mkdir -p ~/.local/state/software-factory/bells; touch ~/.local/state/software-factory/bells/#{session_name}"'
     set -g destroy-unattached off
     set -g exit-empty off
     # The pane stays after its agent exits, so its last words are still readable and the
@@ -125,6 +130,29 @@ enum Tmux {
         guard let out = run(binary, ["-L", server, "list-sessions", "-F", "#{session_name}"]), out.status == 0
         else { return [] }
         return out.text.split(separator: "\n").map(String.init)
+    }
+
+    /// Where the bell hook leaves its marks: one empty file per session that rang.
+    static var bellFolder: URL {
+        let folder = FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: ".local/state/software-factory/bells", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }
+
+    /// The sessions that have rung since this was last asked, taking each mark away as it
+    /// is read. Reading a folder is a file system call and not a tmux one, so unlike
+    /// everything else here it is safe from the main thread and cheap enough to do on
+    /// every refresh. (Alex, 15 Sep 2026.)
+    static func bellsRung() -> [String] {
+        let folder = bellFolder
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path) else { return [] }
+        var rung: [String] = []
+        for name in names where !name.hasPrefix(".") {
+            rung.append(name)
+            try? FileManager.default.removeItem(at: folder.appending(path: name))
+        }
+        return rung
     }
 
     /// Ends a session and whatever is running in it.

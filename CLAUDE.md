@@ -23,9 +23,15 @@ xcodebuild -project SoftwareFactory.xcodeproj -scheme SoftwareFactoryPhone -conf
 # The store build of the Mac app: the same sources, sandboxed. Swap Debug for
 # Release-AppStore anywhere you would build the Mac app for the store.
 cd Packages/SoftwareFactoryKit && swift test
-osascript -e 'tell application "Taktu: Software Factory" to quit'
-osascript -e 'tell application "Software Factory" to quit'
+# Restarting. The app ignores an AppleScript quit, so kill the process and check for a
+# NEW pid: HTTP 200 on 4747 only proves an app is running, not that it is the one you
+# just built. Restarts were failing silently for a day before this was noticed.
+# (Alex, 15 Sep 2026.)
+OLD=$(pgrep -f "Software Factory.app/Contents/MacOS" | head -1)
+osascript -e 'tell application id "com.alexecollins.softwarefactory" to quit' 2>/dev/null
+sleep 3; ps -p "$OLD" >/dev/null && kill "$OLD"; sleep 3; ps -p "$OLD" >/dev/null && kill -9 "$OLD"
 open "build/DerivedData/Build/Products/Debug/Software Factory.app"
+pgrep -f "Software Factory.app/Contents/MacOS"   # must not be $OLD
 ```
 
 `-skipPackagePluginValidation -skipMacroValidation` are required, not optional: SwiftTerm
@@ -40,7 +46,8 @@ Rebuild and restart at the end of every task. The server on 4747 is the binary t
 running, not the tree: a new tool 404s until you quit and open the Debug app you just
 built. tmux keeps the agents; they reconnect. Wait until
 `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4747/api/snapshot` is 200
-before you mark the task done. Build the phone too when the change is in it.
+**and the pid has changed**: a 200 from the app you meant to replace looks exactly the
+same, and that is how a day of work went on talking to yesterday's binary. Build the phone too when the change is in it.
 
 ## Shape
 
@@ -272,7 +279,15 @@ before you mark the task done. Build the phone too when the change is in it.
     the agent's card, and BEL sets `bel` until the page is opened. The bell is drawn on
     every agent, grey and quiet, and fills in orange and wiggles when `bel` is set: a mark
     that only exists while something is wrong is one nobody learns to read. tmux passes
-    every bell through, `bell-action any` (Alex, 14 Sep 2026). A nudge, and any other
+    every bell through, `bell-action any` (Alex, 14 Sep 2026). The live path only hears a
+    bell while this app is attached to that session, and most agents work with nobody
+    looking, so the real route is a tmux hook: `alert-bell` runs `touch` on a file named
+    after the session under `~/.local/state/software-factory/bells`, `Tmux.bellsRung()`
+    reads that folder on every refresh and takes each mark away, and `AppModel.ring` sets
+    `bel`. The hook fires with no client attached and fires again for the next bell, which
+    the window's own bell flag does not: that flag sets once and nothing clears it without
+    a client. Write the hook with no nested escapes, or tmux takes the line and sets an
+    empty hook. (Alex, 15 Sep 2026.) A nudge, and any other
     message, is typed in with `sendLine`, which is two writes: the words, a gap, then the
     return. It answers whether there was a terminal to type into, and a message is marked
     delivered only when one took it. In one write

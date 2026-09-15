@@ -130,6 +130,11 @@ final class AppModel {
                 storeError = error.localizedDescription
             }
         }
+        // Bells rung while nobody was attached to the agent's terminal. The live path
+        // through SwiftTerm only hears a bell when this app is holding that session, and
+        // most agents work with nobody looking at them, so tmux leaves a mark instead and
+        // this is where it is read. (Alex, 15 Sep 2026.)
+        for session in Tmux.bellsRung() { ring(session: session) }
         dashboard = Dashboard.make(snapshot: snapshot)
         throttle = store.throttle()
         machine = MachineReading.sample()
