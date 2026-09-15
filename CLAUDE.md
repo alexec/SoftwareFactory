@@ -275,8 +275,9 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     block for minutes), Bonjour `_softwarefactory._tcp`.
   - `RootView` (split view: Dashboard, Agents, Status reports, Capacity, No project, then the agents on
     the floor in a group of their own, then the projects. An agent is two lines: its dot
-    and the project it is on, then the line it set with an OSC title, with its bell in
-    front when it rang. The row opens that agent's page from anywhere, and opening the
+    and the project it is on, then what it is doing: the task it is on, else the first
+    line of its status report, else the line it set with an OSC title
+    (`AgentLine.underTheName`, T295). Its bell goes in front when it rang. The row opens that agent's page from anywhere, and opening the
     page clears the bell however you got there; right click to Nudge, Stop or Delete it.
     Stop is on the agent's page too, beside Nudge, and asks first there: one click on a
     wide target ends an agent mid-thought, and that cannot be taken back. (T261.)

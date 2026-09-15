@@ -245,8 +245,16 @@ struct RootView: View {
     /// name until it has said anything, so the line is never empty.
     /// The line the agent set with an OSC title, or nothing. The name is on the row above
     /// now, so there is no need to fall back to it and repeat it.
+    /// What the second line says: the task it is on, else the first line of its status
+    /// report, else the terminal title. The rule is in the kit; this finds the report.
+    /// (T295.)
     private func sidebarTitle(_ status: Dashboard.AgentStatus) -> String {
-        status.agent.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        AgentLine.underTheName(task: status.task, report: report(for: status), title: status.agent.title)
+    }
+
+    private func report(for status: Dashboard.AgentStatus) -> Artifact? {
+        guard let projectID = status.agent.projectID else { return nil }
+        return Artifacts.statusReport(by: status.agent.id, on: projectID, in: model.snapshot.artifacts)
     }
 
     /// The whole row in one line, for a row too narrow to show it.
