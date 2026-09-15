@@ -1,13 +1,18 @@
 import Foundation
 
-/// A coding agent the person can start from the factory: Claude Code, GitHub Copilot,
-/// Grok or Cursor. Chosen at launch, not as a setting, so a session can pick a different
-/// one each time.
+/// What the factory can start in a terminal it owns: Claude Code, GitHub Copilot, Grok,
+/// Cursor, or a plain shell. Chosen at launch, not as a setting, so a session can pick a
+/// different one each time.
 public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable {
     case claudeCode
     case copilot
     case grok
     case cursor
+    /// No agent at all: a shell in the project's folder, on the floor like any other, so
+    /// you can run something by hand and watch it from the same page as the rest.
+    /// Nothing registers, nothing is told anything, and there is no plugin to install.
+    /// (Alex, 15 Sep 2026.)
+    case terminal
 
     public var id: String { rawValue }
 
@@ -23,20 +28,28 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
         case .copilot: "GitHub Copilot"
         case .grok: "Grok"
         case .cursor: "Cursor"
+        case .terminal: "Terminal"
         }
     }
 
-    public var installURL: URL {
+    /// Whether this one is an agent at all. A terminal takes no prompt, registers with
+    /// nothing and has no conversation to resume: it is a shell.
+    public var isCodingAgent: Bool { self != .terminal }
+
+    /// Nil for a terminal: zsh is already there.
+    public var installURL: URL? {
         switch self {
         case .claudeCode: URL(string: "https://code.claude.com/docs/en/quickstart")!
         case .copilot: URL(string: "https://docs.github.com/en/copilot/get-started/cli-quickstart")!
         case .grok: URL(string: "https://docs.x.ai/build/overview")!
         case .cursor: URL(string: "https://cursor.com/docs/cli/installation")!
+        case .terminal: nil
         }
     }
 
-    /// The command that registers this factory with the agent, once.
-    public var setupCommand: String {
+    /// The command that registers this factory with the agent, once. Nil for a terminal:
+    /// there is nothing in it to register.
+    public var setupCommand: String? {
         switch self {
         case .claudeCode:
             """
@@ -49,6 +62,8 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
             "grok plugin install alexec/SoftwareFactory#Plugins/software-factory --trust"
         case .cursor:
             "cursor-agent plugin marketplace add https://github.com/alexec/SoftwareFactory"
+        case .terminal:
+            nil
         }
     }
 
@@ -89,6 +104,10 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
         case .copilot: return "copilot --session-id \(id) --allow-all --interactive \(quoted)"
         case .grok: return "grok --session-id \(id) --always-approve --trust \(quoted)"
         case .cursor: return "cursor-agent --force --trust --approve-mcps \(quoted)"
+        // A shell is told nothing. The words are dropped rather than echoed: a terminal
+        // that opens with somebody else's instructions printed in it is a terminal
+        // pretending to be an agent.
+        case .terminal: return "zsh -il"
         }
     }
 
@@ -102,6 +121,9 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
         case .copilot: return "copilot --resume=\(session.uuidString) --allow-all --interactive"
         case .grok: return "grok --resume \(session.uuidString) --always-approve --trust"
         case .cursor: return "cursor-agent --continue --force --trust --approve-mcps"
+        // A shell that has exited has nothing to pick up. Start gives you a new one in
+        // the same place.
+        case .terminal: return "zsh -il"
         }
     }
 

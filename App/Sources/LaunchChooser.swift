@@ -12,23 +12,31 @@ struct AgentHelp: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            LabeledContent("How to install \(agent.title)") {
-                Link(agent.installURL.absoluteString, destination: agent.installURL)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            LabeledContent("Register the factory with it") {
-                Button(copied ? "Copied" : "Copy") {
-                    AgentLauncher.copyCommand(agent.setupCommand)
-                    copied = true
+            if let installURL = agent.installURL, let setup = agent.setupCommand {
+                LabeledContent("How to install \(agent.title)") {
+                    Link(installURL.absoluteString, destination: installURL)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
+                LabeledContent("Register the factory with it") {
+                    Button(copied ? "Copied" : "Copy") {
+                        AgentLauncher.copyCommand(setup)
+                        copied = true
+                    }
+                }
+                Text(setup)
+                    .font(.callout.monospaced())
+                    .textSelection(.enabled)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.quaternary, in: .rect(cornerRadius: 8))
+            } else {
+                // A terminal has nothing to install and nothing to register.
+                Text("A shell in the project's folder, on the floor like any other, so you can run something by hand and watch it from the same page as the rest. Nothing is started in it.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Text(agent.setupCommand)
-                .font(.callout.monospaced())
-                .textSelection(.enabled)
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.quaternary, in: .rect(cornerRadius: 8))
         }
         .onChange(of: agent) { _, _ in copied = false }
     }
@@ -93,7 +101,8 @@ struct LaunchChooser<Extra: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            extra
+            // Nothing is said to a shell, so the words are not offered for one.
+            if agent.isCodingAgent { extra }
 
             Picker("Agent", selection: $agent) {
                 ForEach(LaunchAgent.allCases) { Text($0.title).tag($0) }
@@ -122,9 +131,8 @@ struct LaunchChooser<Extra: View>: View {
     }
 
     private var launchTitle: String {
-        AgentLauncher.isSandboxed
-            ? "Copy the command for \(agent.title)"
-            : "Launch \(agent.title)"
+        if AgentLauncher.isSandboxed { return "Copy the command for \(agent.title)" }
+        return agent.isCodingAgent ? "Launch \(agent.title)" : "Open a terminal"
     }
 }
 

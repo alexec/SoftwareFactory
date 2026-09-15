@@ -13,23 +13,36 @@ import Testing
     }
 
     @Test func everyKindHasATitleInstallAndSetup() {
-        #expect(LaunchAgent.allCases.map(\.title) == ["Claude Code", "GitHub Copilot", "Grok", "Cursor"])
-        for agent in LaunchAgent.allCases {
-            #expect(!agent.installURL.absoluteString.isEmpty)
-            #expect(agent.installURL.scheme == "https")
-            #expect(!agent.setupCommand.isEmpty)
+        #expect(LaunchAgent.allCases.map(\.title) == ["Claude Code", "GitHub Copilot", "Grok", "Cursor", "Terminal"])
+        for agent in LaunchAgent.allCases where agent.isCodingAgent {
+            #expect(agent.installURL?.scheme == "https")
+            #expect(!(agent.setupCommand ?? "").isEmpty)
         }
     }
 
+    /// A terminal is a shell and nothing else: nothing to install, no plugin, no prompt,
+    /// and starting one again is a new shell rather than a conversation picked back up.
+    /// (Alex, 15 Sep 2026.)
+    @Test func aTerminalIsAShellAndNothingElse() {
+        let shell = LaunchAgent.terminal
+        #expect(!shell.isCodingAgent)
+        #expect(shell.installURL == nil)
+        #expect(shell.setupCommand == nil)
+        #expect(shell.command(for: "Work the backlog.", session: Self.session) == "zsh -il")
+        #expect(shell.launchCommand(for: project, as: "A9", session: Self.session) == "zsh -il")
+        #expect(shell.resumeCommand(session: Self.session) == "zsh -il")
+        #expect(LaunchAgent.allCases.filter(\.isCodingAgent).count == LaunchAgent.allCases.count - 1)
+    }
+
     @Test func setupCommandNamesThePlugin() {
-        #expect(LaunchAgent.claudeCode.setupCommand.contains("claude plugin"))
-        #expect(LaunchAgent.claudeCode.setupCommand.contains("software-factory"))
-        #expect(LaunchAgent.copilot.setupCommand.contains("copilot plugin install"))
-        #expect(LaunchAgent.copilot.setupCommand.contains("Plugins/software-factory"))
-        #expect(LaunchAgent.grok.setupCommand.contains("grok plugin install"))
-        #expect(LaunchAgent.grok.setupCommand.contains("Plugins/software-factory"))
-        #expect(LaunchAgent.cursor.setupCommand.contains("cursor-agent plugin marketplace add"))
-        #expect(LaunchAgent.cursor.setupCommand.contains("alexec/SoftwareFactory"))
+        #expect(LaunchAgent.claudeCode.setupCommand?.contains("claude plugin") == true)
+        #expect(LaunchAgent.claudeCode.setupCommand?.contains("software-factory") == true)
+        #expect(LaunchAgent.copilot.setupCommand?.contains("copilot plugin install") == true)
+        #expect(LaunchAgent.copilot.setupCommand?.contains("Plugins/software-factory") == true)
+        #expect(LaunchAgent.grok.setupCommand?.contains("grok plugin install") == true)
+        #expect(LaunchAgent.grok.setupCommand?.contains("Plugins/software-factory") == true)
+        #expect(LaunchAgent.cursor.setupCommand?.contains("cursor-agent plugin marketplace add") == true)
+        #expect(LaunchAgent.cursor.setupCommand?.contains("alexec/SoftwareFactory") == true)
     }
 
     @Test func commandUsesTheAgentsBinaryAndQuotesThePrompt() {
@@ -38,7 +51,7 @@ import Testing
         #expect(LaunchAgent.copilot.command(for: words, session: Self.session).hasPrefix("copilot --session-id \(Self.session.uuidString) --allow-all --interactive "))
         #expect(LaunchAgent.grok.command(for: words, session: Self.session).hasPrefix("grok --session-id \(Self.session.uuidString) --always-approve --trust "))
         #expect(LaunchAgent.cursor.command(for: words, session: Self.session).hasPrefix("cursor-agent --force --trust --approve-mcps "))
-        for agent in LaunchAgent.allCases {
+        for agent in LaunchAgent.allCases where agent.isCodingAgent {
             #expect(agent.command(for: words, session: Self.session).contains(LaunchAgent.quoted(words)))
         }
     }
@@ -77,7 +90,7 @@ import Testing
     /// Every one of them approves its own tool calls and trusts the folder it opens in,
     /// or the agent stops on a prompt nobody is there to answer.
     @Test func everyKindStartsWithoutAskingPermission() {
-        let started = LaunchAgent.allCases.map { $0.command(for: "Work the backlog.", session: Self.session) }
+        let started = LaunchAgent.allCases.filter(\.isCodingAgent).map { $0.command(for: "Work the backlog.", session: Self.session) }
         #expect(started.allSatisfy { $0.contains("--permission-mode=auto") || $0.contains("--allow-all") || $0.contains("--always-approve") || $0.contains("--force") })
     }
 

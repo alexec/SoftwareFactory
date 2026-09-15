@@ -104,7 +104,8 @@ enum StartAgent {
             return model.storeError ?? "The agent could not be written down. The store said no."
         }
         let session = reserved.id
-        if let task { model.assign(task, to: reserved) }
+        // A shell is not given a task: nothing in it would read one.
+        if let task, agent.isCodingAgent { model.assign(task, to: reserved) }
         model.remember(agent, for: reserved)
         let asked = words.trimmingCharacters(in: .whitespacesAndNewlines)
         let prompt = asked.isEmpty
@@ -187,7 +188,10 @@ enum StartAgent {
             model.clearLaunchRequest(agent)
             guard let projectID = agent.projectID,
                   let project = model.project(for: projectID) else { continue }
-            let kind = LaunchAgent.remembered(UserDefaults.standard.string(forKey: lastLaunchAgentKey))
+            // An agent asked for this one, so it gets an agent: the last coding agent the
+            // person picked, never the terminal.
+            let remembered = LaunchAgent.remembered(UserDefaults.standard.string(forKey: lastLaunchAgentKey))
+            let kind = remembered.isCodingAgent ? remembered : .claudeCode
             let task = agent.taskID.flatMap { id in model.snapshot.tasks.first { $0.id == id } }
             model.remember(kind, for: agent)
             let command = kind.launchCommand(for: project, task: task, as: agent.label, session: agent.id)

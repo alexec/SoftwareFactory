@@ -393,7 +393,8 @@ struct AgentView: View {
         terminals.attach(id)
     }
 
-    /// One line across the top: who it is, where, and when it last said anything. The
+    /// One line across the top: who it is, where, what it says it is doing, and when it
+    /// last said anything. The
     /// dot says how it is doing, and says it in a word if you hold the pointer over it.
     /// (Alex, 13 Sep 2026: the word beside the dot said it twice.)
     private var header: some View {
@@ -408,7 +409,18 @@ struct AgentView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
-            Spacer()
+            // The line the agent set with its terminal title is what it is doing right
+            // now, so it belongs on the top row beside the project rather than at the
+            // top of a column you can put away. (Alex, 15 Sep 2026.)
+            if !agent.title.isEmpty {
+                Text(agent.title)
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(agent.title)
+            }
+            Spacer(minLength: 12)
             if status.canNudge {
                 Button("Nudge") {
                     sendNudge(to: agent, model: model, terminals: terminals)
@@ -447,12 +459,6 @@ struct AgentView: View {
     private var inspector: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                if !agent.title.isEmpty {
-                    Text(agent.title)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
                 assignedTasks
                 artifacts
                 messages

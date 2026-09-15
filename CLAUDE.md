@@ -106,7 +106,13 @@ before you mark the task done. Build the phone too when the change is in it.
   - `LaunchPrompt`: the words an agent starts with, in one place: `project` (work the
     backlog), `task` (one task, already in its name, to claim), `free` (no project,
     the person says what for).
-  - `LaunchAgent`: Claude Code, GitHub Copilot, Grok or Cursor, chosen at launch. Grok's
+  - `LaunchAgent`: Claude Code, GitHub Copilot, Grok, Cursor or Terminal, chosen at
+    launch. Terminal is not an agent: `isCodingAgent` is false, the command is `zsh -il`,
+    there is no install link, no plugin command, no words to edit and no task assigned,
+    and starting a stopped one is a new shell rather than a conversation picked back up.
+    It is a shell in the project's folder that shows up on the floor like anything else,
+    so you can run something by hand and watch it from the same page. `agent_create` never
+    gets one, even when Terminal was the last pick. (Alex, 15 Sep 2026.) Grok's
     shell line is `grok --session-id <id> --always-approve --trust`: `--trust` grants
     folder trust for the launch directory (the project's folder), so project hooks,
     skills and MCP load without a prompt. The flag takes no path. (T180) Cursor is
@@ -233,7 +239,7 @@ before you mark the task done. Build the phone too when the change is in it.
     and Start an agent on this,
     on a backlog row: it reserves an agent, puts the task in its name and starts it on
     that one task), `AgentLauncher` and `StartAgent` (reserve, assign, launch: one path
-    for every launch, including agents `agent_create` asked for), `LaunchChooser` (pick Claude Code, GitHub Copilot, Grok or Cursor
+    for every launch, including agents `agent_create` asked for), `LaunchChooser` (pick Claude Code, GitHub Copilot, Grok, Cursor or Terminal
     at launch, with that agent's install link and plugin command, the words it will start
     with in a field you can edit and Reset, then Launch
     <name>; remembers the last pick, no preferred-agent setting. `LaunchPrompt.projectWork`
