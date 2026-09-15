@@ -206,7 +206,10 @@ before you mark the task done. Build the phone too when the change is in it.
     session on a server of its own, so the agent outlives the app: quit, rebuild, come
     back, and opening its page attaches to what has been running all along. The person
     never sees tmux. OSC titles and BEL still reach SwiftTerm: the title is the line on
-    the agent's card, and BEL sets `bel` until the card is opened. Nothing asks tmux
+    the agent's card, and BEL sets `bel` until the card is opened. A nudge is typed in
+    with `sendLine`, which is two writes: the words, a gap, then the return. In one write
+    the agent reads the lot as a paste and the return lands as a newline in its input box,
+    so the nudge sat there unsent (Alex, 14 Sep 2026). Nothing asks tmux
     anything from the main thread: `TerminalSessions`
     keeps `held`, refreshed off it by `lookForHeldSessions()`, because running tmux while
     the window draws is a beachball.
