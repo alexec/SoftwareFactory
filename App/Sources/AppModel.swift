@@ -209,8 +209,13 @@ final class AppModel {
 
     /// Every task ever credited to this agent: the one it holds now, and whatever it
     /// finished before. Cleared only when a task goes back to the backlog or parked.
+    /// What an agent is on. Finished work drops off: the page is for what it is doing,
+    /// and a busy agent's list was mostly its own history. The project's backlog keeps
+    /// every done task. (T224.)
     func tasks(assignedTo agentID: UUID) -> [FactoryTask] {
-        snapshot.tasks.filter { $0.agentID == agentID && $0.removed == nil }.sorted { $0.updated > $1.updated }
+        snapshot.tasks
+            .filter { $0.agentID == agentID && $0.removed == nil && $0.state != .done }
+            .sorted { $0.updated > $1.updated }
     }
 
     /// Takes an agent out of the factory for good. Whatever it was holding is freed, so a

@@ -423,7 +423,7 @@ struct AgentView: View {
         let tasks = model.tasks(assignedTo: agent.id)
         return AgentPanel("Assigned tasks") {
             if tasks.isEmpty {
-                EmptyLine(text: agent.note.isEmpty ? "No tasks yet." : agent.note, symbol: "checklist")
+                EmptyLine(text: agent.note.isEmpty ? "Nothing on it." : agent.note, symbol: "checklist")
             } else {
                 ForEach(tasks) { task in
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -436,8 +436,6 @@ struct AgentView: View {
                                 .help("The task's number: say it, type it, or give it to an agent")
                         }
                         Text(task.title)
-                            .strikethrough(task.state == .done)
-                            .foregroundStyle(task.state == .done ? .secondary : .primary)
                         Spacer()
                         Text(task.state.word)
                             .font(.callout)
