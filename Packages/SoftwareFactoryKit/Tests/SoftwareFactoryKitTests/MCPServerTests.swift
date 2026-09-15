@@ -504,15 +504,18 @@ private final class ResultBox: @unchecked Sendable {
         _ = call(s, "project_add", ["name": "Waiting", "description": "Waiting work."])
         let completed = DispatchSemaphore(value: 0)
         let result = ResultBox()
-        DispatchQueue.global().async {
+        // A thread of its own, and waited for rather than slept at, for the same reason
+        // as the reaping test below. (T292.)
+        Thread.detachNewThread {
             result.set(self.call(s, "task_next", ["project": "Waiting"]).text)
             completed.signal()
         }
 
-        Thread.sleep(forTimeInterval: 0.05)
+        #expect(waitUntil { s.waitingNow == 1 })
+        // Waiting, and nothing to hand it yet.
         #expect(completed.wait(timeout: .now()) == .timedOut)
         _ = call(s, "task_add", ["project": "Waiting", "title": "Arrived"])
-        #expect(completed.wait(timeout: .now() + 1) == .success)
+        #expect(completed.wait(timeout: .now() + 30) == .success)
         #expect(result.value()?.contains("Arrived") == true)
     }
 
@@ -521,25 +524,45 @@ private final class ResultBox: @unchecked Sendable {
         _ = call(s, "project_add", ["name": "Limited", "description": "Limited work."])
         let firstFinished = DispatchSemaphore(value: 0)
         let firstResult = ResultBox()
-        DispatchQueue.global().async {
+        // A thread each, not the global queue. Every one of these blocks where it stands,
+        // and twenty one blocked blocks on a shared pool, with the rest of the suite
+        // running beside them, is a pool with nothing left to run the next one on: the
+        // waiters that never started never filled the queue, nothing was reaped, and the
+        // test failed for want of a thread rather than for want of the behaviour.
+        // (T292, Alex, 15 Sep 2026.)
+        Thread.detachNewThread {
             firstResult.set(self.call(s, "task_next", ["project": "Limited"]).text)
             firstFinished.signal()
         }
+        // And waited for, rather than slept at: it has to be the oldest waiter in the
+        // queue before the others arrive, and on a busy Mac 50ms is not enough to be
+        // anything at all.
+        #expect(waitUntil { s.waitingNow == 1 })
 
-        Thread.sleep(forTimeInterval: 0.05)
         let others = DispatchGroup()
         for _ in 0..<MCPServer.maximumWaitingTasks {
             others.enter()
-            DispatchQueue.global().async {
+            Thread.detachNewThread {
                 _ = self.call(s, "task_next", ["project": "Limited"])
                 others.leave()
             }
         }
 
-        #expect(firstFinished.wait(timeout: .now() + 1) == .success)
+        #expect(firstFinished.wait(timeout: .now() + 30) == .success)
         #expect(firstResult.value()?.contains("Factory needs this connection") == true)
         _ = call(s, "task_add", ["project": "Limited", "title": "Arrived"])
-        #expect(others.wait(timeout: .now() + 1) == .success)
+        #expect(others.wait(timeout: .now() + 30) == .success)
+    }
+
+    /// Polls until something is true, or gives up. A test that sleeps a guessed interval
+    /// and carries on is a test that passes on an idle Mac and fails on a busy one.
+    func waitUntil(timeout: TimeInterval = 30, _ condition: () -> Bool) -> Bool {
+        let giveUp = Date.now.addingTimeInterval(timeout)
+        while Date.now < giveUp {
+            if condition() { return true }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        return condition()
     }
 
     @Test func handshakeAndToolList() throws {

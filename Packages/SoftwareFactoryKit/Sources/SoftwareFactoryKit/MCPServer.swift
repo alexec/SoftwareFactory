@@ -130,6 +130,15 @@ public struct MCPServer: Sendable {
             return waiter
         }
 
+        /// How many are waiting right now. A test that wants to know whether a waiter has
+        /// taken its place has to be able to ask: sleeping a guessed interval and hoping
+        /// is what made the reaping test fail whenever the Mac was busy. (T292.)
+        var count: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return waiting.count
+        }
+
         func end(_ waiter: Waiter) {
             lock.lock()
             defer { lock.unlock() }
@@ -156,6 +165,10 @@ public struct MCPServer: Sendable {
             }
         }
     }
+
+    /// How many tools are waiting on this server this moment. Tests only: the floor has
+    /// no use for it. (T292.)
+    var waitingNow: Int { waiters.count }
 
     /// The one way a tool waits: poll the store, take a place in the queue, give up
     /// after `timeout_seconds`, and be reaped when the factory needs the connection.
