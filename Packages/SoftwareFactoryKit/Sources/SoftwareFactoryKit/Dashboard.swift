@@ -71,6 +71,8 @@ public struct Dashboard: Sendable, Equatable {
         /// The other half of Stop: an agent the factory watched stop can be started back
         /// up, in the conversation it was already having. (T262.)
         public var canResume: Bool { Agents.mayResume(agent) }
+        /// Why there is no Start on this one, when it has stopped and cannot come back.
+        public var whyNoResume: String? { Agents.whyNoResume(agent) }
     }
 
     /// The one rule behind an agent's dot. An agent that has gone quiet is idle

@@ -249,6 +249,17 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     `Running.queued` says how many are waiting. A stopped agent gives up its queue: there
     is nobody to say it to, and it must not be said to whatever starts next under that
     name. (T373.)
+  - `AgentProfile` and `LaunchAgent.profile`: what each agent was measured doing, as
+    opposed to what it says it can do. ACP describes the shape of a message and almost
+    nothing about the behaviour behind it, and a capability flag is no help either, because
+    Cursor declares `loadSession` and then refuses `session/load`. So the factory keeps its
+    own notes and the app reads them: `Agents.mayResume` asks the profile, so a stopped
+    Cursor agent is not offered a Start that would fail, and `Agents.whyNoResume` says why
+    in its place. Not a disabled button: a control that can never work on this agent says
+    come back later, and later never comes. Every answer is yes, no or **not tried**, three
+    rather than two, because writing "we have not tried it" down as "no" quietly takes a
+    feature away from an agent that has it. The help window shows the notes, and the
+    caveats, per agent. (T373.)
   - What each agent can actually do, measured through the daemon on 16 Sep 2026. All four
     handshake, make a session, take a prompt and are handed the factory's MCP server over
     http, which is the plugin install gone: the underlying CLI is launched with

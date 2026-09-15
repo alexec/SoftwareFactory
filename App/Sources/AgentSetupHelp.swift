@@ -31,6 +31,14 @@ struct AgentSetupHelp: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
+                    Text("Why each one has a note")
+                        .font(.headline)
+                    Text("ACP says what a message looks like and almost nothing about the behaviour behind it. All four of these are conformant and all four disagree, so the factory keeps its own notes from driving each one rather than from reading its documentation. Not tried means exactly that, and is not the same as no.")
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 8) {
                     Text("Two ways an agent runs")
                         .font(.headline)
                     Text("Claude Code and GitHub Copilot speak ACP, a protocol for coding agents. The factory hands them their tools as they start, and their page shows the work itself: what they are reading, what they are changing, and the plan they are following. They are held by a daemon of their own, so they keep working while this app is rebuilt.")
@@ -67,10 +75,41 @@ private struct AgentSetup: View {
             ForEach(Array(agent.setUp.enumerated()), id: \.offset) { _, step in
                 CommandToRun(what: step.what, command: step.command)
             }
+            if agent.isCodingAgent { WhatItDoes(profile: agent.profile) }
+            if let caveat = agent.profile.caveat {
+                Label(caveat, systemImage: "exclamationmark.triangle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Style.cardPadding)
         .background(.quinary, in: .rect(cornerRadius: Style.card))
+    }
+}
+
+/// What this agent was measured doing, as opposed to what it says it can do.
+private struct WhatItDoes: View {
+    var profile: AgentProfile
+
+    var body: some View {
+        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 4) {
+            row("Can be started back up", profile.resuming.word)
+            row("Asks before it changes something", profile.asksFirst.word)
+            row("Says what it is thinking", profile.thinksOutLoud.word)
+            row("Sets out a plan", profile.plans.word)
+            row("If you talk over it", profile.whenBusy.word)
+        }
+        .font(.callout)
+        .padding(.top, 2)
+    }
+
+    private func row(_ what: String, _ answer: String) -> some View {
+        GridRow {
+            Text(what).foregroundStyle(.secondary)
+            Text(answer)
+        }
     }
 }
 

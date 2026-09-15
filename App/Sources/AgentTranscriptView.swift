@@ -43,7 +43,7 @@ struct AgentTranscriptView: View {
                         Entry(entry: entry).id(entry.id)
                     }
                     if running?.isPrompting == true {
-                        Working().id(Self.bottom)
+                        Working(queued: running?.queued ?? 0).id(Self.bottom)
                     } else {
                         Color.clear.frame(height: 1).id(Self.bottom)
                     }
@@ -268,10 +268,20 @@ struct AgentTranscriptView: View {
     }
 
     private struct Working: View {
+        /// Things said to it while it was busy. Nothing is ever put to an agent mid-turn,
+        /// because two of the four lose it, so they wait here and the page says so rather
+        /// than leaving somebody wondering whether their nudge landed. (T373.)
+        var queued: Int
+
         var body: some View {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text("Working").font(.callout).foregroundStyle(.secondary)
+                if queued > 0 {
+                    Text(queued == 1 ? "1 waiting to be said" : "\(queued) waiting to be said")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
     }

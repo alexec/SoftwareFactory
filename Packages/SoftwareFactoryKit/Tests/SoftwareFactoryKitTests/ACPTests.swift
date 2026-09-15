@@ -222,3 +222,71 @@ struct LaunchAgentHelpTests {
         }
     }
 }
+
+/// What each agent was measured doing, and what the app does with that. The point of
+/// writing it down is that ACP describes the shape of a message and almost nothing about
+/// the behaviour behind it. (T373.)
+struct AgentProfileTests {
+    @Test func aStoppedCursorAgentIsNotOfferedAStartItCannotDo() {
+        // It declares loadSession and then refuses session/load, so the capability flag
+        // is no help and the profile is.
+        #expect(LaunchAgent.cursor.profile.resuming == .no)
+        #expect(LaunchAgent.cursor.profile.resuming.canStart == false)
+        var agent = Agent(projectID: "p")
+        agent.launchedWith = LaunchAgent.cursor.rawValue
+        agent.pid = 1
+        agent.pidStartedAt = Date(timeIntervalSince1970: 1)
+        #expect(agent.hasExited, "A pid from 1970 is not running.")
+        #expect(Agents.mayResume(agent) == false)
+        #expect(Agents.whyNoResume(agent)?.contains("Cursor cannot pick a conversation back up") == true)
+    }
+
+    @Test func theOthersAreOfferedOne() {
+        for kind in [LaunchAgent.claudeCode, .copilot, .grok] {
+            var agent = Agent(projectID: "p")
+            agent.launchedWith = kind.rawValue
+            agent.pid = 1
+            agent.pidStartedAt = Date(timeIntervalSince1970: 1)
+            #expect(Agents.mayResume(agent), "\(kind.title) should be startable.")
+            #expect(Agents.whyNoResume(agent) == nil)
+        }
+    }
+
+    @Test func anAgentThatHasNotStoppedIsNotExplainedAway() {
+        var agent = Agent(projectID: "p")
+        agent.launchedWith = LaunchAgent.cursor.rawValue
+        // No pid at all: not seen is not dead, so there is nothing to say either way.
+        #expect(Agents.mayResume(agent) == false)
+        #expect(Agents.whyNoResume(agent) == nil)
+    }
+
+    @Test func twoOfThemLoseSomethingIfYouTalkOverThem() {
+        // The measured reason the daemon never prompts an agent mid-turn.
+        #expect(LaunchAgent.claudeCode.profile.whenBusy == .queues)
+        #expect(LaunchAgent.claudeCode.profile.whenBusy.losesSomething == false)
+        #expect(LaunchAgent.copilot.profile.whenBusy.losesSomething)
+        #expect(LaunchAgent.cursor.profile.whenBusy.losesSomething)
+    }
+
+    @Test func notTriedIsItsOwnAnswerAndNotNo() {
+        // Writing "not tried" down as "no" would quietly take a feature away from an
+        // agent that has it.
+        #expect(LaunchAgent.grok.profile.asksFirst == .untested)
+        #expect(LaunchAgent.grok.profile.asksFirst != .no)
+        #expect(AgentProfile.Known.untested.word == "Not tried")
+    }
+
+    @Test func theOnesWithSomethingToWarnAboutSayIt() {
+        #expect(LaunchAgent.claudeCode.profile.caveat == nil)
+        #expect(LaunchAgent.copilot.profile.caveat == nil)
+        for kind in [LaunchAgent.grok, .cursor, .terminal] {
+            #expect(kind.profile.caveat?.isEmpty == false, "\(kind.title) has a caveat to give.")
+        }
+    }
+
+    @Test func everyProfileIsAboutItsOwnAgent() {
+        for kind in LaunchAgent.allCases {
+            #expect(kind.profile.agent == kind)
+        }
+    }
+}

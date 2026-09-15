@@ -584,7 +584,21 @@ public enum Agents {
     /// waiting under its session id, which is why the id had to be given at launch.
     /// (T262.)
     public static func mayResume(_ agent: Agent) -> Bool {
-        agent.isRegistered && agent.knowsItsProcess && agent.hasExited
+        guard agent.isRegistered, agent.knowsItsProcess, agent.hasExited else { return false }
+        // And the agent it was launched with has to be able to come back. Cursor says it
+        // can load a session and then refuses one, so offering Start on a stopped Cursor
+        // agent is offering a button that fails. (T373.)
+        return LaunchAgent.remembered(agent.launchedWith).profile.resuming.canStart
+    }
+
+    /// Why Start is not offered, for an agent that has stopped and cannot come back. Nil
+    /// when there is nothing to explain, which includes an agent that simply has not
+    /// stopped.
+    public static func whyNoResume(_ agent: Agent) -> String? {
+        guard agent.isRegistered, agent.knowsItsProcess, agent.hasExited else { return nil }
+        let kind = LaunchAgent.remembered(agent.launchedWith)
+        guard !kind.profile.resuming.canStart else { return nil }
+        return "\(kind.title) cannot pick a conversation back up, so \(agent.label) has to be started as a new agent."
     }
 
     /// There used to be a rule here for two agents turning up on one terminal: a shell

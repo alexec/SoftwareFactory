@@ -520,6 +520,14 @@ struct AgentView: View {
                     .buttonStyle(.glassProminent)
                     .controlSize(.small)
                     .help("Start it back up in the conversation it was having")
+            } else if let why = status.whyNoResume {
+                // Not a disabled button. A control that can never work on this agent is
+                // worse than no control: it says come back later, and later never comes.
+                // (T373.)
+                Text("Cannot be started back up")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .help(why)
             }
             Text(agent.lastSeen, format: .relative(presentation: .named))
                 .font(.callout)
