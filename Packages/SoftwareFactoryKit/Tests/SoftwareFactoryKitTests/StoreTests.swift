@@ -48,6 +48,11 @@ func wholeSecond() -> Date {
         try store.save(gone)
         #expect(try store.load().artifacts.isEmpty)
         #expect(try store.messages(for: agent.id) == [message])
+        // The person can throw a message away: it is a receipt of what was said to the
+        // agent, and the agent has already had it. (Alex, 14 Sep 2026.)
+        try store.delete(message)
+        #expect(try store.messages(for: agent.id).isEmpty)
+        try store.delete(message)
         #expect(snap.escalations[0].chosen?.title == "B")
         #expect(try #require(store.escalation(escalation.id)) == escalation)
     }

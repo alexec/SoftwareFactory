@@ -228,6 +228,13 @@ public struct FileStore: Sendable {
         try remove("agents", name: agent.id.uuidString)
     }
 
+    /// A message the person has finished with. Mail is the only record nobody but its
+    /// recipient reads, and once it has been typed into a terminal the copy here is a
+    /// receipt: throwing one away loses nothing the agent needs. (Alex, 14 Sep 2026.)
+    public func delete(_ message: AgentMessage) throws {
+        try remove("messages", name: message.id.uuidString)
+    }
+
     private func write<T: Encodable>(_ record: T, to folder: String, name: String) throws {
         let url = root.appending(path: folder).appending(path: name + ".json")
         let data = try Self.encoder.encode(record)

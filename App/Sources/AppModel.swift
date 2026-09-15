@@ -216,6 +216,12 @@ final class AppModel {
         messages(for: agentID).filter { $0.delivered == nil }.sorted { $0.sent < $1.sent }
     }
 
+    /// Throws one message away. The agent has already had it, or was never going to:
+    /// either way the copy in the inbox is the person's to clear. (Alex, 14 Sep 2026.)
+    func delete(_ message: AgentMessage) {
+        persist { try $0.delete(message) }
+    }
+
     /// Stamps a message typed, so it is not typed twice. Called only when a terminal
     /// actually took it.
     func markDelivered(_ message: AgentMessage) {

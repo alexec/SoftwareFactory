@@ -489,7 +489,7 @@ struct AgentView: View {
     /// agent is to say it in its terminal, which is on this page. (Alex, 14 Sep 2026.)
     private var messages: some View {
         AgentPanel("Messages") {
-            AgentMessages(messages: model.messages(for: agent.id))
+            AgentMessages(messages: model.messages(for: agent.id)) { model.delete($0) }
         }
     }
 }
@@ -522,6 +522,9 @@ private struct AgentPanel<Content: View>: View {
 /// The messages themselves, in the agent's page and in the row's popover alike.
 private struct AgentMessages: View {
     var messages: [AgentMessage]
+    /// Throwing one away. The inbox is a record of what was said to the agent, so the
+    /// person clears it; nothing here reaches the agent twice. (Alex, 14 Sep 2026.)
+    var delete: (AgentMessage) -> Void
 
     var body: some View {
         if messages.isEmpty {
@@ -536,6 +539,12 @@ private struct AgentMessages: View {
                         Text(message.sent, format: .relative(presentation: .named))
                             .font(.caption)
                             .foregroundStyle(.tertiary)
+                        Button("Delete", systemImage: "trash") { delete(message) }
+                            .buttonStyle(.plain)
+                            .labelStyle(.iconOnly)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .help("Throw this message away")
                     }
                     Text("From \(message.from)")
                         .font(.caption)
@@ -545,6 +554,9 @@ private struct AgentMessages: View {
                         .textSelection(.enabled)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .contextMenu {
+                    Button("Delete message", role: .destructive) { delete(message) }
+                }
                 if message.id != messages.last?.id { Divider() }
             }
         }

@@ -146,29 +146,43 @@ struct RootView: View {
         }
     }
 
-    /// One agent, in two lines: the project it is on, under it the line it set with an
-    /// OSC title, with its bell in front when it rang for a look. Clicking it opens its
-    /// page. (T222, T225, and Alex, 14 Sep 2026: two lines.)
+    /// One agent, in two lines: its name and the project it is on, under them the line it
+    /// set with an OSC title. The name is on the row because that is what an agent is
+    /// called everywhere else: in its own page's title, in a nudge, in `agent_list`, and in
+    /// every message between agents. Reading it off the title line only worked for an agent
+    /// that had not set one. The bell sits with the activity dot, which is where the rest
+    /// of the status is, and because the title line is not there at all until the agent
+    /// sets one. Clicking it opens its page.
+    /// (T222, T225, Alex 14 Sep 2026: two lines, then: show the agent A<n>.)
     private func agentRow(_ status: Dashboard.AgentStatus) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
                 AgentActivityDot(activity: status.activity)
-                Text(status.project?.name ?? "No project")
+                // An agent that registered before numbers has its raw id for a label, so this
+                // truncates rather than forcing a UUID's width on the whole sidebar. It
+                // takes the space it needs before the project name does.
+                Text(status.agent.label)
                     .foregroundStyle(status.activity == .stopped ? .secondary : .primary)
                     .lineLimit(1)
+                    .truncationMode(.middle)
+                    .layoutPriority(1)
+                if status.agent.bel { AgentBellMark() }
+                Text(status.project?.name ?? "No project")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Spacer()
             }
-            HStack(spacing: 6) {
-                if status.agent.bel { AgentBellMark() }
-                Text(sidebarLine(status))
+            if !sidebarTitle(status).isEmpty {
+                Text(sidebarTitle(status))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Spacer()
             }
         }
-        .help(sidebarLine(status))
+        .help(sidebarHelp(status))
         .tag(Destination.agent(status.id))
         .contextMenu {
             // The same poke as the button on its card and page: the words are written
@@ -186,9 +200,17 @@ struct RootView: View {
 
     /// The second line of an agent's row: what it last said it was doing, and its own
     /// name until it has said anything, so the line is never empty.
-    private func sidebarLine(_ status: Dashboard.AgentStatus) -> String {
-        let title = status.agent.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return title.isEmpty ? status.agent.label : title
+    /// The line the agent set with an OSC title, or nothing. The name is on the row above
+    /// now, so there is no need to fall back to it and repeat it.
+    private func sidebarTitle(_ status: Dashboard.AgentStatus) -> String {
+        status.agent.title.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The whole row in one line, for a row too narrow to show it.
+    private func sidebarHelp(_ status: Dashboard.AgentStatus) -> String {
+        let title = sidebarTitle(status)
+        let project = status.project?.name ?? "No project"
+        return title.isEmpty ? "\(status.agent.label), \(project)" : "\(status.agent.label), \(project): \(title)"
     }
 
     private var title: String {
