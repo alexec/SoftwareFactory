@@ -117,3 +117,50 @@ import Testing
         #expect(Markdown.summary("```\nonly code\n```").isEmpty)
     }
 }
+
+/// A long bullet is wrapped by indenting what follows it. Without this the item came
+/// apart on the page: half the sentence in the bullet, the rest underneath as its own
+/// paragraph. (T311.)
+@Suite struct MarkdownWrappedItemTests {
+    @Test func anIndentedLineIsTheRestOfTheBulletAboveIt() {
+        let blocks = Markdown.blocks("""
+        - **Needs you.** An agent raises a question with two
+          or more options and marks the one it recommends.
+        - **Artifacts.** Documents on a project.
+        """)
+        #expect(blocks == [
+            .bullet(text: "**Needs you.** An agent raises a question with two or more options and marks the one it recommends.", indent: 0),
+            .bullet(text: "**Artifacts.** Documents on a project.", indent: 0),
+        ])
+    }
+
+    @Test func aNumberedItemWrapsTheSameWay() {
+        let blocks = Markdown.blocks("""
+        1. Quit the running app
+           with software-factory quit.
+        """)
+        #expect(blocks == [.numbered(number: 1, text: "Quit the running app with software-factory quit.")])
+    }
+
+    /// A blank line ends the item. What comes after it is a paragraph, wherever it sits.
+    @Test func aBlankLineEndsTheItem() {
+        let blocks = Markdown.blocks("""
+        - One
+
+          Something else entirely.
+        """)
+        #expect(blocks == [.bullet(text: "One", indent: 0), .paragraph("Something else entirely.")])
+    }
+
+    /// An indented line that is itself a bullet is still a list inside a list.
+    @Test func anIndentedBulletIsStillABullet() {
+        let blocks = Markdown.blocks("""
+        - Agents
+          - Embedded
+        """)
+        #expect(blocks == [
+            .bullet(text: "Agents", indent: 0),
+            .bullet(text: "Embedded", indent: 1),
+        ])
+    }
+}

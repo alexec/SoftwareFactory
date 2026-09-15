@@ -29,7 +29,7 @@ struct AgentHelp: View {
                     .textSelection(.enabled)
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.quaternary, in: .rect(cornerRadius: 8))
+                    .background(.quaternary, in: .rect(cornerRadius: Style.panel))
             } else {
                 // A terminal has nothing to install and nothing to register.
                 Text("A shell in the project's folder, on the floor like any other, so you can run something by hand and watch it from the same page as the rest. Nothing is started in it.")
@@ -68,7 +68,7 @@ struct LaunchWords: View {
                 .lineLimit(3...8)
                 .textFieldStyle(.plain)
                 .padding(8)
-                .background(.quaternary, in: .rect(cornerRadius: 8))
+                .background(.quaternary, in: .rect(cornerRadius: Style.panel))
             Text("It is told its name and its session on top of this.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)

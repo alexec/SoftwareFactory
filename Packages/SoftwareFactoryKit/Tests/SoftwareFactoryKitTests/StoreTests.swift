@@ -419,3 +419,278 @@ func wholeSecond() -> Date {
         #expect(Projects.folder("~/Work", home: "") == nil)
     }
 }
+
+/// Putting a project on hold stops the agents on it. On hold used to mean nothing new is
+/// handed out while the agents already on it worked on, which is not what a person means
+/// by it. (T309.)
+@Suite struct HoldStopsAgentsTests {
+    private func live(_ number: Int, on projectID: String?) throws -> Agent {
+        let me = ProcessInfo.processInfo.processIdentifier
+        var agent = Agent(number: number, projectID: projectID, registered: Date())
+        agent.pid = me
+        agent.pidStartedAt = try #require(ProcessCheck.startTime(of: me))
+        return agent
+    }
+
+    @Test func theAgentsOnTheProjectJustHeldAreStopped() throws {
+        var project = Project(name: "Sleeper Train")
+        let other = Project(name: "Hold Still")
+        let mine = try live(1, on: project.id)
+        let theirs = try live(2, on: other.id)
+        let loose = try live(3, on: nil)
+        let before = Snapshot(projects: [project, other], agents: [mine, theirs, loose])
+        project.onHold = true
+        let after = Snapshot(projects: [project, other], agents: [mine, theirs, loose])
+
+        #expect(Sweep.agentsHeld(before: before, after: after).map(\.id) == [mine.id])
+    }
+
+    @Test func aProjectThatWasAlreadyOnHoldIsLeftAlone() throws {
+        var project = Project(name: "Sleeper Train")
+        project.onHold = true
+        let mine = try live(1, on: project.id)
+        let snapshot = Snapshot(projects: [project], agents: [mine])
+        #expect(Sweep.agentsHeld(before: snapshot, after: snapshot).isEmpty)
+    }
+
+    /// At launch the factory has no previous snapshot, so every held project would look
+    /// like one that had just been held and every agent on one would be stopped as the
+    /// app opened.
+    @Test func aProjectSeenForTheFirstTimeIsNoTransition() throws {
+        var project = Project(name: "Sleeper Train")
+        project.onHold = true
+        let mine = try live(1, on: project.id)
+        #expect(Sweep.agentsHeld(before: Snapshot(), after: Snapshot(projects: [project], agents: [mine])).isEmpty)
+    }
+
+    @Test func comingOffHoldStopsNobody() throws {
+        var project = Project(name: "Sleeper Train")
+        project.onHold = true
+        let mine = try live(1, on: project.id)
+        let before = Snapshot(projects: [project], agents: [mine])
+        project.onHold = false
+        #expect(Sweep.agentsHeld(before: before, after: Snapshot(projects: [project], agents: [mine])).isEmpty)
+    }
+
+    /// An agent that registered from somewhere else never told us a process, so there is
+    /// nothing here to stop. It is left running and the hold is only a warning to it.
+    @Test func anExternalAgentIsNotStopped() throws {
+        var project = Project(name: "Sleeper Train")
+        let outside = Agent(number: 9, projectID: project.id, registered: Date())
+        let before = Snapshot(projects: [project], agents: [outside])
+        project.onHold = true
+        #expect(Sweep.agentsHeld(before: before, after: Snapshot(projects: [project], agents: [outside])).isEmpty)
+    }
+}
+
+/// Deleting an agent's status reports takes them off the disk. The rule is tested in
+/// ArtifactsWhenAnAgentGoesTests; this is the store end of it, because a delete that
+/// looks in the wrong folder or at the wrong name fails silently. (T310.)
+@Suite struct DeletingAnAgentsReportsTests {
+    @Test func theReportsGoAndTheNotesStay() throws {
+        let store = try temporaryStore()
+        let agent = Agent(number: 1, projectID: "p", registered: wholeSecond())
+        let report = Artifact(projectID: "p", title: "How it is going",
+                              kind: .statusReport, agentID: agent.id)
+        let elsewhere = Artifact(projectID: "q", title: "How it is going there",
+                                 kind: .statusReport, agentID: agent.id)
+        let note = Artifact(projectID: "p", title: "The plan", body: "x", agentID: agent.id)
+        let theirs = Artifact(projectID: "p", title: "Somebody else's report",
+                              kind: .statusReport, agentID: UUID())
+        try store.save(agent)
+        for a in [report, elsewhere, note, theirs] { try store.save(a) }
+        #expect(try store.load().artifacts.count == 4)
+
+        for going in Artifacts.statusReports(by: agent.id, in: try store.load().artifacts) {
+            try store.delete(going)
+        }
+        try store.delete(agent)
+
+        let after = try store.load()
+        #expect(after.agents.isEmpty)
+        #expect(Set(after.artifacts.map(\.id)) == Set([note.id, theirs.id]))
+    }
+}
+
+/// Work landing on a project where nobody is working pokes the first agent. (T352.)
+@Suite struct PokeOnNewWorkTests {
+    private func agent(_ number: Int, on projectID: String?) -> Agent {
+        var a = Agent(number: number, projectID: projectID, registered: Date())
+        a.lastSeen = Date()
+        return a
+    }
+
+    private func task(_ title: String, on projectID: String, state: FactoryTask.State = .backlog,
+                      agentID: UUID? = nil) -> FactoryTask {
+        var t = FactoryTask(projectID: projectID, title: title, state: state, rank: 0)
+        t.agentID = agentID
+        return t
+    }
+
+    @Test func theFirstIdleAgentIsPoked() {
+        let project = Project(name: "Sleeper Train")
+        let second = agent(2, on: project.id)
+        let first = agent(1, on: project.id)
+        let before = Snapshot(projects: [project], tasks: [task("Old", on: project.id)],
+                              agents: [second, first])
+        let after = Snapshot(projects: [project],
+                             tasks: before.tasks + [task("New", on: project.id)],
+                             agents: [second, first])
+        #expect(Sweep.agentsToPoke(before: before, after: after, messages: [], now: .now)
+                .map(\.id) == [first.id])
+    }
+
+    /// One of them is on a task, so it will read the backlog when it finishes. Poking it
+    /// now interrupts the work to tell it about work.
+    @Test func nobodyIsPokedWhileSomebodyIsWorking() {
+        let project = Project(name: "Sleeper Train")
+        let busy = agent(1, on: project.id)
+        let idle = agent(2, on: project.id)
+        let onIt = task("Underway", on: project.id, state: .inProgress, agentID: busy.id)
+        let before = Snapshot(projects: [project], tasks: [onIt], agents: [busy, idle])
+        let after = Snapshot(projects: [project], tasks: [onIt, task("New", on: project.id)],
+                             agents: [busy, idle])
+        #expect(Sweep.agentsToPoke(before: before, after: after, messages: [], now: .now).isEmpty)
+    }
+
+    @Test func aProjectWithNobodyOnItPokesNobody() {
+        let project = Project(name: "Sleeper Train")
+        let elsewhere = agent(1, on: "another")
+        let before = Snapshot(projects: [project], tasks: [task("Old", on: project.id)],
+                              agents: [elsewhere])
+        let after = Snapshot(projects: [project],
+                             tasks: before.tasks + [task("New", on: project.id)],
+                             agents: [elsewhere])
+        #expect(Sweep.agentsToPoke(before: before, after: after, messages: [], now: .now).isEmpty)
+    }
+
+    /// At launch there is no before, and every backlog would read as work just landed.
+    @Test func theFirstLookIsNoTransition() {
+        let project = Project(name: "Sleeper Train")
+        let only = agent(1, on: project.id)
+        let after = Snapshot(projects: [project], tasks: [task("New", on: project.id)], agents: [only])
+        #expect(Sweep.agentsToPoke(before: Snapshot(), after: after, messages: [], now: .now).isEmpty)
+    }
+
+    @Test func aTaskThatWasAlreadyThereIsNotNews() {
+        let project = Project(name: "Sleeper Train")
+        let only = agent(1, on: project.id)
+        let snapshot = Snapshot(projects: [project], tasks: [task("Old", on: project.id)], agents: [only])
+        #expect(Sweep.agentsToPoke(before: snapshot, after: snapshot, messages: [], now: .now).isEmpty)
+    }
+
+    /// Another line in the queue is not another poke.
+    @Test func anAgentWithMailWaitingIsLeftAlone() {
+        let project = Project(name: "Sleeper Train")
+        let first = agent(1, on: project.id)
+        let second = agent(2, on: project.id)
+        let waiting = AgentMessage(recipientID: first.id, from: "the factory",
+                                   subject: "Nudge", contents: "x", sent: .now)
+        let before = Snapshot(projects: [project], tasks: [task("Old", on: project.id)],
+                              agents: [first, second])
+        let after = Snapshot(projects: [project],
+                             tasks: before.tasks + [task("New", on: project.id)],
+                             agents: [first, second])
+        #expect(Sweep.agentsToPoke(before: before, after: after, messages: [waiting], now: .now)
+                .map(\.id) == [second.id])
+    }
+}
+
+/// An agent with nothing to do and nothing coming is stopped. Each test here is a way of
+/// being busy that looks like silence. (T357.)
+@Suite struct StoppingIdleAgentsTests {
+    let hour: TimeInterval = 60 * 60
+
+    private func idle(_ number: Int, on projectID: String?, since ago: TimeInterval) throws -> Agent {
+        let me = ProcessInfo.processInfo.processIdentifier
+        var a = Agent(number: number, projectID: projectID, registered: Date().addingTimeInterval(-ago))
+        a.lastSeen = .now
+        a.pid = me
+        a.pidStartedAt = try #require(ProcessCheck.startTime(of: me))
+        return a
+    }
+
+    private func task(_ title: String, on projectID: String, state: FactoryTask.State,
+                      agentID: UUID? = nil, ago: TimeInterval = 0) -> FactoryTask {
+        var t = FactoryTask(projectID: projectID, title: title, state: state, rank: 0)
+        t.agentID = agentID
+        t.updated = Date().addingTimeInterval(-ago)
+        return t
+    }
+
+    @Test func anHourWithNothingToDo() throws {
+        let project = Project(name: "Sleeper Train")
+        let spent = try idle(1, on: project.id, since: hour + 60)
+        let snapshot = Snapshot(projects: [project], agents: [spent])
+        #expect(Sweep.idleAgentsToStop(in: snapshot, messages: [], now: .now).map(\.id) == [spent.id])
+    }
+
+    @Test func notBeforeTheHourIsUp() throws {
+        let project = Project(name: "Sleeper Train")
+        let fresh = try idle(1, on: project.id, since: 60 * 30)
+        #expect(Sweep.idleAgentsToStop(in: Snapshot(projects: [project], agents: [fresh]),
+                                       messages: [], now: .now).isEmpty)
+    }
+
+    /// The hour runs from the last task it touched, not from when it registered.
+    @Test func theHourRunsFromItsLastTask() throws {
+        let project = Project(name: "Sleeper Train")
+        let old = try idle(1, on: project.id, since: hour * 5)
+        let justFinished = task("Done", on: project.id, state: .done, agentID: old.id, ago: 60)
+        let snapshot = Snapshot(projects: [project], tasks: [justFinished], agents: [old])
+        #expect(Sweep.idleAgentsToStop(in: snapshot, messages: [], now: .now).isEmpty)
+    }
+
+    /// Work waiting means a poke is the right move, not a stop.
+    @Test func notWhileItsBacklogHasWork() throws {
+        let project = Project(name: "Sleeper Train")
+        let spent = try idle(1, on: project.id, since: hour * 2)
+        let waiting = task("Next", on: project.id, state: .backlog)
+        #expect(Sweep.idleAgentsToStop(in: Snapshot(projects: [project], tasks: [waiting], agents: [spent]),
+                                       messages: [], now: .now).isEmpty)
+    }
+
+    /// Blocked is busy: it is waiting on something and the factory clears its own blocks.
+    @Test func notWhileItHoldsABlockedTask() throws {
+        let project = Project(name: "Sleeper Train")
+        let spent = try idle(1, on: project.id, since: hour * 2)
+        let stuck = task("Stuck", on: project.id, state: .blocked, agentID: spent.id, ago: hour * 2)
+        #expect(Sweep.idleAgentsToStop(in: Snapshot(projects: [project], tasks: [stuck], agents: [spent]),
+                                       messages: [], now: .now).isEmpty)
+    }
+
+    /// It asked a question and is waiting for the answer, which is what it should do.
+    @Test func notWhileItHasAQuestionOpen() throws {
+        let project = Project(name: "Sleeper Train")
+        let spent = try idle(1, on: project.id, since: hour * 2)
+        var asked = Escalation(projectID: project.id, question: "Which way?",
+                               options: [.init(title: "A"), .init(title: "B")])
+        asked.agentID = spent.id
+        #expect(Sweep.idleAgentsToStop(in: Snapshot(projects: [project], escalations: [asked], agents: [spent]),
+                                       messages: [], now: .now).isEmpty)
+    }
+
+    @Test func notWhileSomethingIsAboutToBeSaidToIt() throws {
+        let project = Project(name: "Sleeper Train")
+        let spent = try idle(1, on: project.id, since: hour * 2)
+        let mail = AgentMessage(recipientID: spent.id, from: "Alex", subject: "Nudge",
+                                contents: "x", sent: .now)
+        #expect(Sweep.idleAgentsToStop(in: Snapshot(projects: [project], agents: [spent]),
+                                       messages: [mail], now: .now).isEmpty)
+    }
+
+    /// No backlog to be empty, and the person started it for something of their own.
+    @Test func anAgentOnNoProjectIsLeftAlone() throws {
+        let loose = try idle(1, on: nil, since: hour * 5)
+        #expect(Sweep.idleAgentsToStop(in: Snapshot(agents: [loose]), messages: [], now: .now).isEmpty)
+    }
+
+    /// Nothing here to stop: it registered from somewhere else and never told us a process.
+    @Test func anExternalAgentIsNotStopped() {
+        let project = Project(name: "Sleeper Train")
+        let outside = Agent(number: 9, projectID: project.id,
+                            registered: Date().addingTimeInterval(-60 * 60 * 5))
+        #expect(Sweep.idleAgentsToStop(in: Snapshot(projects: [project], agents: [outside]),
+                                       messages: [], now: .now).isEmpty)
+    }
+}

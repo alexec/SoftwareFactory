@@ -93,6 +93,18 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     `Escalation` (options, one recommended; optional `link` to a document to review,
     filed as an artifact; optional `artifactID`; `decide(_:by:)` records a `Decision`),
     `Artifact` (a document on a project: title, body, optional link, and a `kind`.
+    A document is one of three things, which is what `Artifact.source` answers: the
+    markdown body an agent typed, a page on the web, or a markdown or HTML file on this
+    Mac. What somebody wrote wins, so a document with a body is its body and its link is
+    a reference beside it. `Artifacts.validatedLink` is what may be filed: an http or
+    https URL as typed, which covers a server the agent has running here; or a file path
+    stored absolute with the tilde off, against the real home rather than
+    `NSHomeDirectory`; relative is refused for the same reason a project's folder cannot
+    be relative. `Artifacts.readableFiles` are the ones put on paper, markdown and HTML;
+    `pictureFiles` are shown as themselves, images and PDFs, because a screenshot with
+    margins around it is a screenshot you can see less of, and a page of prose saying
+    what the screen looked like is not the screen (T317). Anything else is refused rather
+    than filed and then shown as nothing. (T311.)
     A note is the ordinary thing: a brief, a plan, a finding, matched on its title or its
     link, and twenty live ones is the cap (`Artifacts.cap`). Adding the same one again
     returns the one already there unless `replace` is passed. A status report is the one
@@ -100,7 +112,18 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     called, always written over rather than added to, and outside the twenty, because
     there is only ever one per agent and a busy floor's reports would otherwise crowd out
     the project's own documents. `Artifacts.add` answers `created`, `replaced` or
-    `alreadyThere`. A body is a kilobyte, `Artifacts.maxBody`: an artifact is read on a
+    `alreadyThere`. Deleting an agent deletes its status reports with it,
+    `Artifacts.statusReports(by:)`, off the disk rather than marked removed: the report
+    is about the agent, and with the agent gone it is a report by nobody. Its notes stay,
+    because a plan or a finding belongs to the project and is still true whoever wrote it
+    (T310). A document arrives unread and `Artifacts.read` marks it read when the person
+    opens it, which is `ArtifactPaper` appearing, the one place a document is shown whole.
+    Writing one over makes it unread again, unless the new words are the old words: an
+    agent that has rewritten its status report has something to say. A read card is
+    smaller with one line of preview rather than three, and an unread one carries a dot,
+    on the project's cards and on the agent's tabs alike. Not greyed: greying and
+    shrinking say the same thing twice, and grey also says you cannot have it (T335).
+    A body is a kilobyte, `Artifacts.maxBody`: an artifact is read on a
     card while deciding what to do, not somewhere to put a transcript, and the refusal
     says to put the long one in the repo and file a link (T274). The factory asks an agent for one when an hour has gone by without
     it: `Sweep.statusReportsWanted` writes the message, `Agent.statusAskedAt` is how it
@@ -216,6 +239,18 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     terminal while the new one ran unseen. (Alex, 14 Sep 2026.)
   - `Sweep.stoppedAgents`: an agent whose process has gone gives back what it held. This
     replaced an hour of silence, which was a guess: an agent thinking is silent too.
+  - `Sweep.idleAgentsToStop`: an agent with nothing to do and nothing coming is stopped
+    after an hour, `Sweep.idleStandsFor`. Nothing to do means all four: no task of its own
+    in progress or blocked, no question of its own open, nothing on its project's backlog,
+    and no mail waiting. Each is a way of being busy that looks like silence. The hour runs
+    from the last task it touched, not from `lastSeen`, which a polling agent keeps fresh
+    while doing nothing. An agent on no project is left alone: there is no backlog to be
+    empty. Safe to do unasked because Start picks the conversation back up (T357).
+  - `Sweep.agentsToPoke`: work landing on a project where nobody is working nudges the
+    first agent by number. Only when every agent on that project is idle: one that is on
+    a task will read the backlog when it finishes, and poking it now interrupts work to
+    tell it about work. The transition is what counts, so it fires once however the task
+    arrived, and an agent with mail already waiting is left alone (T352).
   - `Sweep.unblocked`: a task blocked on a decision now made, or a task now done, goes
     back to the backlog with a line saying so. A block on a person clears by hand.
   - `Sweep.statusReportsWanted`: an agent at work is silent, and silence reads the same
@@ -250,8 +285,13 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
   - `Shared/Dictation.swift`: `SpeechAnalyzer` on device; `volatile` and `settled` text.
   - A project is a name (`Project(name:)`, id a UUID string; projects from before 12 Sep
     2026 keep their folder path as id). `resolveProject` takes a name, an id, or an old
-    folder path (meaning the folder's name). On hold blocks no tool: every reply on that
-    project ends with `MCPServer.holdWarning`.
+    folder path (meaning the folder's name). Putting a project on hold stops the agents
+    on it, `Sweep.agentsHeld`, however the hold was set: the Active toggle or
+    `project_set`. It is the transition that stops them rather than the state, so an
+    agent started on a held project on purpose is left alone, and Start picks up each
+    stopped one where it left off (T309). On hold blocks no tool: every reply on that
+    project ends with `MCPServer.holdWarning`, which is all an external agent gets,
+    because the factory never knew its process and has nothing to stop.
   - `Shared/DictateField.swift`: a text field whose trailing control is a microphone
     while it is empty and the caller's own submit control once there is something to
     send. Tapping (Mac) or holding (phone) the microphone records; a popover above it
@@ -263,11 +303,22 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     title; anything after it is the note. No model involved any more — Apple
     Intelligence's title extraction was unreliable enough to be worse than the words
     themselves.
-  - `Shared/MarkdownText.swift`: a document as a person reads it. `Markdown.blocks` in
-    the kit splits headings, paragraphs, lists, quotes, fenced code and rules; the view
+  - `Shared/MarkdownText.swift`: markdown as text views, for a line or two inside a row:
+    a status report on the Status reports page, a document on the phone. `Markdown.blocks`
+    in the kit splits headings, paragraphs, lists, quotes, fenced code and rules; the view
     draws them and leaves what is inside a line to `AttributedString`. Artifacts used one
     `AttributedString(markdown:)` call, which reads inline marks and drops every line
-    break, so a whole plan arrived as one paragraph. (T208)
+    break, so a whole plan arrived as one paragraph. (T208) A line indented under a
+    bullet is the rest of that bullet: a hard-wrapped list used to come apart, half the
+    sentence in the item and half underneath it as a paragraph. (T311)
+  - `Paper` in the kit, and `App/Sources/ArtifactPaper.swift`: a document to read, as a
+    page. `Paper.html` turns the blocks into HTML and `Paper.page` puts it on paper: a
+    warm ground, a serif, a measure, light and dark. `ArtifactPaper` shows all three
+    kinds of document in one `WKWebView`: markdown this app rendered, an HTML file loaded
+    from where it sits, a website as itself. Script is off for anything this app
+    rendered and on for a website, and a link the person clicks opens in their browser
+    rather than taking the pane somewhere else. Reading a file needs the sandbox off, so
+    the store build says it could not read it rather than showing a blank page. (T311)
   - `Shared/WorkField.swift`: the add and edit field. The first word is the work
     (Design, Plan, Code, Fix, Review, Investigate, Ship); a matching word is offered
     while you type it. There is no picker. (T181)
@@ -279,10 +330,23 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     through `persist`; starts `FactoryServer` on port 4747.
   - `FactoryServer`: `NWListener` on the port, one queue per connection (a request can
     block for minutes), Bonjour `_softwarefactory._tcp`.
-  - `RootView` (split view: Dashboard, Agents, Status reports, Capacity, No project, then the agents on
-    the floor in a group of their own, then the projects. An agent is two lines: its dot
-    and the project it is on, then what it is doing: the task it is on, else the first
-    line of its status report, else the line it set with an OSC title
+  - `RootView` (split view: Dashboard, In progress, Capacity, No project,
+    then the projects, each with the agents on it hanging underneath, working ones first and
+    stopped ones after (`Dashboard.agents(on:)`, T359). They were a flat Agents section and
+    a Stopped one, which meant reading every row's project name to find the two on the
+    thing you came for; an agent belongs to the work it is doing. Agents on no project hang
+    under the No project row the same way. A project row is its name, and a
+    count in orange when it has a question waiting. The dot and the counts of blocked and
+    in progress were there and are gone: a sidebar is a list of places to go, and a row
+    that also reports on the work makes you read twelve small numbers to find the project
+    you were looking for. What is left is the one thing you cannot act on anywhere else
+    (T358). An agent is its name and dot, then a line
+    for every task in its name, numbered (`AgentLine.linesUnderTheName`, off
+    `Backlog.alreadyYours`, blocked first). It showed the one task the factory calls
+    current, which for an agent holding three is two thirds of a lie: the rest are in its
+    name, nobody else may take them, and its own page was the only place to see them
+    (T362). An agent holding nothing says what it can for itself instead: the first line
+    of its status report, else the line it set with an OSC title
     (`AgentLine.underTheName`, T295). Its bell goes in front when it rang. The row opens that agent's page from anywhere, and opening the
     page clears the bell however you got there; right click to Nudge, Stop or Delete it.
     Stop is on the agent's page too, beside Nudge, and asks nothing
@@ -292,9 +356,24 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     (T261, then T294.)
     T222, T225, and Alex, 14 Sep 2026), `DashboardView` (stat tiles, Needs you as a horizontal strip,
     the agents on the floor as cards; `AgentCard` is one of them and `AgentView` is the
-    page behind it; an agent that is not stopped has Nudge, its messages and terminal),
-    `AgentsView` (every agent registered, and the button that starts a
-    new one), `InProgressView` (every task underway on every project, the ones nobody is
+    page behind it; an agent that is not stopped has Nudge, its messages and terminal.
+    That page is a band and two columns. The band sits under the agent's name, full
+    width, and says what it is on, what it holds, its messages and what it is running
+    with; not its pid and not its session id, which look useful and are not (T331). It
+    was a column, which made four with the sidebar, and then the terminal's footer, which
+    read as being about the terminal (T314, T332). The columns are the terminal and what
+    the agent has written, with a draggable divider between them whose width is
+    remembered across launches (`ColumnGrip`, T329). The documents column is its status
+    report and its notes, one on paper at a time, chosen from tabs across the top that
+    scroll and scroll the current one into view (`DocumentTabs`, T330); a menu showed one
+    name and hid the rest. It is not drawn at all for an agent that has written nothing,
+    and the band and the column each have a toolbar toggle. They were rows behind a
+    triangle, which is a fine way to list documents and no way to read one, T311),
+    `AgentsView` and `StatusReportsView` (every agent registered; everybody's
+    report on one page). Both came off the sidebar in T360 and neither has another way in
+    yet, so they are pages with no door: say whether they should go or get one. Starting
+    an agent on no project did not go with them, `FreeAgentCard` moved to the No project
+    page, which was the only other place such an agent could have come from, `InProgressView` (every task underway on every project, the ones nobody is
     on at the top; the project name opens its backlog, T287), `StatusReportsView` (what everybody is doing on one page, off
     `StatusReportBoard`; an agent that has filed nothing says so rather than being left
     out, and a report past its hour has its age in orange. T288), `FactoryView` (the Capacity page: verdict and what each kind of work would
@@ -309,11 +388,13 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     `OpenFolderButton` (the project's folder in the Finder, from its own header where the
     path itself opens it and Change sets it, and from the agent page beside the project
     name, T300), `ProjectView` (backlog
-    with add, drag reorder, state menu, notes under rows, the artifacts the agents filed
-    as cards in a grid (`ArtifactTile`, opening `ArtifactSheet`: they were disclosure rows
-    down the middle of the backlog, which made a plan and a one-line note the same size
-    and hid every one behind a triangle, T297),
-    and Start an agent on this,
+    with add, drag reorder, state menu, notes under rows, and the documents in a column of
+    their own beside it: the same `ArtifactBrowser` the agent page uses, with a
+    `ColumnGrip` between them whose width is remembered, which with the sidebar is three
+    columns (T342, T349). They were cards in a grid opening a sheet, and before that
+    disclosure rows down the middle of the backlog (T297); reading matter does not belong
+    in the same scroller as a list of work.
+    And Start an agent on this,
     on a backlog row: it reserves an agent, puts the task in its name and starts it on
     that one task), `AgentLauncher` and `StartAgent` (reserve, assign, launch: one path
     for every launch, including agents `agent_create` asked for), `LaunchChooser` (pick Claude Code, GitHub Copilot, Grok, Cursor or Terminal
@@ -420,8 +501,16 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
   `Records.version` when an older reader could not cope.
 - Anything that runs on an audio or network thread is `@Sendable` and touches nothing
   main-actor: the dictation tap crashed once for exactly this.
-- A new tool: add it to `Tool.all` and `call`, and a test in `MCPServerTests`.
+- A new tool: add it to `Tool.all` and `call`, and a test in `MCPServerTests`. A tool
+  that describes an argument must read it. `task_claim`, `task_status` and `task_note`
+  all take one task or several through `MCPServer.tasks(_:in:)`; two of them advertised
+  `task_ids`, read only `task_id`, and refused the call without saying which half was
+  wrong (T318).
 - Every string a person reads follows `alex-writing-voice`; no em dashes.
+- Measurements come from `App/Sources/Style.swift`: `card` 18, `panel` 12, `page` 24,
+  `cardPadding` 16, `sheetPadding` 20, and a chip is a capsule. They were written where
+  they were used and the same thing came out at four sizes (T343). A new corner names one
+  of these or it is a decision worth arguing for.
 - First-run: the sheet shows once (`hasSeenIntro`) and again from Settings. Reset with the
   Developer row or `defaults delete com.alexecollins.softwarefactory hasSeenIntro`.
 - Rebuild and restart the Debug Mac app at the end of every task. The factory on 4747 is

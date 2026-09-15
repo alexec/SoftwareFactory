@@ -156,7 +156,7 @@ struct StatTile: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity)
-        .glassEffect(glass, in: .rect(cornerRadius: 18))
+        .glassEffect(glass, in: .rect(cornerRadius: Style.card))
         .animation(.snappy, value: value)
     }
 
@@ -275,7 +275,7 @@ struct AgentCard: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
         .overlay(alignment: .topTrailing) {
             if status.canNudge {
                 Button("Nudge") {
@@ -317,9 +317,17 @@ struct AgentView: View {
     /// Back to the page this was opened from. Nil when there is nowhere to go.
     var back: (() -> Void)?
     @State private var showsDetails = true
-    /// Stopping an agent cannot be taken back, and the header button is one click on a
-    /// wide target, so it asks first. (T261.)
+    /// The documents column. On by default: what the agent has written down is the thing
+    /// you most want beside the terminal, and the column is not drawn at all when it has
+    /// written nothing. (T311.)
+    @State private var showsDocuments = true
+    @State private var showsMessages = false
     @State private var resumeError: String?
+    /// How wide the documents are, remembered across launches and across agents: it is
+    /// how you like to read, not a property of one agent. (T329.)
+    @AppStorage("agentDocumentsWidth") private var documentsWidth = 420.0
+
+
 
     private struct ResourceLease: Identifiable {
         var resource: Resource
@@ -337,34 +345,52 @@ struct AgentView: View {
         }
     }
 
-    /// The terminal is the page when there is one: it is what you came to watch, and it
-    /// takes the height rather than sitting in a box inside a scroller. Everything about
-    /// the agent goes beside it, in a column you can put away.
-    /// (Alex, 13 Sep 2026: rethought.)
+    /// Two columns on this page, three in the window with the sidebar counted: the
+    /// terminal, and what the agent has written. It is what you came to watch and what
+    /// it has to say, and nothing between them.
+    ///
+    /// What the agent is on, holding and running used to be a column of its own, which
+    /// made four. It is a band on two lines now, always there, costing a little height
+    /// rather than a quarter of the width. (T314.) It sits under the name and runs the
+    /// whole way across, because it is about the agent and not about the terminal: under
+    /// the terminal it read as that pane's footer, and it went on describing the agent
+    /// while the documents beside it were something else entirely.
+    /// (T332, Alex, 15 Sep 2026.)
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
-            if let session = terminals.session(for: agent) {
+            if showsDetails {
+                strip
+                Divider()
+            }
+            GeometryReader { page in
                 HStack(spacing: 0) {
-                    // The pane is the terminal it was made with: a representable hands
-                    // its view over once and SwiftUI keeps it. Going from one agent to
-                    // the next in the sidebar reuses this position, so without an
-                    // identity of its own the pane went on showing the agent you came
-                    // from. (Alex, 14 Sep 2026.) The identity is the run rather than the
-                    // session, because starting a stopped agent back up makes a new
-                    // terminal under the same session id and the page has to follow it.
-                    // (Alex, 14 Sep 2026.)
-                    TerminalPanel(terminal: session.terminal)
-                        .id(session.run)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    if showsDetails {
-                        Divider()
-                        inspector.frame(width: 320)
+                    VStack(spacing: 0) {
+                        if let session = terminals.session(for: agent) {
+                            // The pane is the terminal it was made with: a representable
+                            // hands its view over once and SwiftUI keeps it. Going from
+                            // one agent to the next in the sidebar reuses this position,
+                            // so without an identity of its own the pane went on showing
+                            // the agent you came from. (Alex, 14 Sep 2026.) The identity
+                            // is the run rather than the session, because starting a
+                            // stopped agent back up makes a new terminal under the same
+                            // session id and the page has to follow it.
+                            TerminalPanel(terminal: session.terminal)
+                                .id(session.run)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else {
+                            noTerminal
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if hasDocuments && showsDocuments {
+                        ColumnGrip(width: $documentsWidth, beside: page.size.width)
+                        documents
+                            .frame(width: ColumnGrip.width(
+                                documentsWidth, beside: page.size.width))
                     }
                 }
-            } else {
-                inspector.frame(maxWidth: 720, alignment: .leading)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -385,10 +411,19 @@ struct AgentView: View {
                 }
             }
             ToolbarItem {
-                Button("Details", systemImage: showsDetails ? "sidebar.right" : "sidebar.right") {
+                Button("Details", systemImage: "rectangle.bottomthird.inset.filled") {
                     withAnimation(.snappy) { showsDetails.toggle() }
                 }
-                .help(showsDetails ? "Hide what is beside the terminal" : "Show what is beside the terminal")
+                .help(showsDetails ? "Hide what it is on and holding" : "Show what it is on and holding")
+            }
+            ToolbarItem {
+                Button("Documents", systemImage: "doc.richtext") {
+                    withAnimation(.snappy) { showsDocuments.toggle() }
+                }
+                .disabled(!hasDocuments)
+                .help(hasDocuments
+                      ? (showsDocuments ? "Hide what it has written" : "Show what it has written")
+                      : "It has not written anything yet")
             }
         }
     }
@@ -479,47 +514,121 @@ struct AgentView: View {
         .background(.bar)
     }
 
-    /// Everything that is not the terminal, in one scrolling column.
-    private var inspector: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                assignedTasks
-                artifacts
-                messages
-                resources
-                details
+    /// What the agent is on, holding and running, on two lines under its name.
+    ///
+    /// This was a column, and a column of labelled rows for a few short facts is a lot
+    /// of window to spend on them. They read as well across as down. (T314.)
+    private var strip: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                onNow
+                Spacer(minLength: 8)
+                messagesButton
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 8) {
+                holding
+                Spacer(minLength: 8)
+                facts
+            }
+        }
+        .font(.callout)
+        .lineLimit(1)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.bar)
+    }
+
+    /// The tasks in its name, done ones left out. Its own note stands in when it has no
+    /// task, because an agent with nothing assigned usually has a reason written down.
+    @ViewBuilder
+    private var onNow: some View {
+        let tasks = model.tasks(assignedTo: agent.id)
+        if tasks.isEmpty {
+            Text(agent.note.isEmpty ? "Nothing on it." : agent.note)
+                .foregroundStyle(.secondary)
+        } else {
+            ForEach(tasks) { task in
+                StripChip(
+                    text: "\(task.label.map { "\($0) " } ?? "")\(task.title)",
+                    detail: task.state.word,
+                    help: "\(task.title) · \(task.state.word)")
+            }
         }
     }
 
-    /// The facts that are nowhere else on the page. The project it is on and when it
-    /// last said anything are across the top, so they are not said again down here:
-    /// what is left is what is running, since when, and the session id to give it in a
-    /// tool call. (Alex, 15 Sep 2026.)
-    private var details: some View {
-        AgentPanel("Details") {
-            LabeledContent("Running", value: running)
-            LabeledContent("Since") {
-                Text(agent.registered, format: .dateTime.month().day().hour().minute())
+    /// What it holds right now. Nothing is drawn when it holds nothing: an empty line
+    /// saying so was worth a row in a column and is not worth one here.
+    @ViewBuilder
+    private var holding: some View {
+        if leases.isEmpty {
+            Text("Holding nothing")
+                .foregroundStyle(.tertiary)
+        } else {
+            ForEach(leases) { held in
+                StripChip(
+                    text: held.resource.name,
+                    detail: "until \(held.lease.until.formatted(date: .omitted, time: .shortened))",
+                    help: held.lease.why.isEmpty
+                        ? "Held until \(held.lease.until.formatted(date: .omitted, time: .shortened))"
+                        : "\(held.lease.why) · until \(held.lease.until.formatted(date: .omitted, time: .shortened))")
             }
-            LabeledContent("Connection", value: agent.isConnected ? "Open" : "Closed")
-                .help("Whether its MCP session is connected right now. Closed between calls is normal.")
-            if let pid = agent.pid {
-                LabeledContent("Process", value: String(pid))
-                    .help("The process the factory watches, and stops when you stop it")
-            }
-            LabeledContent("Session") {
-                Text(agent.id.uuidString)
-                    .font(.callout.monospaced())
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-            }
-            .help("Its session id: the name it goes by in a tool call, and the terminal session it runs in")
         }
-        .lineLimit(1)
+    }
+
+    /// What it is running, and since when if you hold the pointer over it. The project
+    /// and when it last spoke are across the top, so they are not said twice.
+    ///
+    /// Not its process and not its session id. They were here and they are the kind of
+    /// fact that looks useful and is not: the factory watches the process itself and
+    /// stops it when you stop the agent, and the session id is the agent's own business,
+    /// the name it goes by in a tool call. Neither is anything a person does anything
+    /// with, and both are long enough to crowd out what is. (T331, Alex, 15 Sep 2026.)
+    private var facts: some View {
+        Text(running)
+            .foregroundStyle(.secondary)
+            .help("Started \(agent.registered.formatted(date: .abbreviated, time: .shortened))")
+    }
+
+    /// Its messages, behind a button, because most of the time there are none and a
+    /// standing empty list is a line of nothing. The count is the whole summary.
+    @ViewBuilder
+    private var messagesButton: some View {
+        let waiting = model.messages(for: agent.id)
+        Button {
+            showsMessages.toggle()
+        } label: {
+            Label(waiting.isEmpty ? "No messages" : "^[\(waiting.count) message](inflect: true)",
+                  systemImage: "tray")
+        }
+        .buttonStyle(.borderless)
+        .disabled(waiting.isEmpty)
+        .help("What has been sent to this agent")
+        .popover(isPresented: $showsMessages, arrowEdge: .bottom) {
+            ScrollView {
+                AgentMessages(messages: waiting) { model.delete($0) }
+                    .padding(16)
+            }
+            .frame(width: 360, height: min(420, max(140, Double(waiting.count) * 120)))
+        }
+    }
+
+    /// The other half of the page when there is no terminal to show. An external agent
+    /// never had one here; an embedded one whose terminal has gone is being looked for
+    /// as this draws. Either way the page says which rather than showing a blank.
+    private var noTerminal: some View {
+        VStack(spacing: 8) {
+            Spacer(minLength: 0)
+            EmptyLine(
+                // Whether the factory started this one is what it was launched with.
+                // There is no separate embedded flag any more: the session is the id.
+                text: agent.launchedWith == nil
+                    ? "It registered from somewhere else, so there is no terminal here to watch."
+                    : "Its terminal is not on this Mac any more. What it has written is beside this.",
+                symbol: "macwindow.badge.plus")
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// What the factory started in the terminal, or the plain truth that it did not
@@ -531,100 +640,41 @@ struct AgentView: View {
         return kind.title
     }
 
-    private var assignedTasks: some View {
-        let tasks = model.tasks(assignedTo: agent.id)
-        return AgentPanel("Assigned tasks") {
-            if tasks.isEmpty {
-                EmptyLine(text: agent.note.isEmpty ? "Nothing on it." : agent.note, symbol: "checklist")
-            } else {
-                ForEach(tasks) { task in
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        if let label = task.label {
-                            Text(label)
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.tertiary)
-                                .frame(minWidth: 34, alignment: .trailing)
-                                .textSelection(.enabled)
-                                .help("The task's number: say it, type it, or give it to an agent")
-                        }
-                        Text(task.title)
-                        Spacer()
-                        Text(task.state.word)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                    if task.id != tasks.last?.id { Divider() }
-                }
-            }
-        }
+    /// What this agent has written: its status report first, then its documents. They
+    /// were rows in the column beside the terminal, each behind a triangle, which is a
+    /// fine way to list documents and no way to read one. A document is reading matter,
+    /// so it gets a column of its own and a page to sit on. (T311.)
+    private var mine: [Artifact] { Artifacts.produced(by: agent.id, in: model.snapshot.artifacts) }
+    private var hasDocuments: Bool { !mine.isEmpty }
+
+    private var documents: some View {
+        ArtifactBrowser(documents: mine)
+            .id(agent.id)
     }
 
-    private var artifacts: some View {
-        let mine = Artifacts.produced(by: agent.id, in: model.snapshot.artifacts)
-        return Group {
-            if !mine.isEmpty {
-                AgentPanel("Artifacts") {
-                    ForEach(mine) { artifact in
-                        ArtifactCard(artifact: artifact)
-                        if artifact.id != mine.last?.id { Divider() }
-                    }
-                }
-            }
-        }
-    }
-
-    private var resources: some View {
-        AgentPanel("Resources") {
-            if leases.isEmpty {
-                EmptyLine(text: "No resources are held.", symbol: "lock.rectangle.stack")
-            } else {
-                ForEach(leases) { held in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(held.resource.name)
-                        Text(held.lease.why.isEmpty ? "Held until \(held.lease.until.formatted(date: .omitted, time: .shortened))" :
-                             "\(held.lease.why) · until \(held.lease.until.formatted(date: .omitted, time: .shortened))")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    if held.id != leases.last?.id { Divider() }
-                }
-            }
-        }
-    }
-
-    /// What has been sent to this agent, read newest last. There is no box to write in:
-    /// a message is typed into the agent's terminal, so the way to say something to an
-    /// agent is to say it in its terminal, which is on this page. (Alex, 14 Sep 2026.)
-    private var messages: some View {
-        AgentPanel("Messages") {
-            AgentMessages(messages: model.messages(for: agent.id)) { model.delete($0) }
-        }
-    }
 }
 
-/// The page's one section shape: a heading, then its content on glass, same as the
-/// cards on Capacity and the dashboard.
-private struct AgentPanel<Content: View>: View {
-    var title: String
-    @ViewBuilder var content: Content
-
-    init(_ title: String, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.content = content()
-    }
+/// One fact in the band under the terminal: a name, and a quieter word after it. The
+/// shape a task, a lease and anything else the strip has to say all take, so the line
+/// reads as a row of the same thing rather than a sentence that keeps changing font.
+private struct StripChip: View {
+    var text: String
+    var detail: String
+    var help: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.headline)
-            VStack(alignment: .leading, spacing: 10) {
-                content
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 12))
+        HStack(spacing: 5) {
+            Text(text)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Text(detail)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
+        .background(.quaternary.opacity(0.4), in: .capsule)
+        .help(help)
     }
 }
 
@@ -828,6 +878,6 @@ struct NotificationPrimer: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
     }
 }

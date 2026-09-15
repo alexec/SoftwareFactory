@@ -10,6 +10,9 @@ import SoftwareFactoryKit
 struct StatusReportsView: View {
     @Environment(AppModel.self) private var model
     var selectAgent: (UUID) -> Void = { _ in }
+    /// Where the project name goes. Nil is the agent on no project, which has a page of
+    /// its own rather than a dead label. (T338.)
+    var selectProject: (String?) -> Void = { _ in }
 
     private var rows: [StatusReportBoard.Row] {
         StatusReportBoard.rows(in: model.snapshot, now: .now)
@@ -26,7 +29,10 @@ struct StatusReportsView: View {
                         symbol: "text.document")
                 } else {
                     ForEach(rows) { row in
-                        ReportRow(row: row) { selectAgent(row.agent.id) }
+                        ReportRow(
+                            row: row,
+                            openAgent: { selectAgent(row.agent.id) },
+                            openProject: { selectProject(row.projectID) })
                     }
                 }
             }
@@ -39,21 +45,29 @@ struct StatusReportsView: View {
 
 /// One agent's news: who it is, what it is on, when it last said so, and the report
 /// itself underneath.
+///
+/// Both names open. This page is where you find out something is wrong, and the next
+/// move is always to go and look at the agent or at its backlog; before this that meant
+/// reading the name here and then finding it again in the sidebar by hand. (T338.)
 private struct ReportRow: View {
     var row: StatusReportBoard.Row
-    var open: () -> Void
+    var openAgent: () -> Void
+    var openProject: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Button(row.agent.label, action: open)
-                    .buttonStyle(.plain)
-                    .font(.headline)
-                    .help("Open \(row.agent.label)")
-                Text(row.projectName ?? "No project")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                OpenLink(help: "Open \(row.agent.label)", open: openAgent) {
+                    Text(row.agent.label)
+                        .font(.headline)
+                }
+                OpenLink(help: row.projectName.map { "Open \($0)" } ?? "Open No project",
+                         open: openProject) {
+                    Text(row.projectName ?? "No project")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
                 Spacer(minLength: 0)
                 when
             }
@@ -61,7 +75,7 @@ private struct ReportRow: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
     }
 
     /// When it last said something, and whether that still stands. An old report is not

@@ -129,6 +129,21 @@ public struct Dashboard: Sendable, Equatable {
 
     public var stoppedAgents: [AgentStatus] { agents.filter { $0.activity == .stopped } }
 
+    /// The agents on one project, working ones first and stopped ones after, each group
+    /// in the order they registered.
+    ///
+    /// The sidebar hangs these under the project rather than listing every agent in a
+    /// section of its own. An agent belongs to the work it is doing: with eight on the
+    /// floor, one flat list means reading every row's project name to find the two on
+    /// the thing you care about. Stopped ones come after rather than being left out,
+    /// because a stopped agent is not gone, it is waiting to be started back up (T268).
+    /// Pass nil for the agents on no project, which hang under that row the same way.
+    /// (T359, Alex, 15 Sep 2026.)
+    public func agents(on projectID: String?) -> [AgentStatus] {
+        let mine = agents.filter { $0.project?.id == projectID }
+        return mine.filter { $0.activity != .stopped } + mine.filter { $0.activity == .stopped }
+    }
+
     /// Agents on no project: the sidebar's No project row. (T176, 13 Sep 2026.)
     public var unassignedAgents: [AgentStatus] { agents.filter { $0.project == nil } }
 

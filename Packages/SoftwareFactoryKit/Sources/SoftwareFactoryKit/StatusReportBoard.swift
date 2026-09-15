@@ -13,6 +13,11 @@ public enum StatusReportBoard {
         public var agent: Agent
         /// The project it is on, as a person reads it, or nothing when it is on none.
         public var projectName: String?
+        /// That project, as something to open. It travels with the name rather than
+        /// being read off the agent, because the two can disagree: an agent keeps the
+        /// projectID of a project that has been removed, and clicking through to a
+        /// project that is not in `load()` any more opens a page about nothing. (T338.)
+        public var projectID: String?
         /// Its report, if it has filed one.
         public var report: Artifact?
         /// Whether that report still stands, or is old enough that the factory has asked
@@ -23,9 +28,13 @@ public enum StatusReportBoard {
         /// When it last said anything about its work. Nil for an agent that never has.
         public var said: Date? { report?.updated }
 
-        public init(agent: Agent, projectName: String?, report: Artifact?, isFresh: Bool) {
+        public init(
+            agent: Agent, projectName: String?, projectID: String? = nil,
+            report: Artifact?, isFresh: Bool
+        ) {
             self.agent = agent
             self.projectName = projectName
+            self.projectID = projectID
             self.report = report
             self.isFresh = isFresh
         }
@@ -44,7 +53,7 @@ public enum StatusReportBoard {
                 Artifacts.statusReport(by: agent.id, on: $0, in: snapshot.artifacts)
             }
             return Row(
-                agent: agent, projectName: project?.name, report: report,
+                agent: agent, projectName: project?.name, projectID: project?.id, report: report,
                 isFresh: report.map { Artifacts.isFresh($0, now: now) } ?? false)
         }
         return rows.sorted { a, b in

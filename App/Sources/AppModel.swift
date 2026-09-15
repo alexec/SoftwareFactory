@@ -116,12 +116,37 @@ final class AppModel {
 
     func refresh() {
         guard let store else { return }
+        // What the floor looked like a moment ago, so a project that has just gone on
+        // hold can be told from one that has been on hold all along. (T309.)
+        let before = snapshot
         do {
             try loadState(from: store)
             storeError = nil
         } catch {
             storeError = error.localizedDescription
         }
+        // On hold means the work on it stops, however the hold was set: the Active
+        // toggle here, or project_set from an agent. Start picks each of them back up
+        // when the project comes off hold. (T309.)
+        for agent in Sweep.agentsHeld(before: before, after: snapshot) { signalStop(agent) }
+        // Work landing on a project where nobody is working pokes the first agent, so
+        // filing a task and then going to find somebody to tell is one step rather than
+        // two. Every route into the backlog comes through here: the add row, dictation,
+        // an agent's own task_add, the phone. (T352.)
+        // An agent with nothing to do and nothing coming costs a slot, a terminal and
+        // whatever its CLI holds open. Stop picks back up, so this is safe to do without
+        // asking. (T357.)
+        for agent in Sweep.idleAgentsToStop(in: snapshot,
+                                            messages: messagesByAgent.values.flatMap { $0 },
+                                            now: .now) {
+            signalStop(agent)
+        }
+        for agent in Sweep.agentsToPoke(before: before, after: snapshot,
+                                        messages: messagesByAgent.values.flatMap { $0 },
+                                        now: .now) {
+            nudge(agent)
+        }
+        numberOldArtifacts()
         let gone = Sweep.stoppedAgents(in: snapshot, now: .now)
         let unblocked = Sweep.unblocked(in: snapshot, now: .now)
         // An agent working is silent, and silence says nothing about how it is going.
@@ -152,6 +177,26 @@ final class AppModel {
         notifier.notice(dashboard.openEscalations, projects: snapshot.projects)
         lastRefresh = .now
         _Concurrency.Task { await sync() }
+    }
+
+    /// Documents filed before reference numbers existed get one, oldest first, so R1 is
+    /// the first thing ever written down here. One pass: after it there is nothing
+    /// without a number, and the guard costs a scan of a list the app has just loaded.
+    /// (T341.)
+    private func numberOldArtifacts() {
+        guard let store, snapshot.artifacts.contains(where: { $0.number == nil }) else { return }
+        do {
+            let every = (try? store.loadEveryArtifact()) ?? snapshot.artifacts
+            var next = Artifacts.nextNumber(in: every)
+            for var artifact in every.filter({ $0.number == nil }).sorted(by: { $0.added < $1.added }) {
+                artifact.number = next
+                next += 1
+                try store.save(artifact)
+            }
+            try loadState(from: store)
+        } catch {
+            storeError = error.localizedDescription
+        }
     }
 
     private func loadState(from store: FileStore) throws {
@@ -268,7 +313,15 @@ final class AppModel {
     /// is what hands back its leases and puts its task back on the backlog. Nothing here
     /// has to be written down: the kernel is the record. (T261.)
     func stop(_ agent: Agent) {
-        guard Agents.mayStop(agent) else { return }
+        guard signalStop(agent) else { return }
+        refresh()
+    }
+
+    /// The signalling on its own, with no look afterwards, so the sweep can stop a whole
+    /// project's agents from inside a refresh without starting another one. (T309.)
+    @discardableResult
+    private func signalStop(_ agent: Agent) -> Bool {
+        guard Agents.mayStop(agent) else { return false }
         let pid = agent.pid
         let started = agent.pidStartedAt
         ProcessCheck.stop(pid: pid, startedAt: started)
@@ -279,11 +332,18 @@ final class AppModel {
             ProcessCheck.stop(pid: pid, startedAt: started, signal: SIGKILL)
             self?.refresh()
         }
-        refresh()
+        return true
     }
 
     /// Takes an agent out of the factory for good. Whatever it was holding is freed, so a
-    /// deleted agent never sits on a slot. The tasks it worked keep its name.
+    /// deleted agent never sits on a slot. The tasks it worked keep its name, and so do
+    /// the notes it filed: a plan or a finding belongs to the project and is still true
+    /// whoever wrote it.
+    ///
+    /// Its status reports go with it. A status report is the one document that is about
+    /// the agent rather than about the project, so once the agent is gone it is a report
+    /// by nobody, sitting on the Status reports page under a name that is not on the
+    /// floor any more. (T310.)
     ///
     /// It is stopped first when there is a process to stop. A deleted agent that kept
     /// working was an agent nobody could see and nobody could reach: no card, no
@@ -295,6 +355,9 @@ final class AppModel {
                 var ended = lease
                 ended.released = .now
                 try store.save(ended)
+            }
+            for report in Artifacts.statusReports(by: agent.id, in: snapshot.artifacts) {
+                try store.delete(report)
             }
             try store.delete(agent)
         }
@@ -575,6 +638,22 @@ final class AppModel {
     /// with documents only the thing that wrote them could clear. (T266.)
     func delete(_ artifact: Artifact) {
         persist { try $0.save(Artifacts.remove(artifact, why: "by Alex, in the app")) }
+    }
+
+    /// The person has it open, so it is read.
+    ///
+    /// Written straight through rather than through `persist`, which refreshes: this is
+    /// called from a view appearing, and a refresh from inside that redraws the page
+    /// that is drawing. Nothing else is waiting on it, and the next poll is two seconds
+    /// away. (T335.)
+    func markRead(_ artifact: Artifact) {
+        guard !artifact.isRead, let store else { return }
+        do {
+            try store.save(Artifacts.read(artifact))
+            writeError = nil
+        } catch {
+            writeError = error.localizedDescription
+        }
     }
 
     func unblock(_ task: FactoryTask, _ blocker: FactoryTask.Blocker) {

@@ -95,7 +95,7 @@ struct FactoryView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular.tint(color(v).opacity(0.10)), in: .rect(cornerRadius: 18))
+        .glassEffect(.regular.tint(color(v).opacity(0.10)), in: .rect(cornerRadius: Style.card))
     }
 
     private var addResource: some View {
@@ -108,11 +108,11 @@ struct FactoryView: View {
             Stepper("up to \(newMinutes) min", value: $newMinutes, in: 5...720, step: 5)
                 .fixedSize()
             Button("Add", action: addResourceNow)
-                .buttonStyle(.glass)
+                .buttonStyle(.glassProminent)
                 .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
         }
         .padding(16)
-        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
     }
 
     private func addResourceNow() {
@@ -217,7 +217,7 @@ private struct AgentSlotsCard: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
     }
 }
 
@@ -238,7 +238,7 @@ private struct ResourceCard: View {
             UtilizationBar(value: value, tint: tint)
         }
         .padding(16)
-        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
     }
 }
 
@@ -284,6 +284,6 @@ private struct LeasableResourceCard: View {
             }
         }
         .padding(16)
-        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
     }
 }

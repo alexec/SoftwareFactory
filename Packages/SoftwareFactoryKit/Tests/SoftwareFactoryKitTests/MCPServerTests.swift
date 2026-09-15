@@ -1025,6 +1025,83 @@ private final class ResultBox: @unchecked Sendable {
         #expect(call(s, "task_list", ["project": "Nowhere"]).isError)
         #expect(call(s, "nothing").isError)
     }
+
+    /// A project with a few tasks on it and an agent to work them.
+    func severalFactory(_ s: MCPServer, titles: [String]) throws -> String {
+        _ = call(s, "project_add", ["name": "Several"])
+        for title in titles { _ = call(s, "task_add", ["project": "Several", "title": title]) }
+        let a = try startAgent(s, project: "Several").label
+        return a
+    }
+
+    /// Three tools take a task_id or a task_ids. All three read it the same way now: a
+    /// tool that describes an argument it does not read is worse than one that never
+    /// offered it, because the agent believes the description. (T318.)
+    @Test func oneLineOnSeveralTasks() throws {
+        let s = try server()
+        let a = try severalFactory(s, titles: ["One", "Two", "Three"])
+        let noted = call(s, "task_note", ["agent_id": a, "task_ids": ["T1", "T2"], "text": "One cause"])
+        #expect(!noted.isError)
+        #expect(noted.text.contains("T1") && noted.text.contains("T2"))
+        let tasks = try s.store.load().tasks
+        #expect(tasks.filter { $0.note.contains("One cause") }.count == 2)
+        #expect(try #require(tasks.first { $0.title == "Three" }).note.isEmpty)
+    }
+
+    @Test func oneTaskStillReadsAsOne() throws {
+        let s = try server()
+        let a = try severalFactory(s, titles: ["One", "Two"])
+        let noted = call(s, "task_note", ["agent_id": a, "task_id": "T1", "text": "Just this one"])
+        #expect(noted.text == "Noted on One.")
+    }
+
+    @Test func severalTasksEndTheSameWay() throws {
+        let s = try server()
+        let a = try severalFactory(s, titles: ["One", "Two", "Three"])
+        _ = call(s, "task_claim", ["agent_id": a, "task_ids": ["T1", "T2"]])
+        let done = call(s, "task_status", ["agent_id": a, "task_ids": ["T1", "T2"],
+                                           "state": "done", "note": "Both shipped"])
+        #expect(!done.isError)
+        let tasks = try s.store.load().tasks
+        #expect(tasks.filter { $0.state == .done }.count == 2)
+        #expect(tasks.filter { $0.note.contains("Both shipped") }.count == 2)
+        // The one still waiting is what to do next, and the tasks just finished are not
+        // read back out of the stale snapshot as still in progress.
+        #expect(done.text.contains("Next on the backlog") && done.text.contains("Three"))
+    }
+
+    /// Finishing work on two projects at once has no single next, so nothing is offered
+    /// rather than one of them picked.
+    @Test func noNextAcrossTwoProjects() throws {
+        let s = try server()
+        let a = try severalFactory(s, titles: ["One"])
+        _ = call(s, "project_add", ["name": "Elsewhere", "force": true])
+        _ = call(s, "task_add", ["project": "Elsewhere", "title": "Other"])
+        _ = call(s, "task_add", ["project": "Several", "title": "Left over"])
+        _ = call(s, "task_claim", ["agent_id": a, "task_ids": ["T1", "T2"]])
+        let done = call(s, "task_status", ["agent_id": a, "task_ids": ["T1", "T2"], "state": "done"])
+        #expect(!done.isError)
+        #expect(!done.text.contains("Next on the backlog"))
+    }
+
+    @Test func theSameTaskNamedTwiceIsOneTask() throws {
+        let s = try server()
+        let a = try severalFactory(s, titles: ["One"])
+        let noted = call(s, "task_note", ["agent_id": a, "task_id": "T1", "task_ids": ["T1"],
+                                          "text": "Said once"])
+        #expect(noted.text == "Noted on One.")
+        let task = try #require(try s.store.load().tasks.first)
+        #expect(task.note.components(separatedBy: "Said once").count == 2)
+    }
+
+    @Test func namingNothingIsStillRefused() throws {
+        let s = try server()
+        let a = try severalFactory(s, titles: ["One"])
+        #expect(call(s, "task_note", ["agent_id": a, "text": "x"]).isError)
+        #expect(call(s, "task_status", ["agent_id": a, "state": "done"]).isError)
+        #expect(call(s, "task_note", ["agent_id": a, "task_ids": [], "text": "x"]).isError)
+        #expect(call(s, "task_note", ["agent_id": a, "task_ids": ["T99"], "text": "x"]).isError)
+    }
 }
 
 /// A clock that moves one second per look, so a timeout test needs no real waiting.

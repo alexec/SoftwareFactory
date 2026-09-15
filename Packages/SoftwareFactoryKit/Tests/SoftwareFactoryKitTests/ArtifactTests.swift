@@ -185,3 +185,347 @@ import Testing
         #expect(Artifacts.title(fromLink: "https://example.com/") == "example.com")
     }
 }
+
+/// A document is one of three things now: the body an agent typed, a page on the web, or
+/// a markdown or HTML file on this Mac. What may be filed as a link, and what the app
+/// then reads it from. (T311.)
+@Suite struct ArtifactSourceTests {
+    @Test func noLinkIsTheBody() {
+        #expect(Artifacts.source(ofLink: "") == .text)
+        #expect(Artifacts.source(ofLink: "   ") == .text)
+    }
+
+    @Test func aWebAddressIsKeptAsTyped() throws {
+        let link = try Artifacts.validatedLink("https://example.com/plan?x=1")
+        #expect(link == "https://example.com/plan?x=1")
+        #expect(Artifacts.source(ofLink: link) == .web(URL(string: "https://example.com/plan?x=1")!))
+    }
+
+    @Test func aTildeComesOffWhenTheFileIsFiled() throws {
+        let link = try Artifacts.validatedLink("~/Work/Thing/plan.md", home: "/Users/someone")
+        #expect(link == "/Users/someone/Work/Thing/plan.md")
+        #expect(Artifacts.source(ofLink: link) == .file(URL(filePath: "/Users/someone/Work/Thing/plan.md")))
+    }
+
+    @Test func aFileURLIsFiledAsItsPath() throws {
+        let link = try Artifacts.validatedLink("file:///Users/someone/notes/a%20plan.md")
+        #expect(link == "/Users/someone/notes/a plan.md")
+    }
+
+    @Test func htmlIsAFileToo() throws {
+        #expect(try Artifacts.validatedLink("/tmp/report.HTML") == "/tmp/report.HTML")
+        #expect(try Artifacts.validatedLink("/tmp/report.htm") == "/tmp/report.htm")
+    }
+
+    /// Relative is no path at all: it would be read against wherever the app happened to
+    /// be launched from, which is a file nobody meant. Same rule as a project's folder.
+    @Test func whatIsRefused() {
+        #expect(throws: Artifacts.LinkError.badLink) { try Artifacts.validatedLink("Work/plan.md") }
+        #expect(throws: Artifacts.LinkError.badLink) { try Artifacts.validatedLink("~/plan.zip") }
+        #expect(throws: Artifacts.LinkError.badLink) { try Artifacts.validatedLink("/Users/someone/notes") }
+        #expect(throws: Artifacts.LinkError.badLink) { try Artifacts.validatedLink("ftp://example.com/plan.md") }
+        #expect(throws: Artifacts.LinkError.badLink) { try Artifacts.validatedLink("https:///plan.md") }
+    }
+
+    @Test func aFileIsCalledAfterItsFile() {
+        #expect(Artifacts.title(fromLink: "/Users/someone/Work/Thing/the-plan.md") == "the-plan.md")
+        #expect(Artifacts.title(fromLink: "https://www.example.com/plan") == "example.com/plan")
+    }
+
+    @Test func filingAFileWithNoTitleNamesItAfterTheFile() throws {
+        let (artifact, outcome) = try Artifacts.add(
+            projectID: "p", title: "", link: "/Users/someone/plan.md", in: [])
+        #expect(outcome == .created)
+        #expect(artifact.title == "plan.md")
+        #expect(artifact.source == .file(URL(filePath: "/Users/someone/plan.md")))
+    }
+
+    @Test func aBadLinkIsRefusedRatherThanFiledEmpty() {
+        #expect(throws: Artifacts.AddError.badLink) {
+            try Artifacts.add(projectID: "p", title: "Plan", link: "~/plan.zip", in: [])
+        }
+    }
+}
+
+@Suite struct ArtifactBodyWinsTests {
+    @Test func aDocumentWithABodyIsItsBody() throws {
+        let (artifact, _) = try Artifacts.add(
+            projectID: "p", title: "The plan", body: "The short version.",
+            link: "https://example.com/the-long-version", in: [])
+        #expect(artifact.source == .text)
+    }
+
+    @Test func aDocumentWithNothingWrittenInItIsItsLink() throws {
+        let (artifact, _) = try Artifacts.add(
+            projectID: "p", title: "The plan", link: "https://example.com/plan", in: [])
+        #expect(artifact.source == .web(URL(string: "https://example.com/plan")!))
+    }
+}
+
+/// The two an agent reaches for that were not documents: a screenshot, and a server it
+/// has running. (T317.)
+@Suite struct ArtifactCommonKindsTests {
+    @Test func aScreenshotIsAFileLikeAnyOther() throws {
+        let link = try Artifacts.validatedLink("~/Desktop/the-floor.png", home: "/Users/someone")
+        #expect(link == "/Users/someone/Desktop/the-floor.png")
+        let url = URL(filePath: link)
+        #expect(Artifacts.source(ofLink: link) == .file(url))
+        #expect(Artifacts.isPicture(url))
+    }
+
+    @Test func picturesAndPDFsGoIn() throws {
+        for name in ["/tmp/a.PNG", "/tmp/a.jpg", "/tmp/a.jpeg", "/tmp/a.gif", "/tmp/a.heic",
+                     "/tmp/a.webp", "/tmp/a.svg", "/tmp/a.pdf"] {
+            #expect(try Artifacts.validatedLink(name) == name)
+        }
+    }
+
+    /// A document is read as words, a picture is shown as itself.
+    @Test func aMarkdownFileIsNotAPicture() {
+        #expect(!Artifacts.isPicture(URL(filePath: "/tmp/plan.md")))
+        #expect(!Artifacts.isPicture(URL(filePath: "/tmp/report.html")))
+    }
+
+    /// A server running on this Mac is an ordinary URL and always was.
+    @Test func aRunningLocalServerIsJustAURL() throws {
+        #expect(try Artifacts.validatedLink("http://localhost:3000") == "http://localhost:3000")
+        #expect(try Artifacts.validatedLink("http://127.0.0.1:8080/health") == "http://127.0.0.1:8080/health")
+        #expect(Artifacts.source(ofLink: "http://localhost:3000")
+                == .web(URL(string: "http://localhost:3000")!))
+    }
+
+    @Test func aFileOfNoKnownKindIsStillRefused() {
+        #expect(throws: Artifacts.LinkError.badLink) { try Artifacts.validatedLink("/tmp/a.zip") }
+        #expect(throws: Artifacts.LinkError.badLink) { try Artifacts.validatedLink("/tmp/a.mov") }
+    }
+}
+
+/// What goes when an agent is deleted. Its status reports, because they are about the
+/// agent; not its notes, because a plan or a finding belongs to the project. (T310.)
+@Suite struct ArtifactsWhenAnAgentGoesTests {
+    private func report(by agent: UUID, on project: String, called title: String) -> Artifact {
+        Artifact(projectID: project, title: title, kind: .statusReport, agentID: agent)
+    }
+
+    @Test func onlyThatAgentsReports() {
+        let mine = UUID()
+        let theirs = UUID()
+        let here = report(by: mine, on: "p", called: "How it is going")
+        let elsewhere = report(by: mine, on: "q", called: "How it is going over there")
+        let note = Artifact(projectID: "p", title: "The plan", body: "x", agentID: mine)
+        let notMine = report(by: theirs, on: "p", called: "Theirs")
+
+        let going = Artifacts.statusReports(by: mine, in: [here, elsewhere, note, notMine])
+        #expect(Set(going.map(\.id)) == Set([here.id, elsewhere.id]))
+    }
+
+    /// A report already taken off the project still has a file on disk, and the point of
+    /// this is that nothing of the agent's is left behind.
+    @Test func aRemovedReportGoesToo() {
+        let mine = UUID()
+        let gone = Artifacts.remove(report(by: mine, on: "p", called: "Old"), why: "done with")
+        #expect(Artifacts.statusReports(by: mine, in: [gone]).map(\.id) == [gone.id])
+    }
+
+    @Test func anAgentThatFiledNothingLosesNothing() {
+        #expect(Artifacts.statusReports(by: UUID(), in: []).isEmpty)
+    }
+}
+
+/// Read and unread. A document arrives unread, goes read when the person opens it, and
+/// comes back unread when the agent has something new to say in it. (T335.)
+@Suite struct ArtifactReadTests {
+    @Test func aNewDocumentIsUnread() throws {
+        let (artifact, _) = try Artifacts.add(projectID: "p", title: "The plan", body: "x", in: [])
+        #expect(!artifact.isRead)
+        #expect(artifact.readAt == nil)
+    }
+
+    @Test func openingItMarksItRead() {
+        let when = Date()
+        let artifact = Artifacts.read(Artifact(projectID: "p", title: "The plan"), at: when)
+        #expect(artifact.isRead)
+        #expect(artifact.readAt == when)
+    }
+
+    /// Reading it again is not a change to the document: `updated` is left alone, or a
+    /// document would climb to the top of every list just for being looked at.
+    @Test func readingItTwiceChangesNothing() {
+        let first = Date(timeIntervalSince1970: 1_000)
+        let artifact = Artifacts.read(Artifact(projectID: "p", title: "The plan"), at: first)
+        let again = Artifacts.read(artifact, at: first.addingTimeInterval(500))
+        #expect(again.readAt == first)
+        #expect(again.updated == artifact.updated)
+    }
+
+    @Test func aRewrittenDocumentIsUnreadAgain() throws {
+        let agent = UUID()
+        let (filed, _) = try Artifacts.add(
+            projectID: "p", title: "How it is going", body: "Halfway",
+            kind: .statusReport, agentID: agent, in: [])
+        let read = Artifacts.read(filed)
+        #expect(read.isRead)
+
+        let (again, outcome) = try Artifacts.add(
+            projectID: "p", title: "How it is going", body: "Finished",
+            kind: .statusReport, agentID: agent, in: [read])
+        #expect(outcome == .replaced)
+        #expect(!again.isRead)
+    }
+
+    /// An agent re-filing the same words has not given you anything to read.
+    @Test func refilingTheSameWordsLeavesItRead() throws {
+        let agent = UUID()
+        let (filed, _) = try Artifacts.add(
+            projectID: "p", title: "How it is going", body: "Halfway",
+            kind: .statusReport, agentID: agent, in: [])
+        let read = Artifacts.read(filed)
+        let (again, _) = try Artifacts.add(
+            projectID: "p", title: "How it is going", body: "Halfway",
+            kind: .statusReport, agentID: agent, in: [read])
+        #expect(again.isRead)
+    }
+
+    @Test func artifactSetMakesItUnreadWhenItSaysSomethingElse() throws {
+        let read = Artifacts.read(Artifact(projectID: "p", title: "The plan", body: "x"))
+        #expect(try !Artifacts.set(read, body: "y", in: [read]).isRead)
+        #expect(try Artifacts.set(read, body: "x", in: [read]).isRead)
+        #expect(try !Artifacts.set(read, title: "Another plan", in: [read]).isRead)
+    }
+
+    @Test func unreadOnAProject() {
+        let read = Artifacts.read(Artifact(projectID: "p", title: "Seen"))
+        let fresh = Artifact(projectID: "p", title: "Not seen")
+        let elsewhere = Artifact(projectID: "q", title: "Somewhere else")
+        #expect(Artifacts.unread(for: "p", in: [read, fresh, elsewhere]).map(\.id) == [fresh.id])
+    }
+
+    /// A document filed before the flag existed reads as unread: it carries no evidence
+    /// that anybody read it, and guessing the other way hides something nobody has seen.
+    @Test func anOlderRecordIsUnread() throws {
+        let old = """
+        {"version":3,"id":"\(UUID().uuidString)","projectID":"p","title":"Old",
+         "body":"x","added":"2026-09-01T10:00:00Z"}
+        """
+        let artifact = try FileStore.decoder.decode(Artifact.self, from: Data(old.utf8))
+        #expect(!artifact.isRead)
+    }
+}
+
+/// R numbers: a short name a person can say for a document, the same idea as a task's
+/// T509. (T341.)
+@Suite struct ArtifactNumberTests {
+    @Test func aNewDocumentGetsTheNextNumber() throws {
+        let (first, _) = try Artifacts.add(projectID: "p", title: "One", in: [])
+        #expect(first.number == 1)
+        #expect(first.label == "R1")
+        let (second, _) = try Artifacts.add(projectID: "p", title: "Two", in: [first])
+        #expect(second.label == "R2")
+    }
+
+    /// Unique across every project, like a task's number, so R12 names one document
+    /// wherever it was filed.
+    @Test func numbersAreUniqueAcrossProjects() throws {
+        let (here, _) = try Artifacts.add(projectID: "p", title: "One", in: [])
+        let (there, _) = try Artifacts.add(projectID: "q", title: "Two", in: [here])
+        #expect(here.number == 1 && there.number == 2)
+    }
+
+    @Test func saidAnyWay() {
+        let one = Artifact(number: 12, projectID: "p", title: "Twelve")
+        let all = [one, Artifact(number: 3, projectID: "p", title: "Three")]
+        for said in ["R12", "r12", "12", " R12 "] {
+            #expect(Artifacts.artifact(numbered: said, in: all)?.id == one.id)
+        }
+        #expect(Artifacts.artifact(numbered: "R99", in: all) == nil)
+        #expect(Artifacts.artifact(numbered: "plan", in: all) == nil)
+    }
+
+    /// A number is never reused, so the count has to include documents taken off the
+    /// project and documents on a project that has been removed.
+    @Test func aRemovedDocumentKeepsItsNumber() {
+        let gone = Artifacts.remove(Artifact(number: 7, projectID: "p", title: "Old"), why: "done")
+        #expect(Artifacts.nextNumber(in: [gone]) == 8)
+    }
+
+    @Test func replacingADocumentKeepsItsNumber() throws {
+        let agent = UUID()
+        let (filed, _) = try Artifacts.add(
+            projectID: "p", title: "How it is going", body: "Halfway",
+            kind: .statusReport, agentID: agent, in: [])
+        let (again, outcome) = try Artifacts.add(
+            projectID: "p", title: "How it is going", body: "Finished",
+            kind: .statusReport, agentID: agent, in: [filed])
+        #expect(outcome == .replaced)
+        #expect(again.number == filed.number)
+    }
+
+    @Test func aDocumentFiledBeforeNumbersHasNone() throws {
+        let old = """
+        {"version":3,"id":"\(UUID().uuidString)","projectID":"p","title":"Old",
+         "body":"x","added":"2026-09-01T10:00:00Z"}
+        """
+        let artifact = try FileStore.decoder.decode(Artifact.self, from: Data(old.utf8))
+        #expect(artifact.number == nil)
+        #expect(artifact.label == nil)
+    }
+}
+
+/// A brief: what the work is, before it is done. It is the project's document like a
+/// note, and counts against the same twenty. (T350.)
+@Suite struct ArtifactBriefTests {
+    @Test func aBriefIsTheProjectsAndAReportIsTheAgentsOwn() {
+        #expect(Artifact.Kind.note.isProjectDocument)
+        #expect(Artifact.Kind.brief.isProjectDocument)
+        #expect(!Artifact.Kind.statusReport.isProjectDocument)
+        #expect(Artifact.Kind.brief.title == "Brief")
+    }
+
+    @Test func briefsAndNotesShareTheCap() throws {
+        var filed: [Artifact] = []
+        for n in 1...Artifacts.cap {
+            let (a, _) = try Artifacts.add(
+                projectID: "p", title: "Thing \(n)", kind: n.isMultiple(of: 2) ? .brief : .note,
+                in: filed)
+            filed.append(a)
+        }
+        #expect(Artifacts.documents(for: "p", in: filed).count == Artifacts.cap)
+        #expect(throws: Artifacts.AddError.atCap) {
+            try Artifacts.add(projectID: "p", title: "One too many", kind: .brief, in: filed)
+        }
+        // A status report still gets in: it caps itself at one per agent.
+        #expect(throws: Never.self) {
+            try Artifacts.add(projectID: "p", title: "How it is going",
+                              kind: .statusReport, agentID: UUID(), in: filed)
+        }
+    }
+
+    /// The same title is the same document whichever kind it was filed as, or a project
+    /// could hold two things called The Plan.
+    @Test func aBriefAndANoteWithOneTitleAreOneDocument() throws {
+        let (note, _) = try Artifacts.add(projectID: "p", title: "The plan", body: "x", in: [])
+        let (again, outcome) = try Artifacts.add(
+            projectID: "p", title: "The plan", body: "y", kind: .brief, in: [note])
+        #expect(outcome == .alreadyThere)
+        #expect(again.id == note.id)
+    }
+
+    @Test func theyAreListedApart() throws {
+        let (note, _) = try Artifacts.add(projectID: "p", title: "A finding", in: [])
+        let (brief, _) = try Artifacts.add(projectID: "p", title: "What we are building",
+                                           kind: .brief, in: [note])
+        let all = [note, brief]
+        #expect(Artifacts.notes(for: "p", in: all).map(\.id) == [note.id])
+        #expect(Artifacts.briefs(for: "p", in: all).map(\.id) == [brief.id])
+        #expect(Artifacts.documents(for: "p", in: all).count == 2)
+    }
+
+    /// Written before briefs existed, so it is a note, which is what it always was.
+    @Test func anOlderRecordIsStillANote() throws {
+        let old = """
+        {"version":3,"id":"\(UUID().uuidString)","projectID":"p","title":"Old",
+         "body":"x","added":"2026-09-01T10:00:00Z"}
+        """
+        #expect(try FileStore.decoder.decode(Artifact.self, from: Data(old.utf8)).kind == .note)
+    }
+}

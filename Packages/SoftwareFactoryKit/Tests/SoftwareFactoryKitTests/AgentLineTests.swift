@@ -42,3 +42,39 @@ import Testing
         #expect(AgentLine.underTheName(task: task, report: nil, title: "✳ Something") == "✳ Something")
     }
 }
+
+@Suite struct AgentLinesTests {
+    private func task(_ title: String, _ number: Int, _ state: FactoryTask.State) -> FactoryTask {
+        var t = FactoryTask(projectID: "/p", title: title, rank: 0)
+        t.number = number
+        t.state = state
+        return t
+    }
+
+    @Test func everyTaskInItsNameGetsALine() {
+        let lines = AgentLine.linesUnderTheName(
+            tasks: [task("Fix the bell", 292, .inProgress), task("Write the report", 264, .blocked)],
+            report: nil, title: "✳ Wrangling tmux")
+        #expect(lines.map(\.number) == ["T292", "T264"])
+        #expect(lines.map(\.words) == ["Fix the bell", "Write the report"])
+    }
+
+    @Test func holdingNothingItSpeaksForItself() {
+        let lines = AgentLine.linesUnderTheName(
+            tasks: [], report: Artifact(projectID: "/p", title: "A7 status report", body: "Reading the store."),
+            title: "✳ Wrangling tmux")
+        #expect(lines.count == 1)
+        #expect(lines.first?.number == nil)
+        #expect(lines.first?.words == "Reading the store.")
+    }
+
+    @Test func holdingNothingAndSayingNothingThereIsNoLine() {
+        #expect(AgentLine.linesUnderTheName(tasks: [], report: nil, title: "  ").isEmpty)
+    }
+
+    @Test func aTaskWithNoTitleIsNotALine() {
+        let lines = AgentLine.linesUnderTheName(
+            tasks: [task("   ", 1, .inProgress)], report: nil, title: "✳ Something")
+        #expect(lines.map(\.words) == ["✳ Something"])
+    }
+}

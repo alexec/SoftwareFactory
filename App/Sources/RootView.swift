@@ -29,15 +29,6 @@ struct RootView: View {
                     // What the dashboard is for: the questions waiting on you.
                     .badge(model.dashboard.openEscalations.count)
                     .tag(Destination.dashboard)
-                Label("Agents", systemImage: "person.2")
-                    .badge(model.dashboard.agents.count)
-                    .tag(Destination.agents)
-                // The badge counts the agents that have not said anything recently, not
-                // the reports: a row that only ever says how many agents there are is one
-                // nobody opens. (T288.)
-                Label("Status reports", systemImage: "text.document")
-                    .badge(StatusReportBoard.quiet(in: model.snapshot, now: .now))
-                    .tag(Destination.statusReports)
                 // The badge counts what is in progress with nobody on it, for the same
                 // reason the one above counts the quiet agents. (T287.)
                 Label("In progress", systemImage: "hammer")
@@ -64,32 +55,21 @@ struct RootView: View {
                     }
                 }
                 .tag(Destination.noProject)
-
-                // The floor, in a group of its own. (Alex, 14 Sep 2026: back out of the
-                // projects, two lines each.)
-                // Running and stopped are kept apart: a stopped agent is not gone, it
-                // is waiting to be started back up, and among the working ones it read
-                // as one of them. (T268.)
-                if !model.dashboard.runningAgents.isEmpty {
-                    Section("Agents (\(model.dashboard.runningAgents.count))") {
-                        ForEach(model.dashboard.runningAgents) { agentRow($0) }
-                    }
-                }
-                if !model.dashboard.stoppedAgents.isEmpty {
-                    Section("Stopped (\(model.dashboard.stoppedAgents.count))") {
-                        ForEach(model.dashboard.stoppedAgents) { agentRow($0) }
-                    }
-                }
+                ForEach(model.dashboard.agents(on: nil)) { agentRow($0, under: true) }
 
                 // Alex, 12 Sep 2026: the count in the heading.
                 Section("Projects (\(model.dashboard.projects.count))") {
                     ForEach(model.dashboard.projects) { status in
+                        // The name, and whether it wants you. The dot and the counts of
+                        // blocked and in progress were here and are gone: a sidebar is a
+                        // list of places to go, and a row that also reports on the work
+                        // makes you read twelve small numbers to find the one project you
+                        // were looking for. What is left is the one thing you cannot act
+                        // on anywhere else, a question waiting. (T358, Alex, 15 Sep 2026.)
                         HStack {
-                            ActivityDot(activity: status.activity, isEmpty: status.isEmpty, onHold: status.project.onHold)
                             Text(status.project.name)
                                 .foregroundStyle(status.project.onHold ? .secondary : .primary)
                             Spacer()
-                            ProgressNumbers(status: status, compact: true)
                             if status.openEscalations > 0 {
                                 Text(status.openEscalations, format: .number)
                                     .font(.caption.weight(.semibold))
@@ -103,6 +83,10 @@ struct RootView: View {
                             Button("Remove project…", role: .destructive) { removing = status.project }
                                 .disabled(!model.openTasks(in: status.project).isEmpty)
                         }
+                        // The agents on it, working ones first. An agent belongs to the
+                        // work it is doing: in one flat list of eight you read every row's
+                        // project name to find the two on the thing you came for. (T359.)
+                        ForEach(model.dashboard.agents(on: status.id)) { agentRow($0, under: true) }
                     }
                 }
             }
@@ -121,7 +105,11 @@ struct RootView: View {
             case .agents:
                 AgentsView { showAgent($0) }
             case .statusReports:
-                StatusReportsView { showAgent($0) }
+                StatusReportsView(
+                    selectAgent: { showAgent($0) },
+                    selectProject: { id in
+                        selection = id.map(Destination.project) ?? .noProject
+                    })
             case .inProgress:
                 InProgressView { selection = .project($0) }
             case .factory:
@@ -134,7 +122,8 @@ struct RootView: View {
                 } else {
                     dashboard
                 }
-            // An agent that has left, or one just deleted, lands you back on Agents.
+            // An agent that has left, or one just deleted, lands you on the dashboard.
+            // It used to land on Agents, which is not a row in the sidebar any more.
             case .agent(let id):
                 if let agent = model.dashboard.agents.first(where: { $0.id == id }) {
                     // One page per agent, not one page that changes agents: the terminal
@@ -144,11 +133,18 @@ struct RootView: View {
                     AgentView(status: agent, back: goBack)
                         .id(agent.id)
                 } else {
-                    AgentsView { showAgent($0) }
+                    dashboard
                 }
             default:
                 dashboard
             }
+        }
+        // The microphone sits over whatever page is open, bottom right, so a thought can
+        // be said from wherever you happen to be standing. It is told which project you
+        // are looking at, which is the project when the words do not name one. (T340.)
+        .overlay(alignment: .bottomTrailing) {
+            DictateButton(lookingAt: lookingAtProject)
+                .padding(20)
         }
         .safeAreaInset(edge: .top) { writeFailure }
         .navigationTitle(title)
@@ -185,7 +181,9 @@ struct RootView: View {
     /// of the status is, and because the title line is not there at all until the agent
     /// sets one. Clicking it opens its page.
     /// (T222, T225, Alex 14 Sep 2026: two lines, then: show the agent A<n>.)
-    private func agentRow(_ status: Dashboard.AgentStatus) -> some View {
+    /// `under` is an agent sitting beneath its project: indented, and without the project
+    /// name, which the row above it already says.
+    private func agentRow(_ status: Dashboard.AgentStatus, under: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
                 AgentActivityDot(activity: status.activity)
@@ -198,21 +196,34 @@ struct RootView: View {
                     .truncationMode(.middle)
                     .layoutPriority(1)
                 AgentBellMark(ringing: status.agent.bel)
-                Text(status.project?.name ?? "No project")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                if !under {
+                    Text(status.project?.name ?? "No project")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
                 Spacer()
             }
-            if !sidebarTitle(status).isEmpty {
-                Text(sidebarTitle(status))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+            // One line per task in its name, not just the one the factory calls
+            // current: the others are in its name too, nobody else may take them, and
+            // the only way to see them was to open its page. (T362.)
+            ForEach(sidebarLines(status)) { line in
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    if let number = line.number {
+                        Text(number)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                    }
+                    Text(line.words)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
         }
+        .padding(.leading, under ? 14 : 0)
         .help(sidebarHelp(status))
         .tag(Destination.agent(status.id))
         .contextMenu {
@@ -252,6 +263,15 @@ struct RootView: View {
         AgentLine.underTheName(task: status.task, report: report(for: status), title: status.agent.title)
     }
 
+    /// Everything in this agent's name, blocked first, or the one line it can say for
+    /// itself when it holds nothing. (T362.)
+    private func sidebarLines(_ status: Dashboard.AgentStatus) -> [AgentLine.Line] {
+        AgentLine.linesUnderTheName(
+            tasks: Backlog.alreadyYours(status.agent.id, in: model.snapshot.tasks),
+            report: report(for: status),
+            title: status.agent.title)
+    }
+
     private func report(for status: Dashboard.AgentStatus) -> Artifact? {
         guard let projectID = status.agent.projectID else { return nil }
         return Artifacts.statusReport(by: status.agent.id, on: projectID, in: model.snapshot.artifacts)
@@ -259,9 +279,12 @@ struct RootView: View {
 
     /// The whole row in one line, for a row too narrow to show it.
     private func sidebarHelp(_ status: Dashboard.AgentStatus) -> String {
-        let title = sidebarTitle(status)
         let project = status.project?.name ?? "No project"
-        return title.isEmpty ? "\(status.agent.label), \(project)" : "\(status.agent.label), \(project): \(title)"
+        let lines = sidebarLines(status).map { line in
+            line.number.map { "\($0) \(line.words)" } ?? line.words
+        }
+        guard !lines.isEmpty else { return "\(status.agent.label), \(project)" }
+        return ([status.agent.label + ", " + project] + lines).joined(separator: "\n")
     }
 
     private var title: String {
@@ -305,11 +328,21 @@ struct RootView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .glassEffect(in: .rect(cornerRadius: 12))
+            .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
             .padding(.horizontal, 12)
             .padding(.top, 8)
             .transition(.move(edge: .top).combined(with: .opacity))
         }
+    }
+
+    /// The project whose page is open, if one is. An agent's page counts: the project it
+    /// is on is the project you are looking at.
+    private var lookingAtProject: String? {
+        if case .project(let id) = selection { return id }
+        if case .agent(let id) = selection {
+            return model.snapshot.agents.first { $0.id == id }?.projectID
+        }
+        return nil
     }
 
     private func showAgent(_ id: UUID) {
@@ -341,15 +374,15 @@ struct NoProjectView: View {
                     Text("No project")
                         .font(.title3.weight(.semibold))
                 }
-                if agents.isEmpty {
-                    EmptyLine(text: "No agents without a project.", symbol: "person.2")
-                } else {
-                    GlassEffectContainer(spacing: 16) {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 16)], spacing: 16) {
-                            ForEach(agents) { status in
-                                AgentCard(status: status, select: selectAgent)
-                            }
+                // The cards, and the way to start another. That last card was on the
+                // Agents page, which came off the sidebar in T360, and it was the only
+                // way to start an agent that is not on a project.
+                GlassEffectContainer(spacing: 16) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 16)], spacing: 16) {
+                        ForEach(agents) { status in
+                            AgentCard(status: status, select: selectAgent)
                         }
+                        FreeAgentCard()
                     }
                 }
             }

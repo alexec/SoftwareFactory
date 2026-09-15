@@ -18,6 +18,40 @@ public enum AgentLine {
         return title.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// One line for every task in an agent's name, or, holding none, the one line it can
+    /// say for itself.
+    ///
+    /// It showed the one task the factory calls current, which for an agent holding three
+    /// is two thirds of a lie: the other two are in its name, nobody else may take them,
+    /// and the only way to see them was to open its page. A sidebar that says what
+    /// everybody is holding is how you notice one agent holding four. Order is the
+    /// backlog's own, blocked first, so the one that is stuck is the one you read.
+    /// (T362, Alex, 16 Sep 2026.)
+    public struct Line: Identifiable, Hashable, Sendable {
+        /// The task's number, "T362", or nothing when the line is not a task.
+        public var number: String?
+        public var words: String
+        public var id: String { (number ?? "") + words }
+
+        public init(number: String?, words: String) {
+            self.number = number
+            self.words = words
+        }
+    }
+
+    public static func linesUnderTheName(
+        tasks: [FactoryTask], report: Artifact?, title: String
+    ) -> [Line] {
+        let held = tasks.compactMap { task -> Line? in
+            let words = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !words.isEmpty else { return nil }
+            return Line(number: task.label, words: words)
+        }
+        if !held.isEmpty { return held }
+        let said = underTheName(task: nil, report: report, title: title)
+        return said.isEmpty ? [] : [Line(number: nil, words: said)]
+    }
+
     /// The first thing a report actually says. A report's title is usually its own name,
     /// which tells the row nothing, so the body's first real line is the news and the
     /// title is only the fallback. Markdown marks are taken off the front: a row that

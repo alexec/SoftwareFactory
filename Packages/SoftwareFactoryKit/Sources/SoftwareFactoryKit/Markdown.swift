@@ -30,6 +30,12 @@ public enum Markdown {
         var paragraph: [String] = []
         var quoted: [String] = []
         var fenced: [String]?
+        /// Whether the line just read was a list item, so an indented line after it is
+        /// the rest of that item rather than a paragraph of its own. Markdown wraps a
+        /// long bullet by indenting what follows, and without this a hard-wrapped list
+        /// came apart: half the sentence in the bullet, the other half underneath it as
+        /// its own paragraph. (T311.)
+        var inList = false
 
         func endParagraph() {
             if !paragraph.isEmpty {
@@ -69,33 +75,52 @@ public enum Markdown {
 
             if line.isEmpty {
                 endBoth()
+                inList = false
                 continue
             }
             if isRule(line) {
                 endBoth()
                 blocks.append(.rule)
+                inList = false
                 continue
             }
             if let heading = heading(line) {
                 endBoth()
                 blocks.append(heading)
+                inList = false
                 continue
             }
             if let quote = quote(line) {
                 endParagraph()
                 quoted.append(quote)
+                inList = false
                 continue
             }
             if let bullet = bullet(raw) {
                 endBoth()
                 blocks.append(bullet)
+                inList = true
                 continue
             }
             if let numbered = numbered(line) {
                 endBoth()
                 blocks.append(numbered)
+                inList = true
                 continue
             }
+            // Indented under the list item above it: the rest of that item.
+            if inList, raw.first == " " || raw.first == "\t", let last = blocks.indices.last {
+                switch blocks[last] {
+                case .bullet(let text, let indent):
+                    blocks[last] = .bullet(text: text + " " + line, indent: indent)
+                    continue
+                case .numbered(let number, let text):
+                    blocks[last] = .numbered(number: number, text: text + " " + line)
+                    continue
+                default: break
+                }
+            }
+            inList = false
             endQuote()
             paragraph.append(line)
         }

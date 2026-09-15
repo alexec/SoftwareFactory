@@ -151,6 +151,13 @@ public struct FileStore: Sendable {
         try loadAll("tasks")
     }
 
+    /// Every document on disk, removed ones and ones on removed projects included, so a
+    /// reference number is never handed out twice. The same reason `loadEveryTask` exists.
+    /// (T341.)
+    public func loadEveryArtifact() throws -> [Artifact] {
+        try loadAll("artifacts")
+    }
+
     public func escalation(_ id: UUID) -> Escalation? {
         let url = root.appending(path: "escalations").appending(path: id.uuidString + ".json")
         guard let data = try? Data(contentsOf: url) else { return nil }
@@ -245,6 +252,17 @@ public struct FileStore: Sendable {
     /// receipt: throwing one away loses nothing the agent needs. (Alex, 14 Sep 2026.)
     public func delete(_ message: AgentMessage) throws {
         try remove("messages", name: message.id.uuidString)
+    }
+
+    /// A document, off the disk rather than marked removed.
+    ///
+    /// `artifact_remove` is the ordinary way and it keeps the record with the reason,
+    /// because a note is the project's and somebody may want to know why it went. This
+    /// is for a status report whose agent has been deleted: it is about that agent and
+    /// nothing else, and a tombstone naming an agent that no longer exists is a record
+    /// of nothing. (T310.)
+    public func delete(_ artifact: Artifact) throws {
+        try remove("artifacts", name: artifact.id.uuidString)
     }
 
     private func write<T: Encodable>(_ record: T, to folder: String, name: String) throws {

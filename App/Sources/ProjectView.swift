@@ -13,9 +13,7 @@ struct ProjectView: View {
     @State private var newParkedTitle = ""
     @State private var launchError: String?
     @State private var showingAllDone = false
-    /// The document being read, if one is. A sheet rather than a page: it is reading,
-    /// not a place to be. (T297.)
-    @State private var reading: Artifact?
+
 
     private var tasks: [FactoryTask] {
         Backlog.visible(for: project.id, in: model.snapshot.tasks, recentDone: showingAllDone ? Int.max : 3)
@@ -24,9 +22,47 @@ struct ProjectView: View {
         max(0, model.snapshot.tasks.filter { $0.projectID == project.id && $0.state == .done }.count - 3)
     }
     private var questions: Escalations.Shown { Escalations.visible(for: project.id, in: model.snapshot.escalations) }
+    /// How wide the documents are here, remembered across launches. Its own setting
+    /// rather than the agent page's: what a backlog needs beside it is not what a
+    /// terminal needs. (T349.)
+    @AppStorage("projectDocumentsWidth") private var documentsWidth = 420.0
+    @State private var showsDocuments = true
     private var artifacts: [Artifact] { Artifacts.live(for: project.id, in: model.snapshot.artifacts) }
 
+    /// The project and its documents side by side, which with the sidebar is three
+    /// columns. The documents were a section inside the backlog, so reading one meant
+    /// scrolling past the work to get to it and losing your place in the work to read
+    /// it. They are reading matter and the backlog is a list; they do not belong in the
+    /// same scroller. (T349, Alex, 15 Sep 2026.)
     var body: some View {
+        GeometryReader { page in
+            HStack(spacing: 0) {
+                backlog
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if !artifacts.isEmpty && showsDocuments {
+                    ColumnGrip(width: $documentsWidth, beside: page.size.width)
+                    ArtifactBrowser(documents: artifacts) { model.delete($0) }
+                        // A different project is a different pile: start on its newest
+                        // rather than carrying the last project's choice across.
+                        .id(project.id)
+                        .frame(width: ColumnGrip.width(documentsWidth, beside: page.size.width))
+                }
+            }
+        }
+        .toolbar {
+            ToolbarItem {
+                Button("Documents", systemImage: "doc.richtext") {
+                    withAnimation(.snappy) { showsDocuments.toggle() }
+                }
+                .disabled(artifacts.isEmpty)
+                .help(artifacts.isEmpty
+                      ? "Nothing has been filed on this project yet"
+                      : (showsDocuments ? "Hide the documents" : "Show the documents"))
+            }
+        }
+    }
+
+    private var backlog: some View {
         List {
             Section {
                 header
@@ -53,18 +89,6 @@ struct ProjectView: View {
                     ForEach(questions.decided) { e in
                         DecidedRow(escalation: e)
                     }
-                }
-            }
-
-            // The project's documents, and where they are cleared. An agent could take
-            // its own off with artifact_remove from the day artifacts existed and the
-            // person could not, so the section only ever grew. (T266.)
-            if !artifacts.isEmpty {
-                Section("Artifacts") {
-                    artifactCards
-                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 8, trailing: 0))
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
                 }
             }
 
@@ -103,9 +127,6 @@ struct ProjectView: View {
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
-        .sheet(item: $reading) { artifact in
-            ArtifactSheet(artifact: artifact, onDelete: { model.delete(artifact) }) { reading = nil }
-        }
     }
 
     @ViewBuilder
@@ -173,7 +194,7 @@ struct ProjectView: View {
         HStack(alignment: .top, spacing: 8) {
             WorkField(prompt: "Add a parked task", text: $newParkedTitle)
             Button("Add") { addParked() }
-                .buttonStyle(.glass)
+                .buttonStyle(.glassProminent)
                 .fixedSize()
         }
         .onSubmit { addParked() }
@@ -183,20 +204,6 @@ struct ProjectView: View {
     // The top row: the dot, the name, the hold toggle, nothing else — no summary
     // numbers. (Alex, 12 Sep 2026.) Editing happens in a popover, so the backlog
     // underneath never jumps.
-    /// The same grid the rest of the floor uses, so a plan and a one-line note are told
-    /// apart by what they say rather than by opening both. (T297.)
-    private var artifactCards: some View {
-        GlassEffectContainer(spacing: 14) {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 14)], spacing: 14) {
-                ForEach(artifacts) { artifact in
-                    ArtifactTile(artifact: artifact) { reading = artifact }
-                        .contextMenu {
-                            Button("Delete document", role: .destructive) { model.delete(artifact) }
-                        }
-                }
-            }
-        }
-    }
 
     private var header: some View {
         let status = model.status(for: project.id)
@@ -214,7 +221,7 @@ struct ProjectView: View {
                 Toggle("Active", isOn: Binding(get: { !project.onHold }, set: { model.setOnHold(project, !$0) }))
                     .toggleStyle(.switch)
                     .controlSize(.small)
-                    .help("Off puts the project on hold: nothing is handed out from its backlog")
+                    .help("Off puts the project on hold: its agents are stopped and nothing is handed out from its backlog")
             }
             // Where it lives. Who is on it, and starting another, are the cards below.
             HStack(spacing: 10) {
@@ -240,7 +247,7 @@ struct ProjectView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
         .alert("The agent did not start", isPresented: Binding(get: { launchError != nil }, set: { if !$0 { launchError = nil } })) {
             Button("OK") { launchError = nil }
         } message: {
@@ -363,7 +370,7 @@ struct StartingAgentCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .frame(height: AgentCard.height, alignment: .topLeading)
-        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
         .opacity(faded && ended == nil ? 0.5 : 1)
         .animation(ended == nil ? .easeInOut(duration: 1.2).repeatForever(autoreverses: true) : .default, value: faded)
         .onAppear { faded = true }
@@ -408,7 +415,7 @@ private struct LaunchAgentCard: View {
         .buttonStyle(.plain)
         .disabled(!isReady)
         .foregroundStyle(isReady ? .primary : .tertiary)
-        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
         .help(help)
         .popover(isPresented: $choosing, arrowEdge: .bottom) {
             LaunchChooser(onLaunch: start, onCancel: { choosing = false }) {
@@ -466,37 +473,6 @@ struct DecidedRow: View {
     }
 }
 
-/// How a project stands, as numbers in the colours the states use everywhere.
-struct ProgressNumbers: View {
-    var status: Dashboard.ProjectStatus
-    var compact = false
-
-    /// Compact (the sidebar): only blocked and in progress, and never a zero. Full (the
-    /// project header): every count with its word, zeros left out. (Alex, 12 Sep 2026.)
-    var body: some View {
-        HStack(spacing: compact ? 6 : 12) {
-            number(status.blockedCount, "blocked", .orange)
-            number(status.inProgressCount, "in progress", .green)
-            if !compact {
-                number(status.backlogCount, "waiting", .secondary)
-                number(status.doneCount, "done", .secondary.opacity(0.6))
-            }
-        }
-        .font(compact ? .caption.weight(.semibold) : .callout.weight(.medium))
-        .monospacedDigit()
-    }
-
-    @ViewBuilder
-    private func number(_ n: Int, _ word: String, _ color: Color) -> some View {
-        if n > 0 {
-            HStack(spacing: 3) {
-                Text(n, format: .number).foregroundStyle(color)
-                if !compact { Text(word).foregroundStyle(.secondary).font(.callout) }
-            }
-            .help("\(n) \(word)")
-        }
-    }
-}
 
 struct TaskRow: View {
     @Environment(AppModel.self) private var model

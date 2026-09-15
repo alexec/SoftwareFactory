@@ -735,6 +735,124 @@ public enum Sweep {
         return changes
     }
 
+    /// Agents to stop because the project they are on has just gone on hold.
+    ///
+    /// On hold used to mean nothing new is handed out, and the agents already on the
+    /// project worked on. That is not what a person means when they put a project on
+    /// hold: they mean the work on it stops. So the ones on it are stopped, which is the
+    /// same stop as the button, and Start picks each of them back up in the conversation
+    /// it was having when the project comes off hold. (T309, Alex, 15 Sep 2026.)
+    ///
+    /// The transition is what counts, not the state. A project that has been on hold all
+    /// along is left alone, so an agent started on a held project on purpose is not
+    /// stopped the moment it registers, and a project the factory is seeing for the
+    /// first time is no transition at all: at launch every held project would otherwise
+    /// look like one that had just been held.
+    public static func agentsHeld(before: Snapshot, after: Snapshot) -> [Agent] {
+        let known = Set(before.projects.map(\.id))
+        let wasHeld = Set(before.projects.filter(\.onHold).map(\.id))
+        let justHeld = Set(
+            after.projects
+                .filter { $0.onHold && known.contains($0.id) && !wasHeld.contains($0.id) }
+                .map(\.id))
+        guard !justHeld.isEmpty else { return [] }
+        return after.agents.filter { agent in
+            guard let projectID = agent.projectID, justHeld.contains(projectID) else { return false }
+            return Agents.mayStop(agent)
+        }
+    }
+
+    /// How long an agent sits with nothing to do before the factory stops it.
+    public static let idleStandsFor: TimeInterval = 60 * 60
+
+    /// Agents with nothing to do and nothing coming, which the factory stops.
+    ///
+    /// An agent costs a slot, a terminal and whatever its CLI is holding open, and an
+    /// agent that finished an hour ago on a project with an empty backlog is costing all
+    /// of that for nothing. Stop is not the end of it: Start picks the conversation back
+    /// up where it left off, its pane keeps what it said, and what it held goes back on
+    /// its own. That is what makes this safe enough to do without asking. (T357,
+    /// Alex, 15 Sep 2026.)
+    ///
+    /// Nothing to do means all four of these, because each one is a way of being busy
+    /// that looks like silence:
+    ///
+    /// - No task in its name that is in progress or blocked. Blocked counts as busy: it
+    ///   is waiting on something, and the factory clears its own blocks.
+    /// - No question of its own still open. An agent that raised one and is waiting for
+    ///   an answer is doing exactly what it should.
+    /// - Nothing on its project's backlog for it to pick up. Work waiting means a poke
+    ///   is the right move rather than a stop, which is `agentsToPoke`.
+    /// - No mail waiting, because something is about to be said to it.
+    ///
+    /// An hour is measured from the last of: when it registered, and when a task of its
+    /// own last changed. Not from `lastSeen`, which a polling agent keeps fresh while
+    /// doing nothing at all.
+    ///
+    /// An agent on no project is left alone. There is no backlog to be empty, so "no new
+    /// tasks" says nothing about it, and it is there because the person started it for
+    /// something of their own.
+    public static func idleAgentsToStop(
+        in snapshot: Snapshot, messages: [AgentMessage], now: Date
+    ) -> [Agent] {
+        let waitingFor = Set(Mailbox.waiting(messages).map(\.recipientID))
+        let asking = Set(snapshot.escalations.filter(\.isOpen).compactMap(\.agentID))
+        let projectsWithWork = Set(
+            snapshot.tasks.filter { $0.state == .backlog && $0.removed == nil }.map(\.projectID))
+
+        return Agents.onTheFloor(snapshot.agents).filter { agent in
+            guard Agents.mayStop(agent) else { return false }
+            guard let projectID = agent.projectID else { return false }
+            guard !projectsWithWork.contains(projectID) else { return false }
+            guard !waitingFor.contains(agent.id), !asking.contains(agent.id) else { return false }
+
+            let mine = snapshot.tasks.filter { $0.agentID == agent.id }
+            guard !mine.contains(where: { $0.state == .inProgress || $0.state == .blocked })
+            else { return false }
+
+            let since = max(agent.registered, mine.map(\.updated).max() ?? agent.registered)
+            return now.timeIntervalSince(since) >= idleStandsFor
+        }
+    }
+
+    /// The agent to poke because work has landed on a project where nobody is working.
+    ///
+    /// Filing a task and then going to find an agent to tell about it is a step the
+    /// factory can take itself. Only when every agent on that project is idle: if one of
+    /// them is on a task, it will read the backlog when it finishes, and poking it now
+    /// interrupts the work to tell it about work. The first agent by number gets it,
+    /// because somebody has to and the lowest number is the one that has been there
+    /// longest.
+    ///
+    /// The transition is what counts, not the state, so it fires once as the task
+    /// arrives however it arrived: the add row, dictation, an agent's task_add, the
+    /// phone. A project the factory is seeing for the first time is no transition, or
+    /// every backlog would be a nudge at launch. An agent with mail already waiting is
+    /// left alone: another line in the queue is not another poke. (T352, Alex, 15 Sep 2026.)
+    public static func agentsToPoke(
+        before: Snapshot, after: Snapshot, messages: [AgentMessage], now: Date
+    ) -> [Agent] {
+        guard !before.tasks.isEmpty || !before.projects.isEmpty else { return [] }
+        let known = Set(before.tasks.map(\.id))
+        let landed = Set(
+            after.tasks
+                .filter { !known.contains($0.id) && $0.state == .backlog && $0.removed == nil }
+                .map(\.projectID))
+        guard !landed.isEmpty else { return [] }
+        let waitingFor = Set(Mailbox.waiting(messages).map(\.recipientID))
+        let working = Set(
+            after.tasks.filter { $0.state == .inProgress }.compactMap(\.agentID))
+
+        return landed.compactMap { projectID -> Agent? in
+            let onIt = Agents.onTheFloor(after.agents)
+                .filter { $0.projectID == projectID }
+                .sorted { ($0.number ?? .max, $0.registered) < ($1.number ?? .max, $1.registered) }
+            guard !onIt.isEmpty else { return nil }
+            guard !onIt.contains(where: { working.contains($0.id) }) else { return nil }
+            return onIt.first { !waitingFor.contains($0.id) }
+        }
+    }
+
     /// Agents that owe the person a word about how it is going, and the message that
     /// asks each of them for one.
     ///

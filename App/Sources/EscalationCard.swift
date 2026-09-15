@@ -87,14 +87,14 @@ struct EscalationCard: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 12))
+                .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: Style.panel))
             }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassEffect(
             escalation.isOpen ? .regular.tint(.orange.opacity(0.12)) : .regular,
-            in: .rect(cornerRadius: 18))
+            in: .rect(cornerRadius: Style.card))
         .animation(.snappy, value: escalation.decision)
     }
 }
@@ -137,7 +137,7 @@ private struct OptionButton: View {
         }
         .buttonStyle(.plain)
         .glassEffect(isChosen ? .regular.tint(.green.opacity(0.15)).interactive() : .regular.interactive(),
-                     in: .rect(cornerRadius: 12))
+                     in: .rect(cornerRadius: Style.panel))
         .help(option.recommended ? "The agent's recommendation" : "Choose this")
     }
 }

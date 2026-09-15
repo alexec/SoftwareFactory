@@ -219,7 +219,8 @@ public struct MCPServer: Sendable {
         options and your recommendation, then wait for the answer (escalation_await). Put a document \
         on the project (artifact_add) when they should read it here; a link on the question is filed \
         as an artifact too. A document is a kilobyte, about two paragraphs: say the short version \
-        here and put the long one in the repo with a link to it. Say how your work is going: file a \
+        here and put the long one in the repo and file its path as the link, which is read on the \
+        page like anything else. A link is a URL or the path of a markdown or HTML file. Say how your work is going: file a \
         status report (artifact_add with kind "status report") and keep it short: what you have \
         finished since your last one, what you decided, and anything you are waiting on Alex for. \
         Check where your questions stand while you are there (escalation_list) and raise any new ones \
@@ -333,7 +334,7 @@ public struct MCPServer: Sendable {
             Tool(name: "project_set", description: "Change a project: the folder agents run in, or whether it is on hold. Give only what you are changing; an empty folder clears it. A project on hold hands out no work.",
                  properties: ["project": str("Project name"),
                               "folder": str("The folder an agent runs in; empty clears it"),
-                              "on_hold": ["type": "boolean", "description": "True stops work being handed out; false starts it again"]],
+                              "on_hold": ["type": "boolean", "description": "True stops the project: the agents on it are stopped and nothing is handed out from its backlog. False starts it again."]],
                  required: ["project"]),
             Tool(name: "project_remove", description: "Take a project out of the factory: a wrong name, a project that is over. Refused while it has tasks in the backlog, in progress or blocked; remove those first. Nothing is deleted: the record stays on disk, out of every list, and its done and parked tasks go with it.",
                  properties: ["project": str("Project name"), "reason": str("Why")],
@@ -400,8 +401,8 @@ public struct MCPServer: Sendable {
             Tool(name: "escalation_raise", description: "Ask the person to decide something. Give two or more options and say which you recommend. Returns the escalation_id; then call escalation_await. Give task_id when the question stops a task: the task is marked blocked on the decision and unblocks itself when the answer lands. Give artifact_id for a document already on the project, or link for a URL: a link is filed as an artifact on the project.",
                  properties: ["project": str("Project name"), "task_id": str("The task this question stops, if any"),
                               "question": str("The question, in one line"), "context": str("What the person needs to know to choose"),
-                              "artifact_id": str("A document already on the project they should read before they choose"),
-                              "link": str("Optional http or https URL of a document they should read before they choose. Filed as an artifact."),
+                              "artifact_id": str("A document already on the project they should read before they choose: its UUID, or its number as R12"),
+                              "link": str("Optional URL, or the path of a file on this Mac, of a document or a picture they should look at before they choose. Filed as an artifact."),
                               "options": ["type": "array", "minItems": 2, "items": ["type": "object",
                                           "properties": ["title": str("Short name"), "detail": str("What it means")],
                                           "required": ["title"]]],
@@ -418,27 +419,27 @@ public struct MCPServer: Sendable {
             Tool(name: "artifact_add", description: "Put a document on a project for the person to read. The same title or the same link as one already there returns that one, unless you ask to replace it. Twenty live documents is the cap for a project; status reports do not count.",
                  properties: ["project": str("Project name"), "title": str("The document, in one line"),
                               "body": str("The document itself, markdown"),
-                              "kind": ["type": "string", "enum": ["note", "status report"],
-                                       "description": "What kind of document. A note is the default: a brief, a plan, a finding. A status report is the one document you keep about your own work, and filing another replaces it."],
-                              "link": str("Optional http or https URL this document is"),
+                              "kind": ["type": "string", "enum": ["note", "brief", "status report"],
+                                       "description": "What kind of document. A note is the default: a plan, a finding, anything worth writing down. A brief is what the work is, before it is done, which is what a design task produces. A status report is the one document you keep about your own work, and filing another replaces it."],
+                              "link": str("Optional: what this document is, rather than the body. An http or https URL, including a server running here such as http://localhost:3000; or the path of a file on this Mac: markdown, HTML, an image or a PDF. File a screenshot this way."),
                               "replace": ["type": "boolean", "description": "Write this over the document already there rather than returning it. A status report always replaces yours, whether you ask or not."],
                               "task_id": str("The task that produced it, if any")],
                  required: ["project", "title"], idempotentHint: true),
             Tool(name: "artifact_list", description: "A project's documents: titles, their kind, who added them, when. Use artifact_read for the body.",
                  properties: ["project": str("Project name"),
-                              "kind": ["type": "string", "enum": ["note", "status report"],
+                              "kind": ["type": "string", "enum": ["note", "brief", "status report"],
                                        "description": "Only documents of this kind; omit for all"]],
                  required: ["project"], kind: .query),
             Tool(name: "artifact_read", description: "One document in full: its title, body, and link if it has one.",
-                 properties: ["artifact_id": str("From artifact_add or artifact_list")],
+                 properties: ["artifact_id": str("A document's UUID, or its number as R12")],
                  required: ["artifact_id"], kind: .query),
             Tool(name: "artifact_set", description: "Change a document: its title, its body, or its link. Give only what you are changing.",
-                 properties: ["artifact_id": str("The document"), "title": str("A new title"),
+                 properties: ["artifact_id": str("The document: its UUID, or its number as R12"), "title": str("A new title"),
                               "body": str("A new body"),
-                              "link": str("A new http or https URL; empty clears it")],
+                              "link": str("A new URL, or the path of a file on this Mac: markdown, HTML, an image or a PDF; empty clears it")],
                  required: ["artifact_id"]),
             Tool(name: "artifact_remove", description: "Take a document off the project. Nothing is deleted: the record stays with your reason, out of every list.",
-                 properties: ["artifact_id": str("The document"), "reason": str("Why")],
+                 properties: ["artifact_id": str("The document: its UUID, or its number as R12"), "reason": str("Why")],
                  required: ["artifact_id"], kind: .destructive),
 
             // Resources
@@ -633,7 +634,9 @@ public struct MCPServer: Sendable {
             }
             if let onHold = args["on_hold"] as? Bool {
                 project.onHold = onHold
-                said.append(onHold ? "is on hold: nothing is handed out from its backlog" : "is off hold")
+                said.append(onHold
+                    ? "is on hold: its agents are stopped and nothing is handed out from its backlog"
+                    : "is off hold")
             }
             guard !said.isEmpty else { throw ToolError(message: "Say what to change: folder or on_hold.") }
             try store.save(project)
@@ -770,15 +773,10 @@ public struct MCPServer: Sendable {
         case "task_claim":
             // One task, or several that are one piece of work: an agent that has read the
             // backlog can see what belongs together. (Alex, 12 Sep 2026.)
-            var refs = (args["task_ids"] as? [String]) ?? []
-            if let one = args["task_id"] as? String, !one.isEmpty { refs.insert(one, at: 0) }
-            guard !refs.isEmpty else { throw ToolError(message: "task_id or task_ids is required") }
+            let claimed = try tasks(args, in: snap)
             var agent = try agent(args, in: snap)
-            var claimed: [FactoryTask] = []
-            for ref in refs {
-                guard let task = taskRef(ref, in: snap) else { throw ToolError(message: "No task \(ref).") }
+            for task in claimed {
                 try store.save(Backlog.set(task, to: .inProgress, agentID: agent.id, at: now()))
-                claimed.append(task)
             }
             agent.taskID = claimed.first?.id
             agent.note = claimed.map(\.title).joined(separator: "; ")
@@ -790,37 +788,55 @@ public struct MCPServer: Sendable {
                 + Self.holdWarning(snap.projects.first { $0.id == claimed[0].projectID })
 
         case "task_status":
-            var task = try task(args, in: snap)
+            let ending = try tasks(args, in: snap)
             guard let state = FactoryTask.State(rawValue: try string("state", args)) else {
                 throw ToolError(message: "state must be backlog, inProgress, done or parked")
             }
-            if let note = args["note"] as? String, !note.isEmpty {
-                task.note = task.note.isEmpty ? note : task.note + "\n" + note
+            let note = args["note"] as? String ?? ""
+            for var task in ending {
+                if !note.isEmpty { task.note = task.note.isEmpty ? note : task.note + "\n" + note }
+                try store.save(Backlog.set(task, to: state, at: now()))
             }
-            try store.save(Backlog.set(task, to: state, at: now()))
-            guard state == .done, let agentID = task.agentID else {
-                return "\(task.title): \(state.rawValue)"
-            }
-            if var agent = snap.agents.first(where: { $0.id == agentID }), agent.taskID == task.id {
+            let said = ending.count == 1
+                ? "\(ending[0].title): \(state.rawValue)"
+                : ending.map { "\($0.label.map { l in "\(l) " } ?? "")\($0.title): \(state.rawValue)" }
+                    .joined(separator: "\n")
+            // The tasks just written are out of date in `snap`, so every question about
+            // what is left has to leave them out rather than reading them as they were.
+            let changed = Set(ending.map(\.id))
+            let whose = Set(ending.compactMap(\.agentID))
+            guard state == .done, !whose.isEmpty else { return said }
+            // Each agent gets its name back, if what it was holding is one of these.
+            for agentID in whose {
+                guard var agent = snap.agents.first(where: { $0.id == agentID }),
+                      let held = agent.taskID, changed.contains(held) else { continue }
                 agent.taskID = nil
                 try store.save(agent)
             }
-            let hasOtherAssignment = snap.tasks.contains {
-                $0.id != task.id && $0.agentID == agentID && $0.state == .inProgress
+            let hasOtherAssignment = snap.tasks.contains { other in
+                !changed.contains(other.id) && other.state == .inProgress
+                    && other.agentID.map(whose.contains) == true
             }
-            guard !hasOtherAssignment,
-                  let next = Backlog.next(for: task.projectID, in: snap.tasks.filter { $0.id != task.id })
+            // One project's backlog, or none: finishing work on two projects at once has
+            // no single "next", and saying one of them would be a guess.
+            let projects = Set(ending.map(\.projectID))
+            guard !hasOtherAssignment, projects.count == 1, let projectID = projects.first,
+                  let next = Backlog.next(for: projectID, in: snap.tasks.filter { !changed.contains($0.id) })
             else {
-                return "\(task.title): done"
+                return said
             }
-            return "\(task.title): done\nNext on the backlog: \(Self.line(next))\nYou should work on this next."
+            return said + "\nNext on the backlog: \(Self.line(next))\nYou should work on this next."
 
         case "task_note":
-            let task = try task(args, in: snap)
+            let noting = try tasks(args, in: snap)
             let who = try agent(args, in: snap).label
-            let noted = Backlog.comment(on: task, try string("text", args), by: who, at: now())
-            try store.save(noted)
-            return "Noted on \(task.title)."
+            let text = try string("text", args)
+            for task in noting {
+                try store.save(Backlog.comment(on: task, text, by: who, at: now()))
+            }
+            guard noting.count > 1 else { return "Noted on \(noting[0].title)." }
+            return "Noted on \(noting.count) tasks: "
+                + noting.map { $0.label ?? $0.title }.joined(separator: ", ") + "."
 
         case "task_block":
             let task = try task(args, in: snap)
@@ -873,9 +889,11 @@ public struct MCPServer: Sendable {
             if let ref = args["task_id"] as? String, !ref.isEmpty { task = try self.task(args, in: snap) }
             let link: String
             do {
-                link = try Escalation.validatedLink(args["link"] as? String)
+                // The same links a document takes, because that is what this one
+                // becomes: a link on a question is filed as an artifact. (T311.)
+                link = try Artifacts.validatedLink(args["link"] as? String)
             } catch {
-                throw ToolError(message: "link must be an http or https URL")
+                throw ToolError(message: Artifacts.badLinkMessage)
             }
             var artifactID: UUID?
             if let ref = args["artifact_id"] as? String, !ref.isEmpty {
@@ -892,6 +910,7 @@ public struct MCPServer: Sendable {
                     let result = try Artifacts.add(
                         projectID: project.id, title: "", body: "", link: link,
                         taskID: task?.id, agentID: agent?.id, addedBy: agent?.label ?? "agent",
+                        number: Artifacts.nextNumber(in: (try? store.loadEveryArtifact()) ?? snap.artifacts),
                         in: snap.artifacts, at: now())
                     if result.outcome != .alreadyThere { try store.save(result.artifact) }
                     artifactID = result.artifact.id
@@ -961,6 +980,9 @@ public struct MCPServer: Sendable {
                     link: args["link"] as? String ?? "",
                     replace: args["replace"] as? Bool ?? false,
                     taskID: task?.id, agentID: agent?.id, addedBy: agent?.label ?? "agent",
+                    // Off every document on disk, not off the snapshot: one on a removed
+                    // project is out of the snapshot and would hand its number back.
+                    number: Artifacts.nextNumber(in: (try? store.loadEveryArtifact()) ?? snap.artifacts),
                     in: snap.artifacts, at: now())
             } catch Artifacts.AddError.emptyTitle {
                 throw ToolError(message: "title is required")
@@ -969,7 +991,7 @@ public struct MCPServer: Sendable {
             } catch Artifacts.AddError.atCap {
                 throw ToolError(message: Artifacts.fullMessage)
             } catch Artifacts.AddError.badLink {
-                throw ToolError(message: "link must be an http or https URL")
+                throw ToolError(message: Artifacts.badLinkMessage)
             }
             if result.outcome != .alreadyThere { try store.save(result.artifact) }
             let verb: String
@@ -978,7 +1000,8 @@ public struct MCPServer: Sendable {
             case .replaced: verb = "Replaced"
             case .alreadyThere: verb = "Already there, and left as it was. Pass replace to write over it"
             }
-            return "\(verb). artifact_id: \(result.artifact.id.uuidString). \(result.artifact.title)"
+            return "\(verb). \(result.artifact.label.map { "\($0), " } ?? "")"
+                + "artifact_id: \(result.artifact.id.uuidString). \(result.artifact.title)"
 
         case "artifact_list":
             let project = try resolveProject(try string("project", args), in: snap, create: false)
@@ -991,7 +1014,7 @@ public struct MCPServer: Sendable {
                     .map { "  task: \($0.label ?? $0.title)" } ?? ""
                 let link = a.link.isEmpty ? "" : "  link: \(a.link)"
                 let kind = a.kind == .note ? "" : "  [\(a.kind.title.lowercased())]"
-                return "\(a.id.uuidString)  \(a.title)\(kind)  \(a.addedBy)\(task)\(link)"
+                return "\(a.label ?? a.id.uuidString)  \(a.title)\(kind)  \(a.addedBy)\(task)\(link)"
             }.joined(separator: "\n")
 
         case "artifact_read":
@@ -999,6 +1022,7 @@ public struct MCPServer: Sendable {
             let project = snap.projects.first { $0.id == artifact.projectID }?.name ?? artifact.projectID
             var lines = [
                 "artifact_id: \(artifact.id.uuidString)",
+                artifact.label.map { "number: \($0)" } ?? "number: none",
                 "title: \(artifact.title)",
                 "project: \(project)",
                 "kind: \(artifact.kind.title.lowercased())",
@@ -1033,7 +1057,7 @@ public struct MCPServer: Sendable {
             } catch Artifacts.SetError.bodyTooLong {
                 throw ToolError(message: Artifacts.tooLongMessage)
             } catch Artifacts.SetError.badLink {
-                throw ToolError(message: "link must be an http or https URL")
+                throw ToolError(message: Artifacts.badLinkMessage)
             } catch Artifacts.SetError.titleTaken {
                 throw ToolError(message: "Another document on the project already has that title.")
             }
@@ -1206,6 +1230,31 @@ public struct MCPServer: Sendable {
         return task
     }
 
+    /// The tasks a call names, whether it named one or several.
+    ///
+    /// Three tools take a task_id or a task_ids and each read it its own way. task_claim
+    /// did both; task_status and task_note read only the singular while their own
+    /// descriptions offered the plural, so a call with task_ids alone was refused with
+    /// "task_id is required". A tool that describes an argument it does not read is
+    /// worse than one that never offered it: the agent believes the description, and the
+    /// refusal does not say which half was wrong. One reading now, for all three.
+    /// (T318, 15 Sep 2026.)
+    func tasks(_ args: [String: Any], in snap: Snapshot) throws -> [FactoryTask] {
+        var refs = (args["task_ids"] as? [String]) ?? []
+        if let one = args["task_id"] as? String { refs.insert(one, at: 0) }
+        refs = refs.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard !refs.isEmpty else { throw ToolError(message: "task_id or task_ids is required") }
+        var found: [FactoryTask] = []
+        for ref in refs {
+            guard let task = taskRef(ref, in: snap) else {
+                throw ToolError(message: "Unknown task_id: \(ref). A task's UUID, or its number as T509.")
+            }
+            // The same task named twice is one task, not two writes of the same line.
+            if !found.contains(where: { $0.id == task.id }) { found.append(task) }
+        }
+        return found
+    }
+
     func taskRef(_ ref: String, in snap: Snapshot) -> FactoryTask? {
         if let id = UUID(uuidString: ref), let task = snap.tasks.first(where: { $0.id == id }) { return task }
         return Backlog.task(numbered: ref, in: snap.tasks)
@@ -1213,10 +1262,12 @@ public struct MCPServer: Sendable {
 
     func artifact(_ args: [String: Any], in snap: Snapshot) throws -> Artifact {
         let ref = try string("artifact_id", args)
-        guard let id = UUID(uuidString: ref), let artifact = snap.artifacts.first(where: { $0.id == id }) else {
-            throw ToolError(message: "Unknown artifact_id: \(ref).")
+        if let id = UUID(uuidString: ref), let artifact = snap.artifacts.first(where: { $0.id == id }) {
+            return artifact
         }
-        return artifact
+        // Its number, the way a person would say it: R12. (T341.)
+        if let artifact = Artifacts.artifact(numbered: ref, in: snap.artifacts) { return artifact }
+        throw ToolError(message: "Unknown artifact_id: \(ref). A document's UUID, or its number as R12.")
     }
 
     /// The kind of document asked for, if any. Written the way a person would say it,
@@ -1230,7 +1281,7 @@ public struct MCPServer: Sendable {
         for kind in Artifact.Kind.allCases where kind.rawValue.lowercased() == folded {
             return kind
         }
-        throw ToolError(message: "kind is \"note\" or \"status report\".")
+        throw ToolError(message: "kind is \"note\", \"brief\" or \"status report\".")
     }
 
     /// A project by name (case does not matter) or id. An old caller may still send a
