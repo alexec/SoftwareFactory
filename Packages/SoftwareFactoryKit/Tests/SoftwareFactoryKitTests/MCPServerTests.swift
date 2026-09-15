@@ -409,6 +409,38 @@ private final class ResultBox: @unchecked Sendable {
         #expect(try s.store.load().projects.count == 4)
     }
 
+    @Test func theBacklogRemindsAnAgentOfWhatItAlreadyHolds() throws {
+        let s = try server()
+        _ = call(s, "project_add", ["name": "Reminding", "description": "Reminder test."])
+        let me = try startAgent(s, project: "Reminding")
+        let other = try startAgent(s, project: "Reminding")
+        _ = call(s, "task_add", ["project": "Reminding", "title": "Fix the bell", "session_id": me.session])
+        _ = call(s, "task_add", ["project": "Reminding", "title": "Something else", "session_id": me.session])
+
+        // Empty hands: the list is the list.
+        #expect(call(s, "task_list", ["project": "Reminding", "session_id": me.session])
+            .text.hasPrefix("T1  "))
+
+        _ = call(s, "task_claim", ["task_id": "T1", "session_id": me.session])
+        let mine = call(s, "task_list", ["project": "Reminding", "session_id": me.session]).text
+        #expect(mine.hasPrefix("You already have T1 in your name"))
+        #expect(mine.contains("Fix the bell"))
+        // Everything else still comes back, so the reminder costs the agent nothing.
+        #expect(mine.contains("T2  "))
+
+        // Somebody else's task is not the caller's problem.
+        #expect(!call(s, "task_list", ["project": "Reminding", "session_id": other.session])
+            .text.contains("You already have"))
+        // Nor is it when the agent asked for its own list: it is looking at them.
+        #expect(!call(s, "task_list", ["project": "Reminding", "mine": true, "session_id": me.session])
+            .text.contains("You already have"))
+
+        // Handed back, hands empty again.
+        _ = call(s, "task_status", ["task_id": "T1", "state": "backlog", "session_id": me.session])
+        #expect(!call(s, "task_list", ["project": "Reminding", "session_id": me.session])
+            .text.contains("You already have"))
+    }
+
     func call(_ s: MCPServer, _ tool: String, _ args: [String: Any] = [:], id: Int = 1) -> (text: String, isError: Bool) {
         // Every tool takes the caller's session now. A test that does not name one gets
         // a throwaway: the point of most of them is the tool, not who called it. A test

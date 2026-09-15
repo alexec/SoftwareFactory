@@ -150,6 +150,11 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     starts with, which is where every tool call reads it from anyway. Resume is
     `--continue`, the newest chat in that folder, which is that agent's because a
     terminal holds one agent. (T206)
+  - `Backlog.reminder`: an agent asking for a backlog is one moment from claiming
+    something, so if it already has work in its name the list says so on the line above
+    it. Otherwise it reads the list, likes the look of something, claims that too, and
+    the task it forgot sits in progress with nobody on it until a person notices. Not
+    when it asked for its own list with `mine`: it is looking at them. (T270.)
   - `Escalations.visible`: open questions in full, the newest three answered ones.
   - `Artifacts`: live (not removed) documents on a project, newest first; `notes` and
     `statusReports` split them by kind, and `statusReport(by:on:)` is the one an agent

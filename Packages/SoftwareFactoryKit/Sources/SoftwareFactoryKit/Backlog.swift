@@ -195,6 +195,41 @@ public enum Backlog {
         return task
     }
 
+    /// What is already in this agent's name, across every project: what it is on, and
+    /// what has been put in its name and is waiting. Done and removed tasks are not:
+    /// finished work is not something to be reminded of.
+    public static func alreadyYours(_ agentID: UUID, in all: [FactoryTask]) -> [FactoryTask] {
+        all.filter { $0.agentID == agentID && $0.removed == nil && $0.state != .done }
+            .sorted(by: order)
+    }
+
+    /// The line that goes on top of a backlog an agent asked for, when it already has
+    /// work. An agent reads the list, sees a task it likes and claims it, and now it
+    /// holds two: the one it forgot about sits in progress with nobody on it until a
+    /// person notices. The backlog is the one reply where reminding it costs nothing,
+    /// because it is the moment before it takes something else. Nil when its hands are
+    /// empty. (T270, Alex, 15 Sep 2026.)
+    public static func reminder(for agentID: UUID, in all: [FactoryTask]) -> String? {
+        let yours = alreadyYours(agentID, in: all)
+        guard !yours.isEmpty else { return nil }
+        let names = list(yours.map { $0.label ?? "a task with no number" })
+        if yours.count == 1, let one = yours.first {
+            // A title that ends in a full stop would otherwise give the line two.
+            let title = one.title.trimmingCharacters(in: CharacterSet(charactersIn: " ."))
+            return "You already have \(names) in your name, \(one.state.rawValue): \(title). "
+                + "Finish it, or hand it back with task_status, before you take anything else."
+        }
+        return "You already have \(names) in your name. "
+            + "Finish what you have, or hand it back with task_status, before you take anything else."
+    }
+
+    /// "A", "A and B", "A, B and C".
+    static func list(_ items: [String]) -> String {
+        guard let last = items.last else { return "" }
+        if items.count == 1 { return last }
+        return items.dropLast().joined(separator: ", ") + " and " + last
+    }
+
     /// Takes a task off the backlog without losing it: the record stays, with the reason.
     public static func remove(_ task: FactoryTask, why: String, at date: Date = .now) -> FactoryTask {
         var task = task

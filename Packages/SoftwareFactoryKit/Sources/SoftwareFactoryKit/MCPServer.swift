@@ -662,8 +662,17 @@ public struct MCPServer: Sendable {
                 tasks = tasks.filter { $0.agentID == caller?.id }
             }
             let hold = project.onHold ? Self.holdWarning(project).dropFirst() + "\n" : ""
-            if tasks.isEmpty { return hold + "Nothing on the backlog." }
-            return hold + tasks.map(Self.line).joined(separator: "\n")
+            // An agent reading the backlog is one moment away from claiming something.
+            // If its hands are already full, this is where to say so, before it takes a
+            // second task and quietly abandons the first. Not when it asked for its own
+            // list: it is looking at them. (T270.)
+            var top = hold
+            if args["mine"] as? Bool != true, let caller = try? agent(args, in: snap),
+               let reminder = Backlog.reminder(for: caller.id, in: snap.tasks) {
+                top += reminder + "\n"
+            }
+            if tasks.isEmpty { return top + "Nothing on the backlog." }
+            return top + tasks.map(Self.line).joined(separator: "\n")
 
         case "task_next":
             let project = try resolveProject(try string("project", args), in: snap, create: false)

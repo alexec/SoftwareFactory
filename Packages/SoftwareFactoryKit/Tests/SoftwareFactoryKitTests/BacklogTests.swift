@@ -510,3 +510,54 @@ import Testing
         #expect(d.projects[0].doing == nil)
     }
 }
+
+@Suite struct BacklogReminderTests {
+    private func task(_ title: String, _ number: Int, _ state: FactoryTask.State,
+                      for agent: UUID?) -> FactoryTask {
+        var t = FactoryTask(projectID: "/p", title: title, rank: 0)
+        t.number = number
+        t.state = state
+        t.agentID = agent
+        return t
+    }
+
+    @Test func anAgentWithEmptyHandsIsNotReminded() {
+        let me = UUID()
+        let someoneElse = task("theirs", 1, .inProgress, for: UUID())
+        let free = task("nobody's", 2, .backlog, for: nil)
+        #expect(Backlog.reminder(for: me, in: [someoneElse, free]) == nil)
+    }
+
+    @Test func oneTaskIsNamedWithItsTitle() {
+        let me = UUID()
+        let mine = task("Fix the bell", 509, .inProgress, for: me)
+        let line = Backlog.reminder(for: me, in: [mine])
+        #expect(line?.contains("T509") == true)
+        #expect(line?.contains("Fix the bell") == true)
+        #expect(line?.contains("inProgress") == true)
+        #expect(line?.contains("Fix the bell. Finish") == true)
+    }
+
+    @Test func aTitleThatEndsInAFullStopDoesNotGiveTheLineTwo() {
+        let me = UUID()
+        let mine = task("Remind them in the reply.", 270, .inProgress, for: me)
+        #expect(Backlog.reminder(for: me, in: [mine])?.contains("in the reply. Finish") == true)
+    }
+
+    @Test func severalAreListedByNumber() {
+        let me = UUID()
+        let tasks = [task("one", 1, .inProgress, for: me),
+                     task("two", 2, .backlog, for: me),
+                     task("three", 3, .blocked, for: me)]
+        let line = Backlog.reminder(for: me, in: tasks)
+        // The same order as the backlog itself: blocked first, then in progress.
+        #expect(line?.contains("T3, T1 and T2") == true)
+    }
+
+    @Test func finishedAndDeletedWorkIsNotSomethingToBeRemindedOf() {
+        let me = UUID()
+        let done = task("finished", 1, .done, for: me)
+        let deleted = Backlog.remove(task("deleted", 2, .inProgress, for: me), why: "by Alex")
+        #expect(Backlog.reminder(for: me, in: [done, deleted]) == nil)
+    }
+}
