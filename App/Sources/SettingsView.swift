@@ -101,7 +101,8 @@ struct SettingsView: View {
                     LabeledContent("Folder", value: Projects.shortPath(store.root.path))
                     Text("Every project, task, agent and question is one JSON file.")
                         .foregroundStyle(.secondary)
-                } else if let error = model.storeError {
+                }
+                if let error = model.storeError {
                     Text(error).foregroundStyle(.red)
                 }
             }

@@ -250,3 +250,49 @@ struct FloorGroupingTests {
         #expect(dashboard.stoppedAgents.isEmpty)
     }
 }
+
+/// The factory's own process, and quitting it by pid rather than by name. (T271.)
+@Suite("The app's own process")
+struct FactoryProcessTests {
+    @Test func currentIsThisProcessAndReadsAsRunning() {
+        let me = FactoryProcess.current()
+        #expect(me != nil)
+        #expect(me?.pid == ProcessInfo.processInfo.processIdentifier)
+        #expect(me?.isRunning == true)
+    }
+
+    /// The pair is what makes it trustworthy: a record whose start time does not match
+    /// the process now wearing that pid is a record about somebody else, and nothing is
+    /// sent to it. This is the same rule `stop` follows, and it matters more here,
+    /// because a quit event sent to a stranger closes their work.
+    @Test func aMismatchedStartTimeIsNotThisProcess() {
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let wrong = FactoryProcess(pid: pid, startedAt: Date(timeIntervalSince1970: 1))
+        #expect(!wrong.isRunning)
+        #expect(!ProcessCheck.quit(pid: wrong.pid, startedAt: wrong.startedAt))
+    }
+
+    @Test func aPidNobodyIsUsingIsNotQuit() {
+        #expect(!ProcessCheck.quit(pid: 0x7FFF_FFFE, startedAt: Date()))
+        #expect(!ProcessCheck.quit(pid: nil, startedAt: nil))
+    }
+
+    /// It survives a write and a read, so the app can say which process it is and a
+    /// shell can pick it up.
+    @Test func itIsWrittenDownAndReadBack() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: UUID().uuidString)
+        let store = try FileStore(root: root)
+        #expect(store.factoryProcess() == nil)
+        let me = try #require(FactoryProcess.current())
+        try store.save(me)
+        let read = try #require(store.factoryProcess())
+        #expect(read.pid == me.pid)
+        // The store writes dates as ISO 8601, which keeps whole seconds, so a start time
+        // comes back up to a second early. That is why `isRunning` compares with a
+        // second of slack rather than for equality, and why what matters here is that
+        // the record still answers for the process it was written about.
+        #expect(abs(read.startedAt.timeIntervalSince(me.startedAt)) < 1)
+        #expect(read.isRunning)
+        try? FileManager.default.removeItem(at: root)
+    }
+}

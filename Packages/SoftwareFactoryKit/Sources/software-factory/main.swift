@@ -4,6 +4,7 @@
 //   software-factory status                    the dashboard, as text
 //   software-factory tools                     the tool names and what they do
 //   software-factory decide <escalation-id-prefix> <option-number>
+//   software-factory quit                      quit the running Mac app, properly (T271)
 //
 // The store is $SOFTWARE_FACTORY_STORE or the app group container; `software-factory status` prints where.
 
@@ -50,6 +51,30 @@ case "status":
             print("      \(n + 1). \(o.title)\(o.recommended ? "  (recommended)" : "")")
         }
     }
+
+// Stopping the app the way its own Quit menu item does, from a terminal where
+// `osascript ... to quit` silently does nothing. (T271.)
+case "quit":
+    guard let app = store.factoryProcess() else {
+        fail("The store has no record of a running app. Start Software Factory, or stop it with: pkill -f 'Software Factory.app/Contents/MacOS'")
+    }
+    guard app.isRunning else {
+        print("Nothing to quit: the app that wrote \(store.root.path)/app.json has already gone.")
+        exit(0)
+    }
+    guard ProcessCheck.quit(pid: app.pid, startedAt: app.startedAt) else {
+        fail("The quit event did not go out to \(app.pid).")
+    }
+    // It has gone when the kernel says so, not when the event was sent.
+    var waited = 0.0
+    while waited < 10, ProcessCheck.isRunning(pid: app.pid, startedAt: app.startedAt) {
+        Thread.sleep(forTimeInterval: 0.2)
+        waited += 0.2
+    }
+    if ProcessCheck.isRunning(pid: app.pid, startedAt: app.startedAt) {
+        fail("Asked \(app.pid) to quit and it is still there after 10 seconds.")
+    }
+    print("Quit. \(app.pid) has gone.")
 
 case "tools":
     for t in MCPServer.Tool.all { print("\(t.name.padding(toLength: 20, withPad: " ", startingAt: 0)) \(t.description)") }

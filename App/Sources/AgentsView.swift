@@ -110,7 +110,7 @@ struct AgentsView: View {
             return
         }
         guard let reserved = model.reserveAgent(for: nil) else {
-            launchError = model.storeError
+            launchError = model.writeError ?? "The agent could not be written down."
             return
         }
         let session = reserved.id

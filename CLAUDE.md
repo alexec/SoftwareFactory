@@ -23,16 +23,27 @@ xcodebuild -project SoftwareFactory.xcodeproj -scheme SoftwareFactoryPhone -conf
 # The store build of the Mac app: the same sources, sandboxed. Swap Debug for
 # Release-AppStore anywhere you would build the Mac app for the store.
 cd Packages/SoftwareFactoryKit && swift test
-# Restarting. The app ignores an AppleScript quit, so kill the process and check for a
-# NEW pid: HTTP 200 on 4747 only proves an app is running, not that it is the one you
-# just built. Restarts were failing silently for a day before this was noticed.
-# (Alex, 15 Sep 2026.)
+# Restarting. `software-factory quit` ends the running app the way its own Quit menu
+# item does, and says so; it waits for the process to go. Do not use
+# `osascript -e 'tell application "Software Factory" to quit'`: from an agent's terminal
+# it silently does nothing, which is how a day of work went on talking to yesterday's
+# binary. (T271.)
 OLD=$(pgrep -f "Software Factory.app/Contents/MacOS" | head -1)
-osascript -e 'tell application id "com.alexecollins.softwarefactory" to quit' 2>/dev/null
-sleep 3; ps -p "$OLD" >/dev/null && kill "$OLD"; sleep 3; ps -p "$OLD" >/dev/null && kill -9 "$OLD"
+swift run --package-path Packages/SoftwareFactoryKit software-factory quit
 open "build/DerivedData/Build/Products/Debug/Software Factory.app"
 pgrep -f "Software Factory.app/Contents/MacOS"   # must not be $OLD
 ```
+
+**Why an AppleScript quit does nothing.** The app is not ignoring it. An agent's shell
+belongs to a Background launchd session (`launchctl managername` says so), because the
+tmux server holding the terminals was started outside the Aqua session. LaunchServices
+cannot see a GUI app running from there, so AppleScript answers `application "Software
+Factory" is running` with false, declines to launch an app just to quit it, and sends no
+event at all, with no error to notice. `get name` still answers, off the bundle rather
+than the process, so the app looks alive and deaf. An event addressed to the pid has
+nobody to ask and quits it at once, which is what `software-factory quit` sends: the app
+writes its own pid and start time to `app.json` in the store as it starts, and the CLI
+reads that pair. Alex's own Cmd-Q, in the Aqua session, was never affected. (T271.)
 
 `-skipPackagePluginValidation -skipMacroValidation` are required, not optional: SwiftTerm
 ships the `SwiftTermBuildInfoPlugin` build tool plugin, and without them Xcode fails the
@@ -243,7 +254,9 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
   - `Shared/WorkField.swift`: the add and edit field. The first word is the work
     (Design, Plan, Code, Fix, Review, Investigate, Ship); a matching word is offered
     while you type it. There is no picker. (T181)
-  - `software-factory` executable: `mcp` (the server over stdio), `status`, `tools`, `decide`.
+  - `software-factory` executable: `mcp` (the server over stdio), `status`, `tools`,
+    `decide`, `quit` (ends the running Mac app by addressing the quit event to its
+    process, which is the only way that works from an agent's terminal, T271).
 - `App/Sources`:
   - `AppModel`: `@Observable @MainActor`; reloads the store every 2 s; every write goes
     through `persist`; starts `FactoryServer` on port 4747.
@@ -382,7 +395,9 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
   Developer row or `defaults delete com.alexecollins.softwarefactory hasSeenIntro`.
 - Rebuild and restart the Debug Mac app at the end of every task. The factory on 4747 is
   the running binary; until you quit and open the new one, the floor is yesterday's
-  build. tmux holds the agents across the quit. Wait until 127.0.0.1:4747 answers 200,
-  then mark the task done and take the next.
+  build. tmux holds the agents across the quit. Quit it with `software-factory quit`,
+  never with an AppleScript quit, which does nothing from an agent's terminal (T271).
+  Wait until 127.0.0.1:4747 answers 200 and the pid has changed, then mark the task done
+  and take the next.
 - Try the floor with data: Settings ▸ Developer ▸ Add sample data, or drive the server by
   hand: `printf '...json-rpc...\n' | software-factory mcp`.

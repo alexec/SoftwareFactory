@@ -129,6 +129,18 @@ public struct FileStore: Sendable {
         try Self.encoder.encode(throttle).write(to: root.appending(path: "throttle.json"), options: .atomic)
     }
 
+    /// The running app's own process, `app.json`, and nothing when the app has not
+    /// written one or the store is older than this. (T271.)
+    public func factoryProcess() -> FactoryProcess? {
+        let url = root.appending(path: "app.json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? Self.decoder.decode(FactoryProcess.self, from: data)
+    }
+
+    public func save(_ process: FactoryProcess) throws {
+        try Self.encoder.encode(process).write(to: root.appending(path: "app.json"), options: .atomic)
+    }
+
     public func loadRemovedTasks() throws -> [FactoryTask] {
         (try loadAll("tasks") as [FactoryTask]).filter { $0.removed != nil }
     }

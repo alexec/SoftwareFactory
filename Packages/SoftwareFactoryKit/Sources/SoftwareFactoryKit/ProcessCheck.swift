@@ -39,6 +39,44 @@ public enum ProcessCheck {
         #endif
     }
 
+    /// Asks a process to quit the way its own Quit menu item would, and answers whether
+    /// the event went out. macOS only, and only for a process on this machine.
+    ///
+    /// The event is addressed to the process, not to the application, and that is the
+    /// whole point. `tell application "Software Factory" to quit` asks LaunchServices
+    /// which running app carries that name, and from a shell in a Background launchd
+    /// session, which is what an agent's terminal is, LaunchServices can see no GUI app
+    /// running at all. AppleScript reads that as "not running", declines to launch an app
+    /// just to quit it, and sends nothing, with no error to notice. Addressed to the pid
+    /// there is nobody to ask and nothing to be wrong about. (T271.)
+    ///
+    /// This is the polite ending: the app runs its own termination, writes what it has
+    /// and closes its port. `stop` is the other kind, for a process that will not go.
+    @discardableResult
+    public static func quit(pid: Int32?, startedAt: Date?) -> Bool {
+        #if os(macOS)
+        guard let pid, isRunning(pid: pid, startedAt: startedAt) else { return false }
+        var target = pid
+        guard let address = NSAppleEventDescriptor(
+            descriptorType: typeKernelProcessID, bytes: &target, length: MemoryLayout<pid_t>.size)
+        else { return false }
+        let event = NSAppleEventDescriptor(
+            eventClass: AEEventClass(kCoreEventClass), eventID: AEEventID(kAEQuitApplication),
+            targetDescriptor: address, returnID: AEReturnID(kAutoGenerateReturnID),
+            transactionID: AETransactionID(kAnyTransactionID))
+        // No reply is waited for: an app that is quitting has better things to do than
+        // answer, and whether it went is answered by asking the kernel afterwards.
+        do {
+            try event.sendEvent(options: .noReply, timeout: 2)
+            return true
+        } catch {
+            return false
+        }
+        #else
+        return false
+        #endif
+    }
+
     /// Stops the process recorded for an agent, and answers whether it had one to stop.
     ///
     /// The pair is checked first and the whole point of checking it is here rather than

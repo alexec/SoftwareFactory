@@ -91,9 +91,17 @@ public enum CloudRecords {
     }
 
     /// Tasks added on another device, away from the Mac: in the cloud but not here yet.
+    ///
+    /// `local` is every task on disk, removed ones included, and has to be: a task the
+    /// person deleted is not in the snapshot, so measured against the snapshot its own
+    /// cloud copy looks like news from another device and gets written straight back.
+    /// Delete a task, wait for the pull, and there it is again, which is what made
+    /// deleting feel like it silently did nothing. A cloud copy that is itself removed is
+    /// nothing to adopt either: it would be written to disk and filtered back out on the
+    /// next load, which is a file for nobody. (T264, Alex, 15 Sep 2026.)
     public static func tasksToAdopt(local: [FactoryTask], cloud: [FactoryTask]) -> [FactoryTask] {
         let mine = Set(local.map(\.id))
-        return cloud.filter { !mine.contains($0.id) }
+        return cloud.filter { !mine.contains($0.id) && $0.removed == nil }
     }
 
     /// Person-made changes on another device: the cloud record is newer. Title, note,
@@ -103,7 +111,7 @@ public enum CloudRecords {
         let byID = Dictionary(uniqueKeysWithValues: local.map { ($0.id, $0) })
         return cloud.compactMap { theirs in
             guard let mine = byID[theirs.id], theirs.updated > mine.updated else { return nil }
-            if Backlog.personMaySet.contains(theirs.state), mine.state != .done {
+            if Backlog.personMaySet.contains(theirs.state), mine.state != .done, mine.removed == nil {
                 return theirs
             }
             var adopted = mine
@@ -111,7 +119,10 @@ public enum CloudRecords {
             adopted.note = theirs.note
             adopted.work = theirs.work
             adopted.rank = theirs.rank
-            adopted.removed = theirs.removed
+            // A removal travels, and never travels backwards. Nothing on either device
+            // brings a deleted task back, so a cloud record with no removal on it is one
+            // written before the delete, not somebody asking for it again. (T264.)
+            if mine.removed == nil { adopted.removed = theirs.removed }
             adopted.updated = theirs.updated
             return adopted
         }

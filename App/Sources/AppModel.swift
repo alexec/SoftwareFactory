@@ -14,6 +14,12 @@ final class AppModel {
     private(set) var messagesByAgent: [UUID: [AgentMessage]] = [:]
     private(set) var lastRefresh: Date?
     private(set) var storeError: String?
+    /// The last write that did not happen, in the person's words, until they have seen
+    /// it or another write goes through. Kept apart from `storeError`, which is about
+    /// reading: `persist` writes, then refreshes, and the refresh set `storeError` back
+    /// to nil a line later, so a failed edit or delete said nothing anywhere and the row
+    /// simply redrew as it was. (T264, Alex, 15 Sep 2026.)
+    private(set) var writeError: String?
 
     let store: FileStore?
     private(set) var serverState = "Starting"
@@ -45,6 +51,10 @@ final class AppModel {
             storeError = error.localizedDescription
         }
         clearConnections()
+        // Which process the factory is, written down before anything else can want it:
+        // an agent that has just rebuilt has to stop this one, and the only way to
+        // address it from a terminal is by its pid. (T271.)
+        if let store, let me = FactoryProcess.current() { try? store.save(me) }
         start()
         if let store {
             let server = FactoryServer(router: HTTPRouter(server: MCPServer(store: store)), port: Self.port) { state in
@@ -177,12 +187,15 @@ final class AppModel {
         // number if they arrived without one; parks, ranks and edits come across
         // when the cloud record is newer.
         let pulledTasks = await cloud.pullTasks() ?? []
-        let newTasks = CloudRecords.tasksToAdopt(local: snapshot.tasks, cloud: pulledTasks)
-        let changedTasks = CloudRecords.taskChangesToAdopt(local: snapshot.tasks, cloud: pulledTasks)
+        // Every task on disk, not the snapshot: the snapshot has no removed tasks in it,
+        // and measured against that a task the person deleted looks like news from
+        // another device, so the pull wrote it straight back. (T264.)
+        let every = (try? store.loadEveryTask()) ?? snapshot.tasks
+        let newTasks = CloudRecords.tasksToAdopt(local: every, cloud: pulledTasks)
+        let changedTasks = CloudRecords.taskChangesToAdopt(local: every, cloud: pulledTasks)
         guard !adopted.isEmpty || !newTasks.isEmpty || !changedTasks.isEmpty else { return }
         do {
             for e in adopted { try store.save(e) }
-            let every = (try? store.loadEveryTask()) ?? snapshot.tasks
             var nextNumber = Backlog.nextNumber(in: every)
             for var t in newTasks {
                 if t.number == nil { t.number = nextNumber; nextNumber += 1 }
@@ -648,13 +661,19 @@ final class AppModel {
     // MARK: Plumbing
 
     func persist(_ write: (FileStore) throws -> Void) {
-        guard let store else { return }
+        guard let store else {
+            writeError = "There is no store to write to."
+            return
+        }
         do {
             try write(store)
-            storeError = nil
+            writeError = nil
         } catch {
-            storeError = error.localizedDescription
+            writeError = error.localizedDescription
         }
         refresh()
     }
+
+    /// The person has read it.
+    func clearWriteError() { writeError = nil }
 }

@@ -101,7 +101,7 @@ enum StartAgent {
         let cap = Agents.cap(model.throttle)
         if Agents.atCap(model.snapshot.agents, cap: cap) { return Agents.fullMessage(cap: cap) }
         guard let reserved = model.reserveAgent(for: project) else {
-            return model.storeError ?? "The agent could not be written down. The store said no."
+            return model.writeError ?? "The agent could not be written down. The store said no."
         }
         let session = reserved.id
         // A shell is not given a task: nothing in it would read one.

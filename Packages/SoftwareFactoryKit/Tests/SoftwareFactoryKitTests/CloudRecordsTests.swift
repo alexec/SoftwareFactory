@@ -90,4 +90,39 @@ import Testing
         claimed.updated = now.addingTimeInterval(20)
         #expect(CloudRecords.taskChangesToAdopt(local: [claimed], cloud: [parked]).isEmpty)
     }
+
+    @Test func aTaskThePersonDeletedIsNotAdoptedBackFromTheCloud() {
+        let deleted = Backlog.remove(FactoryTask(projectID: "/p", title: "gone", rank: 0),
+                                     why: "by Alex, in the app")
+        var stillInTheCloud = deleted
+        stillInTheCloud.removed = nil
+        // Every task on disk is what it is measured against, removed ones included.
+        #expect(CloudRecords.tasksToAdopt(local: [deleted], cloud: [stillInTheCloud]).isEmpty)
+    }
+
+    @Test func aRemovedCloudTaskIsNothingToAdopt() {
+        let theirs = Backlog.remove(FactoryTask(projectID: "/p", title: "gone there too", rank: 0),
+                                    why: "on the phone")
+        #expect(CloudRecords.tasksToAdopt(local: [], cloud: [theirs]).isEmpty)
+    }
+
+    @Test func aNewerCloudRecordDoesNotUndoARemoval() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        var deleted = Backlog.remove(FactoryTask(projectID: "/p", title: "gone", rank: 0),
+                                     why: "by Alex, in the app", at: now)
+        deleted.updated = now
+        var older = deleted
+        older.removed = nil
+        older.title = "gone, renamed before the delete"
+        older.updated = now.addingTimeInterval(10)
+        let adopted = CloudRecords.taskChangesToAdopt(local: [deleted], cloud: [older])
+        #expect(adopted.count == 1)
+        #expect(adopted.first?.removed == now)
+        #expect(adopted.first?.title == "gone, renamed before the delete")
+
+        // The same, for a cloud record carrying a state the person may set.
+        var parked = older
+        parked.state = .parked
+        #expect(CloudRecords.taskChangesToAdopt(local: [deleted], cloud: [parked]).first?.removed == now)
+    }
 }

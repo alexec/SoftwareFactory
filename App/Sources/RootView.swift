@@ -142,6 +142,7 @@ struct RootView: View {
                 dashboard
             }
         }
+        .safeAreaInset(edge: .top) { writeFailure }
         .navigationTitle(title)
         // What tmux is holding and which agents are actually running, kept fresh off
         // the main thread so the cards can say so without anybody waiting on tmux or ps.
@@ -262,6 +263,36 @@ struct RootView: View {
 
     private var dashboard: some View {
         DashboardView()
+    }
+
+    /// A write that did not happen, said where the person is standing. Editing or
+    /// deleting a task went through `persist`, which caught the error and then refreshed,
+    /// and the refresh cleared it again: the row redrew exactly as it was and nothing
+    /// anywhere said why. A change that did not take has to say so on the page that
+    /// looks unchanged. (T264, Alex, 15 Sep 2026.)
+    @ViewBuilder private var writeFailure: some View {
+        if let error = model.writeError {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("That change was not saved.")
+                        .font(.headline)
+                    Text(error)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                Button("OK") { model.clearWriteError() }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glassEffect(in: .rect(cornerRadius: 12))
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
     }
 
     private func showAgent(_ id: UUID) {
