@@ -588,7 +588,7 @@ private struct SendMessage: View {
 /// Inbox, and the line typed into its terminal when there is one: the agent cannot
 /// tell the typed line from a person at the keyboard.
 @MainActor
-private func sendNudge(to agent: Agent, model: AppModel, terminals: TerminalSessions) {
+func sendNudge(to agent: Agent, model: AppModel, terminals: TerminalSessions) {
     model.nudge(agent)
     terminals.sendLine(LaunchPrompt.nudge, to: agent.id.uuidString)
 }

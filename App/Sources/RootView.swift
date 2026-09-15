@@ -51,7 +51,14 @@ struct RootView: View {
                     }
                 }
                 .tag(Destination.noProject)
-                ForEach(model.dashboard.unassignedAgents) { agentRow($0) }
+
+                // The floor, in a group of its own. (Alex, 14 Sep 2026: back out of the
+                // projects, two lines each.)
+                if !model.dashboard.agents.isEmpty {
+                    Section("Agents (\(model.dashboard.agents.count))") {
+                        ForEach(model.dashboard.agents) { agentRow($0) }
+                    }
+                }
 
                 // Alex, 12 Sep 2026: the count in the heading.
                 Section("Projects (\(model.dashboard.projects.count))") {
@@ -75,11 +82,6 @@ struct RootView: View {
                             Button("Remove project…", role: .destructive) { removing = status.project }
                                 .disabled(!model.openTasks(in: status.project).isEmpty)
                         }
-                        // The floor, under the project it is working. An agent is one
-                        // click from wherever you are, and where it is says more than
-                        // that it exists. (T222, and Alex, 14 Sep 2026: under its
-                        // project, not in a group of its own.)
-                        ForEach(model.dashboard.agents(on: status.id)) { agentRow($0) }
                     }
                 }
             }
@@ -144,42 +146,49 @@ struct RootView: View {
         }
     }
 
-    /// One agent, indented under the project it works. Its dot says how it is, the line
-    /// it set with an OSC title says what it is doing, it rings here when it rang, and
-    /// clicking it opens its page. (T222, T225.)
+    /// One agent, in two lines: the project it is on, under it the line it set with an
+    /// OSC title, with its bell in front when it rang for a look. Clicking it opens its
+    /// page. (T222, T225, and Alex, 14 Sep 2026: two lines.)
     private func agentRow(_ status: Dashboard.AgentStatus) -> some View {
-        HStack(spacing: 6) {
-            AgentActivityDot(activity: status.activity)
-            Text(status.agent.label)
-                .foregroundStyle(status.activity == .stopped ? .secondary : .primary)
-            Text(sidebarLine(status))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(sidebarLine(status))
-            Spacer()
-            if status.agent.bel { AgentBellMark() }
-            if status.waitingOnYou {
-                Image(systemName: "questionmark.circle.fill")
-                    .foregroundStyle(.orange)
-                    .help("It asked you something")
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                AgentActivityDot(activity: status.activity)
+                Text(status.project?.name ?? "No project")
+                    .foregroundStyle(status.activity == .stopped ? .secondary : .primary)
+                    .lineLimit(1)
+                Spacer()
+            }
+            HStack(spacing: 6) {
+                if status.agent.bel { AgentBellMark() }
+                Text(sidebarLine(status))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
             }
         }
-        .padding(.leading, 14)
+        .help(sidebarLine(status))
         .tag(Destination.agent(status.id))
         .contextMenu {
+            // The same poke as the button on its card and page: the words go in its
+            // inbox and get typed into its terminal. (Alex, 14 Sep 2026.)
+            if status.canNudge {
+                Button("Nudge \(status.agent.label)") {
+                    sendNudge(to: status.agent, model: model, terminals: terminals)
+                }
+            }
             Button("Delete \(status.agent.label)", role: .destructive) {
                 model.delete(status.agent)
             }
         }
     }
 
-    /// What an agent's row says after its name.
+    /// The second line of an agent's row: what it last said it was doing, and its own
+    /// name until it has said anything, so the line is never empty.
     private func sidebarLine(_ status: Dashboard.AgentStatus) -> String {
         let title = status.agent.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !title.isEmpty { return title }
-        return status.project?.name ?? "No project"
+        return title.isEmpty ? status.agent.label : title
     }
 
     private var title: String {

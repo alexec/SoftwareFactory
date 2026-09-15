@@ -175,12 +175,12 @@ before you mark the task done. Build the phone too when the change is in it.
     through `persist`; starts `FactoryServer` on port 4747.
   - `FactoryServer`: `NWListener` on the port, one queue per connection (a request can
     block for minutes), Bonjour `_softwarefactory._tcp`.
-  - `RootView` (split view: Dashboard, Agents, Capacity, No project, then the projects;
-    every agent hangs off the project it works, indented under it, with its dot, the line
-    it set with an OSC title, and its bell; agents on no project sit under No project. A
-    row opens that agent's page from anywhere, and opening the page clears the bell
-    however you got there. T222, T225, and Alex, 14 Sep 2026: under its project, not in a
-    group of its own), `DashboardView` (stat tiles, Needs you as a horizontal strip,
+  - `RootView` (split view: Dashboard, Agents, Capacity, No project, then the agents on
+    the floor in a group of their own, then the projects. An agent is two lines: its dot
+    and the project it is on, then the line it set with an OSC title, with its bell in
+    front when it rang. The row opens that agent's page from anywhere, and opening the
+    page clears the bell however you got there; right click to Nudge or Delete it.
+    T222, T225, and Alex, 14 Sep 2026), `DashboardView` (stat tiles, Needs you as a horizontal strip,
     the agents on the floor as cards; `AgentCard` is one of them and `AgentView` is the
     page behind it; an agent that is not stopped has Nudge, inbox and terminal),
     `AgentsView` (every agent registered, and the button that starts a
