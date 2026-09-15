@@ -11,6 +11,7 @@ let package = Package(
     targets: [
         .target(name: "SoftwareFactoryKit"),
         .executableTarget(name: "software-factory", dependencies: ["SoftwareFactoryKit"]),
-        .testTarget(name: "SoftwareFactoryKitTests", dependencies: ["SoftwareFactoryKit"]),
+        .testTarget(name: "SoftwareFactoryKitTests", dependencies: ["SoftwareFactoryKit"],
+                    resources: [.copy("Fixtures")]),
     ]
 )
