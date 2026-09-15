@@ -46,7 +46,7 @@ enum Tmux {
     set -g visual-activity off
     set -g monitor-activity off
     set -g monitor-bell on
-    set -g bell-action current
+    set -g bell-action any
     set -g destroy-unattached off
     set -g exit-empty off
     # The pane stays after its agent exits, so its last words are still readable and the

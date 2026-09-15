@@ -236,7 +236,8 @@ struct ProjectView: View {
                     detail: AgentLauncher.isSandboxed ? "The command goes on the clipboard." : model.launchStyle.detail,
                     help: launchHelp,
                     isReady: project.path != nil,
-                    launch: { launchAgent($0, agent: $1) })
+                    defaultWords: LaunchPrompt.projectWork(project),
+                    launch: { launchAgent($0, agent: $1, words: $2) })
             }
         }
     }
@@ -251,10 +252,11 @@ struct ProjectView: View {
 
     /// In the app, where its page shows it working and you can type to it, or in
     /// Terminal, where it outlives the app.
-    private func launchAgent(_ style: AppModel.LaunchStyle, agent: LaunchAgent) {
+    private func launchAgent(_ style: AppModel.LaunchStyle, agent: LaunchAgent, words: String) {
         // The agent is written down first, so it has a name before it starts and the
         // card, the terminal and the prompt all say the same thing.
-        launchError = StartAgent.run(project: project, agent: agent, style: style, model: model, terminals: terminals)
+        launchError = StartAgent.run(project: project, agent: agent, style: style, model: model,
+                                     terminals: terminals, words: words)
     }
 
     private var pathDisplay: String {
@@ -341,10 +343,13 @@ private struct LaunchAgentCard: View {
     var detail: String
     var help: String
     var isReady: Bool
-    var launch: (AppModel.LaunchStyle, LaunchAgent) -> Void
+    /// The words the factory would use, which the person may edit before launching.
+    var defaultWords: String
+    var launch: (AppModel.LaunchStyle, LaunchAgent, String) -> Void
 
     @State private var choosing = false
     @State private var styleForThisLaunch: AppModel.LaunchStyle?
+    @State private var words = ""
 
     var body: some View {
         Button { choosing = true } label: {
@@ -371,8 +376,11 @@ private struct LaunchAgentCard: View {
         .glassEffect(.regular, in: .rect(cornerRadius: 18))
         .help(help)
         .popover(isPresented: $choosing, arrowEdge: .bottom) {
-            LaunchChooser(onLaunch: start, onCancel: { choosing = false })
+            LaunchChooser(onLaunch: start, onCancel: { choosing = false }) {
+                LaunchWords(words: $words, defaultWords: defaultWords)
+            }
         }
+        .onChange(of: choosing) { _, open in if open { words = defaultWords } }
         // Either way, whichever the settings say by default, then pick the agent.
         .contextMenu {
             ForEach(AppModel.LaunchStyle.allCases) { style in
@@ -388,7 +396,7 @@ private struct LaunchAgentCard: View {
         choosing = false
         let style = styleForThisLaunch ?? model.launchStyle
         styleForThisLaunch = nil
-        launch(style, agent)
+        launch(style, agent, words)
     }
 }
 
@@ -466,6 +474,8 @@ struct TaskRow: View {
     @State private var note = ""
     @State private var showingText = false
     @State private var choosingAgent = false
+    /// The words this agent will start with, editable before it goes. (T260.)
+    @State private var words = ""
 
     /// The agent on it, as the factory knows it.
     private var onIt: Dashboard.AgentStatus? {
@@ -590,8 +600,11 @@ struct TaskRow: View {
                 editTask
             }
             .popover(isPresented: $choosingAgent, arrowEdge: .trailing) {
-                LaunchChooser(onLaunch: launchAgent, onCancel: { choosingAgent = false })
+                LaunchChooser(onLaunch: launchAgent, onCancel: { choosingAgent = false }) {
+                    LaunchWords(words: $words, defaultWords: defaultWords)
+                }
             }
+            .onChange(of: choosingAgent) { _, open in if open { words = defaultWords } }
         }
         .padding(.vertical, 2)
         .alert("The agent did not start", isPresented: Binding(get: { launchError != nil }, set: { if !$0 { launchError = nil } })) {
@@ -615,7 +628,13 @@ struct TaskRow: View {
         choosingAgent = false
         guard let project else { return }
         launchError = StartAgent.run(project: project, task: task, agent: agent, style: model.launchStyle,
-                                     model: model, terminals: terminals)
+                                     model: model, terminals: terminals, words: words)
+    }
+
+    /// What this agent would be told if nobody touched it: the task, and what to produce.
+    private var defaultWords: String {
+        guard let project else { return "" }
+        return LaunchPrompt.taskWork(task, in: project)
     }
 
     private func beginEditing() {

@@ -34,6 +34,40 @@ struct AgentHelp: View {
     }
 }
 
+/// The words the agent will start with, there to be read and changed before it goes.
+/// They arrive as what the factory would have said, so launching without touching them
+/// is exactly what launching used to do. The line naming the agent and its session is
+/// not here: the factory writes that in front of whatever this says, because an agent
+/// that does not know which session it is cannot use the factory at all. (T260.)
+struct LaunchWords: View {
+    @Binding var words: String
+    var defaultWords: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("What it is told")
+                    .font(.headline)
+                Spacer()
+                if words != defaultWords {
+                    Button("Reset") { words = defaultWords }
+                        .buttonStyle(.plain)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            TextField("What this agent is for", text: $words, axis: .vertical)
+                .lineLimit(3...8)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(.quaternary, in: .rect(cornerRadius: 8))
+            Text("It is told its name and its session on top of this.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+    }
+}
+
 /// Pick which coding agent to start. A segmented slider of the ones this factory
 /// can launch, help for the one in view, then Launch <name>.
 struct LaunchChooser<Extra: View>: View {

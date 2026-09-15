@@ -84,6 +84,10 @@ enum StartAgent {
     /// The task is assigned rather than claimed: whether a task is in progress is the
     /// agent's word, not ours. Assigned, `task_next` hands it to this agent and passes
     /// over it for everyone else.
+    /// `words` is what the person wrote in the launch popover, which starts as the words
+    /// the factory would have used. Empty means they left it alone. Whatever it says, the
+    /// line naming the agent and its session goes in front of it: that part is the
+    /// factory's, not theirs. (T260.)
     @discardableResult
     static func run(
         project: Project,
@@ -91,7 +95,8 @@ enum StartAgent {
         agent: LaunchAgent,
         style: AppModel.LaunchStyle,
         model: AppModel,
-        terminals: TerminalSessions
+        terminals: TerminalSessions,
+        words: String = ""
     ) -> String? {
         let cap = Agents.cap(model.throttle)
         if Agents.atCap(model.snapshot.agents, cap: cap) { return Agents.fullMessage(cap: cap) }
@@ -100,7 +105,12 @@ enum StartAgent {
         }
         let session = reserved.id
         if let task { model.assign(task, to: reserved) }
-        let command = agent.launchCommand(for: project, task: task, as: reserved.label, session: session)
+        let asked = words.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prompt = asked.isEmpty
+            ? (task.map { LaunchPrompt.task($0, in: project, as: reserved.label, session: session) }
+                ?? LaunchPrompt.project(project, as: reserved.label, session: session))
+            : LaunchPrompt.free(asked, as: reserved.label, session: session)
+        let command = agent.command(for: prompt, session: session)
         guard !AgentLauncher.isSandboxed else {
             AgentLauncher.copy(project, command: command)
             return nil

@@ -45,6 +45,21 @@ import Testing
         #expect(words.hasSuffix("You're the browser owner."))
     }
 
+    /// The person edits the work half; the factory writes the name and the session in
+    /// front of it. Launching with the words untouched is the same as launching without
+    /// touching them at all. (T260.)
+    @Test func theWordsThePersonEditsAreTheDefaultOnes() {
+        var task = FactoryTask(projectID: project.id, title: "Move the add row", rank: 1)
+        task.number = 136
+        #expect(LaunchPrompt.free(LaunchPrompt.projectWork(project), as: "A7", session: Self.session)
+                == LaunchPrompt.project(project, as: "A7", session: Self.session))
+        #expect(LaunchPrompt.free(LaunchPrompt.taskWork(task, in: project), as: "A7", session: Self.session)
+                == LaunchPrompt.task(task, in: project, as: "A7", session: Self.session))
+        #expect(!LaunchPrompt.projectWork(project).contains("A7"))
+        #expect(!LaunchPrompt.projectWork(project).contains(Self.session.uuidString))
+        #expect(LaunchPrompt.taskWork(task, in: project).contains("T136, \"Move the add row\""))
+    }
+
     @Test func aNudgeTellsItToTakeTheNextTask() {
         #expect(LaunchPrompt.nudge.contains("next task"))
         #expect(LaunchPrompt.nudge.contains("backlog"))

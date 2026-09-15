@@ -63,6 +63,10 @@ public struct Dashboard: Sendable, Equatable {
         /// one, a waiting one and a quiet one can all be poked. A process that has
         /// gone cannot. (T197, 13 Sep 2026.)
         public var canNudge: Bool { activity != .stopped }
+
+        /// Stop is there only for an agent whose process the factory knows and which is
+        /// still running. Everything else has nothing to stop. (T261.)
+        public var canStop: Bool { Agents.mayStop(agent) }
     }
 
     /// The one rule behind an agent's dot. An agent that has gone quiet is idle

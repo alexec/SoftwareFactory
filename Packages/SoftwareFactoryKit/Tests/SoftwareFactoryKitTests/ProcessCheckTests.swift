@@ -93,6 +93,46 @@ import Testing
         #expect(Dashboard.activity(of: unknown, task: nil, hasOpenQuestion: false, now: now) == .waiting)
     }
 
+    /// Stop is offered for a process the factory knows and can still reach. An agent
+    /// that registered from somewhere else never told us one, and one whose process has
+    /// already gone has nothing left to stop. (T261.)
+    @Test func stopIsOfferedOnlyForAProcessTheFactoryKnows() throws {
+        let now = Date()
+        let me = ProcessInfo.processInfo.processIdentifier
+        var live = Agent(number: 1, projectID: nil, registered: now.addingTimeInterval(-60))
+        live.lastSeen = now
+        live.pid = me
+        live.pidStartedAt = try #require(ProcessCheck.startTime(of: me))
+        #expect(Agents.mayStop(live))
+
+        // Registered over MCP from wherever it already was: nothing here to stop.
+        var external = live
+        external.pid = nil
+        external.pidStartedAt = nil
+        #expect(!Agents.mayStop(external))
+
+        // Its process has gone. Stop would be a button that does nothing.
+        var dead = live
+        dead.pid = 0x7FFF_FFFE
+        #expect(!Agents.mayStop(dead))
+
+        // And one that has left the factory.
+        var gone = live
+        gone.deregistered = now
+        #expect(!Agents.mayStop(gone))
+
+        // The floor asks the same question. A quiet agent can still be stopped: silence
+        // is not an exit, and stopping a thinking agent is exactly what the button is
+        // for.
+        var quiet = live
+        quiet.lastSeen = now.addingTimeInterval(-700)
+        let snapshot = Snapshot(agents: [quiet])
+        let status = Dashboard.make(snapshot: snapshot, now: now).agents[0]
+        #expect(status.activity == .idle)
+        #expect(status.canStop)
+        #expect(!Dashboard.make(snapshot: Snapshot(agents: [external]), now: now).agents[0].canStop)
+    }
+
     /// The session is the agent, so two agents cannot land on one terminal: there is no
     /// separate name to collide over. This is what T156 used to arbitrate, gone by
     /// construction rather than by a rule.

@@ -199,7 +199,7 @@ struct AgentCard: View {
                     Text(status.agent.label)
                         .font(.headline)
                     if hasStopped { StoppedMark() }
-                    if status.agent.bel { AgentBellMark() }
+                    AgentBellMark(ringing: status.agent.bel)
                     Spacer(minLength: 0)
                 }
                 Text(status.project?.name ?? "No project")
@@ -369,7 +369,7 @@ struct AgentView: View {
             Text(agent.label)
                 .font(.title3.weight(.semibold))
             if status.activity == .stopped { StoppedMark() }
-            if agent.bel { AgentBellMark() }
+            AgentBellMark(ringing: agent.bel)
             if let project = status.project {
                 Text(project.name)
                     .font(.callout)
@@ -644,16 +644,20 @@ struct StoppedMark: View {
     }
 }
 
-/// BEL from the agent's terminal: it wants a look. Wiggles until the card is opened.
+/// BEL from the agent's terminal: it wants a look. The bell is always there, quiet and
+/// grey, so you know where to look for it; when the agent rings it fills in, turns orange
+/// and wiggles until the page is opened. A mark that only exists while something is wrong
+/// is a mark nobody learns to read. (Alex, 14 Sep 2026.)
 struct AgentBellMark: View {
+    var ringing: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Image(systemName: "bell.fill")
-            .foregroundStyle(.orange)
-            .symbolEffect(.wiggle, options: .repeating, isActive: !reduceMotion)
-            .help("It rang for your attention")
-            .accessibilityLabel("Wants a look")
+        Image(systemName: ringing ? "bell.fill" : "bell")
+            .foregroundStyle(ringing ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.tertiary))
+            .symbolEffect(.wiggle, options: .repeating, isActive: ringing && !reduceMotion)
+            .help(ringing ? "It rang for your attention" : "It has not rung")
+            .accessibilityLabel(ringing ? "Wants a look" : "Quiet")
     }
 }
 

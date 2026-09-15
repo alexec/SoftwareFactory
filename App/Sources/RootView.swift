@@ -171,7 +171,7 @@ struct RootView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .layoutPriority(1)
-                if status.agent.bel { AgentBellMark() }
+                AgentBellMark(ringing: status.agent.bel)
                 Text(status.project?.name ?? "No project")
                     .font(.caption)
                     .foregroundStyle(.secondary)

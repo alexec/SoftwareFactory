@@ -18,24 +18,35 @@ public enum LaunchPrompt {
         + "register and nothing to say goodbye to; the factory already has you. Keep it."
     }
 
+    /// The work half of the words, without the line that says who the agent is. This is
+    /// what the person sees and may edit before they launch: the factory writes the name
+    /// and the session in front of whatever they type, because those are not theirs to
+    /// change. (T260.)
+    public static func projectWork(_ project: Project) -> String {
+        "You are working on the project \"\(project.name)\". Work through its backlog of tasks."
+    }
+
+    /// The same, for an agent started on one task.
+    public static func taskWork(_ task: FactoryTask, in project: Project) -> String {
+        let label = task.label.map { "\($0), " } ?? ""
+        return "You are working on the project \"\(project.name)\". The task"
+            + " \(label)\"\(task.title)\" is waiting in your name."
+            + " Claim it, read its note. \(task.work.instruction)"
+    }
+
     /// An agent that works a project's backlog, in whatever order the backlog is in.
     public static func project(_ project: Project, as name: String, session: UUID) -> String {
-        youAre(name, session)
-        + " You are working on the project \"\(project.name)\". Work through its backlog"
-        + " of tasks."
+        free(projectWork(project), as: name, session: session)
     }
 
     /// An agent started for one task. The task is already in its name, so it is told
     /// which one and asked to claim it rather than to read the backlog and choose.
     public static func task(_ task: FactoryTask, in project: Project, as name: String, session: UUID) -> String {
-        let label = task.label.map { "\($0), " } ?? ""
-        return youAre(name, session)
-            + " You are working on the project \"\(project.name)\". The task"
-            + " \(label)\"\(task.title)\" is waiting in your name."
-            + " Claim it, read its note. \(task.work.instruction)"
+        free(taskWork(task, in: project), as: name, session: session)
     }
 
-    /// An agent on no project: the person says what it is for.
+    /// Whatever the person wants said, with the line that says who the agent is in
+    /// front of it: an agent on no project, or one launched with the words edited.
     public static func free(_ prompt: String, as name: String, session: UUID) -> String {
         youAre(name, session) + " \(prompt)"
     }

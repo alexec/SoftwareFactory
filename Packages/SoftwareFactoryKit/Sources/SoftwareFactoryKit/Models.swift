@@ -512,6 +512,19 @@ public enum Agents {
         Agent(number: number, projectID: projectID, registered: now)
     }
 
+    /// Whether the factory can stop this one. Stopping is ending the process the
+    /// factory started, so it can only be offered for a process the factory knows: the
+    /// pid it read off the pane when it launched it, with the time that process started
+    /// beside it. An agent that registered from somewhere else never told us a process,
+    /// and one whose process has already gone has nothing left to stop.
+    ///
+    /// This is deliberately the same question as `knowsItsProcess`, not "did we launch
+    /// it in a terminal we own". A terminal can be lost while the agent works on, and an
+    /// agent resumed after a restart is still the process we wrote down. (T261.)
+    public static func mayStop(_ agent: Agent) -> Bool {
+        agent.isRegistered && agent.knowsItsProcess && !agent.hasExited
+    }
+
     /// There used to be a rule here for two agents turning up on one terminal: a shell
     /// that outlived its agent kept SOFTWARE_FACTORY_SESSION exported, so the next agent
     /// started in that window reported the same session, and the factory had to decide

@@ -205,15 +205,21 @@ before you mark the task done. Build the phone too when the change is in it.
     on a backlog row: it reserves an agent, puts the task in its name and starts it on
     that one task), `AgentLauncher` and `StartAgent` (reserve, assign, launch: one path
     for every launch, including agents `agent_create` asked for), `LaunchChooser` (pick Claude Code, GitHub Copilot, Grok or Cursor
-    at launch, with that agent's install link and plugin command, then Launch
-    <name>; remembers the last pick, no preferred-agent setting), `IntroSheet`, `SettingsView`
+    at launch, with that agent's install link and plugin command, the words it will start
+    with in a field you can edit and Reset, then Launch
+    <name>; remembers the last pick, no preferred-agent setting. `LaunchPrompt.projectWork`
+    and `taskWork` are what that field starts as, and the line naming the agent and its
+    session goes in front of whatever it says, T260), `IntroSheet`, `SettingsView`
     (How it works on top, in-app vs Terminal, iCloud, the store, Developer in DEBUG).
   - `TerminalSessions` and `Tmux`: an agent the app launches runs in a terminal the app
     owns (SwiftTerm), so its page shows it working and you can type to it. tmux holds the
     session on a server of its own, so the agent outlives the app: quit, rebuild, come
     back, and opening its page attaches to what has been running all along. The person
     never sees tmux. OSC titles and BEL still reach SwiftTerm: the title is the line on
-    the agent's card, and BEL sets `bel` until the card is opened. A nudge, and any other
+    the agent's card, and BEL sets `bel` until the page is opened. The bell is drawn on
+    every agent, grey and quiet, and fills in orange and wiggles when `bel` is set: a mark
+    that only exists while something is wrong is one nobody learns to read. tmux passes
+    every bell through, `bell-action any` (Alex, 14 Sep 2026). A nudge, and any other
     message, is typed in with `sendLine`, which is two writes: the words, a gap, then the
     return. It answers whether there was a terminal to type into, and a message is marked
     delivered only when one took it. In one write
