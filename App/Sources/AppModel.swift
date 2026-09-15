@@ -222,15 +222,6 @@ final class AppModel {
         persist { try $0.delete(message) }
     }
 
-    /// Stamps a message typed, so it is not typed twice. Called only when a terminal
-    /// actually took it.
-    func markDelivered(_ message: AgentMessage) {
-        guard message.delivered == nil else { return }
-        var m = message
-        m.delivered = .now
-        persist { try $0.save(m) }
-    }
-
     /// Every task ever credited to this agent: the one it holds now, and whatever it
     /// finished before. Cleared only when a task goes back to the backlog or parked.
     /// What an agent is on. Finished work drops off: the page is for what it is doing,

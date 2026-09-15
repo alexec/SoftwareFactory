@@ -520,6 +520,31 @@ public enum Agents {
 
 }
 
+/// One agent's mail, and how much of it may be waiting at once.
+///
+/// A message lives only until it has been typed into its agent's terminal, and then it is
+/// thrown away: the terminal is where it was going, and a copy of what has already
+/// arrived is not an inbox, it is a pile. What is left here is what has not landed yet,
+/// and three of those is the cap. An agent with three waiting is an agent nobody is
+/// reaching, and a fourth message would not change that. (Alex, 14 Sep 2026.)
+public enum Mailbox {
+    public static let cap = 3
+
+    /// Sent and not yet typed in. A message from before terminal delivery counts as
+    /// delivered, so old mail never fills a mailbox.
+    public static func waiting(_ messages: [AgentMessage]) -> [AgentMessage] {
+        messages.filter { $0.delivered == nil }
+    }
+
+    public static func isFull(_ messages: [AgentMessage]) -> Bool {
+        waiting(messages).count >= cap
+    }
+
+    public static func fullMessage(_ label: String) -> String {
+        "Mailbox full: \(label) has \(cap) messages waiting to be typed into their terminal. Send this once those have gone in."
+    }
+}
+
 /// One message to an agent. It is typed into that agent's terminal, the same way a nudge
 /// is, and `delivered` is when that happened. There is no inbox to read any more: an agent
 /// that had to ask for its messages only heard between tasks, if it remembered to look,

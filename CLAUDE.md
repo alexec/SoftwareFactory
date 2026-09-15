@@ -61,10 +61,15 @@ before you mark the task done. Build the phone too when the change is in it.
     another, which sets `wantsLaunch`; the app starts it. The one over the cap is
     refused. `agent_nudge` pokes another agent, sets
     `wantsNudge`, and the app types the same line as the person's Nudge),
-    `AgentMessage` (recipient, from, subject, contents, sent, and `delivered` when the app
-    typed it into the recipient's terminal; there is no inbox to read, `terminalLine` is
+    `AgentMessage` (recipient, from, subject, contents, sent, and `delivered` for records
+    written before delivery existed; there is no inbox to read, `terminalLine` is
     what gets typed, and a nudge is simply a message whose contents are
-    `LaunchPrompt.nudge`, so one path carries both),
+    `LaunchPrompt.nudge`, so one path carries both. Once the app has typed one into the
+    recipient's terminal it deletes the record: arrived is arrived, and a copy of what has
+    landed is a pile rather than an inbox. `Mailbox` caps what is still waiting at three,
+    and `message_send` and `agent_nudge` answer "Mailbox full" for the fourth; the
+    person's own Nudge is never refused, and the person can throw any message away from
+    the Messages panel. Alex, 14 Sep 2026),
     `Escalation` (options, one recommended; optional `link` to a document to review,
     filed as an artifact; optional `artifactID`; `decide(_:by:)` records a `Decision`),
     `Artifact` (a document on a project: title, body, optional link; twenty live ones

@@ -295,7 +295,7 @@ public struct MCPServer: Sendable {
             Tool(name: "agent_nudge", description: "Poke another agent the same way the person's Nudge does: the words are typed into its terminal. Tells it there is work waiting.",
                  properties: ["to_agent_id": str("The agent's A<n> id from agent_list")],
                  required: ["to_agent_id"]),
-            Tool(name: "message_send", description: "Send a message to another agent. It is typed into that agent's terminal, the way a nudge is, so it arrives while they are working rather than waiting to be collected. There is nothing to read: keep it to what they need to act on.",
+            Tool(name: "message_send", description: "Send a message to another agent. It is typed into that agent's terminal, the way a nudge is, so it arrives while they are working rather than waiting to be collected. There is nothing to read: keep it to what they need to act on. Three messages waiting to be typed in is the cap, and a fourth is refused.",
                  properties: ["to_agent_id": str("The recipient's id from agent_list"),
                               "subject": str("What it is about, in a few words"),
                               "contents": str("The message itself, in one line")],
@@ -542,6 +542,9 @@ public struct MCPServer: Sendable {
                   recipient.isRegistered
             else { throw ToolError(message: "No active agent has that to_agent_id.") }
             guard recipient.id != sender.id else { throw ToolError(message: "Nudge another agent, not yourself.") }
+            guard try !Mailbox.isFull(store.messages(for: recipient.id)) else {
+                throw ToolError(message: Mailbox.fullMessage(recipient.label))
+            }
             // A nudge is a message whose words are the nudge line. The app types every
             // undelivered message into its agent's terminal, so there is one path and no
             // flag on the agent to keep in step with it. (Alex, 14 Sep 2026.)
@@ -556,6 +559,11 @@ public struct MCPServer: Sendable {
                   recipient.isRegistered
             else { throw ToolError(message: "No active agent has that to_agent_id.") }
             guard recipient.id != sender.id else { throw ToolError(message: "Send messages to another agent, not yourself.") }
+            // Three waiting is the cap. An agent nobody is reaching does not need a
+            // fourth message. (Alex, 14 Sep 2026.)
+            guard try !Mailbox.isFull(store.messages(for: recipient.id)) else {
+                throw ToolError(message: Mailbox.fullMessage(recipient.label))
+            }
             let message = AgentMessage(recipientID: recipient.id, from: sender.label,
                                        subject: try string("subject", args), contents: try string("contents", args), sent: now())
             try store.save(message)

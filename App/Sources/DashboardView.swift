@@ -595,7 +595,9 @@ func deliverPendingMessages(model: AppModel, terminals: TerminalSessions) {
         terminals.attach(agent.id.uuidString)
         for message in waiting {
             guard terminals.sendLine(message.terminalLine, to: agent.id.uuidString) else { break }
-            model.markDelivered(message)
+            // Typed in is arrived, and an arrived message is not an inbox item any more.
+            // (Alex, 14 Sep 2026: once it is sent, take it out of their inbox.)
+            model.delete(message)
         }
     }
 }

@@ -356,6 +356,35 @@ private final class ResultBox: @unchecked Sendable {
         ]).isError)
     }
 
+    /// Three waiting is the cap, and the fourth is refused until one has been typed in.
+    /// A nudge is a message, so it is refused the same way. (Alex, 14 Sep 2026.)
+    @Test func aFullMailboxRefusesTheFourthMessage() throws {
+        let s = try server()
+        let lead = try startAgent(s, project: "Mail").label
+        let worker = try startAgent(s, project: "Mail").label
+        for n in 1...Mailbox.cap {
+            #expect(!call(s, "message_send", [
+                "agent_id": lead, "to_agent_id": worker, "subject": "\(n)", "contents": "\(n)",
+            ]).isError)
+        }
+        let full = call(s, "message_send", [
+            "agent_id": lead, "to_agent_id": worker, "subject": "4", "contents": "4",
+        ])
+        #expect(full.isError)
+        #expect(full.text.contains("Mailbox full"))
+        #expect(call(s, "agent_nudge", ["agent_id": lead, "to_agent_id": worker]).isError)
+
+        // The app throws a message away once it has been typed in, which is what frees
+        // the slot. Here, one goes.
+        let workerID = try #require(try s.store.load().agents.first { $0.label == worker }?.id)
+        let oldest = try #require(try s.store.messages(for: workerID).first)
+        try s.store.delete(oldest)
+        #expect(try Mailbox.waiting(s.store.messages(for: workerID)).count == Mailbox.cap - 1)
+        #expect(!call(s, "message_send", [
+            "agent_id": lead, "to_agent_id": worker, "subject": "4", "contents": "4",
+        ]).isError)
+    }
+
     @Test func aMessageIsTypedAsOneLineWhateverItCarries() throws {
         let plain = AgentMessage(recipientID: UUID(), from: "A2", subject: "", contents: "Look at T12.")
         #expect(plain.terminalLine == "Message from A2: Look at T12.")
