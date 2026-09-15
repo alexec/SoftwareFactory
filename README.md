@@ -12,9 +12,13 @@ something themselves. You see all of it in one window and answer the questions w
 - **Needs you.** An agent raises a question with two or more options and marks the one it
   recommends. It sits at the top of the floor until you click an option. The agent, which
   has been waiting on `escalation_await`, gets the answer and carries on.
+- **Artifacts.** Agents put documents on a project for you to read: a design, a plan, a
+  finding. They show on the project and on the agent that filed them. A link on a question
+  is filed as one, so the document lives here.
 - **On the floor.** Every registered agent, which project it is in, what it is on, and
   when it last checked in.
-- **Backlogs.** Each project's tasks, features, bugs and chores, in rank order. Add at the
+- **Backlogs.** Each project's tasks, in rank order. When you add one you say what the
+  agent should do: design, plan, implement, fix, review, investigate or ship. Add at the
   top or the bottom, reorder by dragging, park what you are not going to do and unpark it
   later. Agents file tasks anywhere on the list, pick them up, and are the only ones who
   say a task is in progress or done: that is their work to report, not yours to mark.
@@ -36,9 +40,8 @@ something themselves. You see all of it in one window and answer the questions w
    the server both read and write it; writes are atomic and one file per record, so a
    half-written file is never read.
 3. **A project is a name.** An app, a role that spans apps such as research, a piece of
-   tooling: it needs no folder. Add one with a brief description so agents know when to
-   use it; an agent naming a new project creates one without a description for compatibility.
-   An agent that still sends a folder path gets the folder's name.
+   tooling: it needs no folder. An agent that still sends a folder path gets the folder's
+   name.
 4. **Working means the agent touched the factory in the last ten minutes.** Quiet means
    registered and silent; an hour of silence and it is marked gone. There is no check-in
    to forget: a claim, an update, a question or a lease is the heartbeat.
@@ -62,11 +65,13 @@ claude mcp add --transport http --scope user software-factory http://127.0.0.1:4
 
 The tools, and each says whether it reads or writes: queries are `project_list`,
 `task_list`, `task_next`, `agent_list`, `inbox`, `escalation_list`, `escalation_await`,
-`resource_list`, `factory_status`, `factory_ask`. Commands are `agent_register`,
-`agent_deregister`, `message_send`, `project_add`, `project_read`, `project_set`,
+`artifact_list`, `artifact_read`,
+`resource_list`, `factory_status`, `factory_ask`. Commands are `message_send`, `project_add`, `project_read`, `project_set`,
 `project_remove`, `task_add`, `task_claim`, `task_status`, `task_note`, `task_set`,
-`task_block`, `task_unblock`, `task_remove`, `resource_add`, `resource_lease`,
-`resource_release`. A query never writes anything but your heartbeat, and a test holds
+`task_block`, `task_unblock`, `task_remove`, `artifact_add`, `artifact_set`, `artifact_remove`,
+`agent_create`, `agent_nudge`, `resource_add`, `resource_lease`,
+`resource_release`. Eight agents on the floor is the cap; `agent_create` asks the factory
+to start another. `agent_nudge` pokes another agent the way the person's Nudge does. A query never writes anything but your heartbeat, and a test holds
 that true. Older names (`agent_messages`, `project_get`, the three `project_set_*`,
 `task_number`, `task_rank`, `task_move`, `task_show`, `resource_renew`) still answer for
 sessions that loaded them.
@@ -81,18 +86,12 @@ the factory again. Agent identity is the server-minted `Mcp-Session-Id` on its H
 session. The server uses MCP `2025-03-26`, the revision that supports that header, so the
 `mcp` command-line transport cannot register or act as an agent.
 
-An agent may add a short `about` description when it registers. `agent_list` shows the
-other agents on the floor and their ids. `agent_message_send` delivers text with a subject
+`agent_list` shows the other agents on the floor, their ids and their terminal titles. `agent_message_send` delivers text with a subject
 to one of those ids; `agent_messages` reads the caller's private inbox. Set
 `wait_for_new` to wait for mail that arrives after the call begins.
 
-`project_add` requires a brief `description`, which `project_list` shows to help agents
-choose the right project. `project_get` returns a project's name, description and
-instructions, and records that the active agent read them. A registered agent must call
-it before creating or changing a task in that project; task lists and task-next do not
-repeat the instructions. Changing instructions requires a new `project_get`. Use
-`project_set_description` or
-`project_set_instructions` to update either field.
+`project_add` takes a name. `project_read` returns the name, the folder and whether it
+is on hold. A project has no description and no instructions.
 
 `Packages/SoftwareFactoryKit` also builds `software-factory`, a shell tool: `status` prints the floor as
 text, `tools` lists the tools, `mcp` is the same server over stdio for scripts.
@@ -101,9 +100,10 @@ text, `tools` lists the tools, `mcp` is the same server over stdio for scripts.
 ## The agent plugin
 
 `Plugins/software-factory` packages the local MCP connection and a skill that teaches an
-agent to work the factory's backlog. It supports Claude Code and GitHub Copilot CLI now;
-Codex and Cursor are coming soon. See [its instructions](Plugins/software-factory/README.md)
-to install it and start a session with the factory.
+agent to work the factory's backlog. It supports Claude Code, GitHub Copilot CLI and Grok
+now; Codex and Cursor are coming soon. See [its instructions](Plugins/software-factory/README.md)
+to install it and start a session with the factory. Launching an agent from the app
+picks which of those to start, and shows the install link and the plugin command for it.
 
 ## The iPhone
 
@@ -135,8 +135,10 @@ Notifications are next.
 - **A banner at the Mac.** Each new question is a macOS notification with the options as
   its actions. Asked for once, in place, before the system alert.
 - **Adding a task.** Type it into the add row; the first line becomes the title,
-  anything after it is the note. Dictating one is out for the moment (`DictateField`
-  is still in `Shared/`, not called from either add row); it did not work well and
-  will come back once that is fixed.
+  anything after it is the note. On the phone you rank by dragging and park with a
+  swipe, the same things the Mac does by dragging between Backlog and Parked.
+  Dictating one is out for the moment (`DictateField` is still in `Shared/`, not
+  called from either add row); it did not work well and will come back once that
+  is fixed.
 
 MIT licence. © 2026 Alex Collins.

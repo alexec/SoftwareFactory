@@ -6,7 +6,7 @@ import SoftwareFactoryKit
 /// them away from the Mac's network. The Mac pushes every change and pulls decisions;
 /// the phone pulls everything and pushes decisions. Nothing else writes.
 ///
-/// One private database, four record types, two fields each (`json`, `updated`). The
+/// One private database, one record type per kind, two fields each (`json`, `updated`). The
 /// JSON is the same record the file store holds, so the apps agree by construction.
 @MainActor
 final class CloudSync {
@@ -121,7 +121,7 @@ final class CloudSync {
     /// again is harmless.
     func subscribe() async {
         guard isReady else { return }
-        let subscriptions = ["Escalation", "Task", "Project"].map { type -> CKSubscription in
+        let subscriptions = ["Escalation", "Task", "Project", "Artifact"].map { type -> CKSubscription in
             let s = CKQuerySubscription(recordType: type, predicate: NSPredicate(value: true), subscriptionID: "\(type.lowercased())-changes",
                                         options: [.firesOnRecordCreation, .firesOnRecordUpdate, .firesOnRecordDeletion])
             let info = CKSubscription.NotificationInfo()

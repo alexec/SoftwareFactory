@@ -75,9 +75,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             let content = UNMutableNotificationContent()
             let project = projects.first { $0.id == e.projectID }?.name ?? "A project"
             content.title = "\(project): \(e.question)"
-            content.body = e.context.isEmpty
+            var body = e.context.isEmpty
                 ? "\(e.raisedBy) recommends \(e.recommended?.title ?? "an option")."
                 : e.context
+            if !e.link.isEmpty { body += "\n\(e.link)" }
+            content.body = body
             content.categoryIdentifier = e.id.uuidString
             content.sound = .default
             center.add(UNNotificationRequest(identifier: e.id.uuidString, content: content, trigger: nil)) { error in

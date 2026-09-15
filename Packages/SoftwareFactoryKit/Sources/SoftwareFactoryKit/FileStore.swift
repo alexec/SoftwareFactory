@@ -5,15 +5,17 @@ public struct Snapshot: Codable, Sendable, Equatable {
     public var projects: [Project]
     public var tasks: [FactoryTask]
     public var escalations: [Escalation]
+    public var artifacts: [Artifact]
     public var agents: [Agent]
     public var resources: [Resource]
     public var leases: [Lease]
 
-    public init(projects: [Project] = [], tasks: [FactoryTask] = [], escalations: [Escalation] = [], agents: [Agent] = [],
-                resources: [Resource] = [], leases: [Lease] = []) {
+    public init(projects: [Project] = [], tasks: [FactoryTask] = [], escalations: [Escalation] = [], artifacts: [Artifact] = [],
+                agents: [Agent] = [], resources: [Resource] = [], leases: [Lease] = []) {
         self.projects = projects
         self.tasks = tasks
         self.escalations = escalations
+        self.artifacts = artifacts
         self.agents = agents
         self.resources = resources
         self.leases = leases
@@ -25,6 +27,7 @@ public struct Snapshot: Codable, Sendable, Equatable {
         projects = try c.decodeIfPresent([Project].self, forKey: .projects) ?? []
         tasks = try c.decodeIfPresent([FactoryTask].self, forKey: .tasks) ?? []
         escalations = try c.decodeIfPresent([Escalation].self, forKey: .escalations) ?? []
+        artifacts = try c.decodeIfPresent([Artifact].self, forKey: .artifacts) ?? []
         agents = try c.decodeIfPresent([Agent].self, forKey: .agents) ?? []
         resources = try c.decodeIfPresent([Resource].self, forKey: .resources) ?? []
         leases = try c.decodeIfPresent([Lease].self, forKey: .leases) ?? []
@@ -40,6 +43,7 @@ public struct Snapshot: Codable, Sendable, Equatable {
 ///     <root>/projects/<path-hash>.json
 ///     <root>/tasks/<uuid>.json
 ///     <root>/escalations/<uuid>.json
+///     <root>/artifacts/<uuid>.json
 ///     <root>/agents/<uuid>.json
 ///     <root>/messages/<uuid>.json
 ///     <root>/resources/<uuid>.json
@@ -51,7 +55,7 @@ public struct FileStore: Sendable {
 
     public init(root: URL) throws {
         self.root = root
-        for folder in ["projects", "tasks", "escalations", "agents", "messages", "resources", "leases"] {
+        for folder in ["projects", "tasks", "escalations", "artifacts", "agents", "messages", "resources", "leases"] {
             try FileManager.default.createDirectory(
                 at: root.appending(path: folder), withIntermediateDirectories: true)
         }
@@ -84,7 +88,7 @@ public struct FileStore: Sendable {
     // MARK: Reading
 
     /// Removed tasks and projects stay on disk and out of the snapshot; a removed
-    /// project's tasks go with it. `loadRemovedTasks` reads the tasks back.
+    /// project's tasks and artifacts go with it. `loadRemovedTasks` reads the tasks back.
     public func load() throws -> Snapshot {
         let projects = (try loadAll("projects") as [Project]).filter { $0.removed == nil }
         let live = Set(projects.map(\.id))
@@ -93,6 +97,7 @@ public struct FileStore: Sendable {
             projects: projects,
             tasks: (try loadAll("tasks") as [FactoryTask]).filter { $0.removed == nil && (live.contains($0.projectID) || !gone.contains($0.projectID)) },
             escalations: try loadAll("escalations"),
+            artifacts: (try loadAll("artifacts") as [Artifact]).filter { $0.removed == nil && (live.contains($0.projectID) || !gone.contains($0.projectID)) },
             agents: try loadAll("agents"),
             resources: try loadAll("resources"),
             leases: try loadAll("leases")
@@ -176,6 +181,10 @@ public struct FileStore: Sendable {
 
     public func save(_ escalation: Escalation) throws {
         try write(escalation, to: "escalations", name: escalation.id.uuidString)
+    }
+
+    public func save(_ artifact: Artifact) throws {
+        try write(artifact, to: "artifacts", name: artifact.id.uuidString)
     }
 
     public func save(_ agent: Agent) throws {

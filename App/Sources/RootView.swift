@@ -5,6 +5,7 @@ enum Destination: Hashable {
     case dashboard
     case agents
     case factory
+    case noProject
     case project(String)
     case agent(UUID)
 }
@@ -35,6 +36,21 @@ struct RootView: View {
                     CapacityDot(verdict: model.capacity, reason: model.capacityReason)
                 }
                 .tag(Destination.factory)
+
+                HStack {
+                    ActivityDot(
+                        activity: model.dashboard.unassignedActivity,
+                        isEmpty: model.dashboard.unassignedIsEmpty)
+                    Text("No project")
+                    Spacer()
+                    if !model.dashboard.unassignedIsEmpty {
+                        Text(model.dashboard.unassignedAgents.count, format: .number)
+                            .font(.caption.weight(.semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .tag(Destination.noProject)
 
                 // Alex, 12 Sep 2026: the count in the heading.
                 Section("Projects (\(model.dashboard.projects.count))") {
@@ -77,6 +93,8 @@ struct RootView: View {
                 AgentsView { showAgent($0) }
             case .factory:
                 FactoryView()
+            case .noProject:
+                NoProjectView { showAgent($0) }
             case .project(let id):
                 if let project = model.project(for: id) {
                     ProjectView(project: project) { showAgent($0) }
@@ -95,17 +113,25 @@ struct RootView: View {
             }
         }
         .navigationTitle(title)
-        // Agents turn up a second or two after the session that started them.
-        .onChange(of: model.dashboard.agents.map(\.id)) { terminals.adopt(model.dashboard.agents) }
         // What tmux is holding and which agents are actually running, kept fresh off
         // the main thread so the cards can say so without anybody waiting on tmux or ps.
         // A process dies between one look and the next, so this is on a clock rather
         // than waiting for the set of agents to change. (Alex, 13 Sep 2026.)
+        .onAppear {
+            terminals.onTitle = { model.setTitle(session: $0, title: $1) }
+            terminals.onBell = { model.ring(session: $0) }
+        }
         .task {
             while !Task.isCancelled {
                 await terminals.lookForHeldSessions()
                 try? await Task.sleep(for: .seconds(5))
             }
+        }
+        .task(id: model.snapshot.agents.filter(\.wantsLaunch).map(\.id)) {
+            StartAgent.launchPending(model: model, terminals: terminals)
+        }
+        .task(id: model.snapshot.agents.filter(\.wantsNudge).map(\.id)) {
+            deliverPendingNudges(model: model, terminals: terminals)
         }
         .sheet(isPresented: Binding(get: { !model.hasSeenIntro }, set: { model.hasSeenIntro = !$0 })) {
             IntroSheet()
@@ -116,6 +142,7 @@ struct RootView: View {
         if case .project(let id) = selection, let p = model.project(for: id) { return p.name }
         if case .agents = selection { return "Agents" }
         if case .factory = selection { return "Capacity" }
+        if case .noProject = selection { return "No project" }
         if case .agent(let id) = selection,
            let agent = model.dashboard.agents.first(where: { $0.id == id }) {
             return agent.agent.label
@@ -136,6 +163,42 @@ struct RootView: View {
     private func goBack() {
         selection = cameFrom ?? .agents
         cameFrom = nil
+    }
+}
+
+/// Agents that registered with no project: the same cards as a project page, no backlog.
+struct NoProjectView: View {
+    @Environment(AppModel.self) private var model
+    var selectAgent: (UUID) -> Void = { _ in }
+
+    private var agents: [Dashboard.AgentStatus] { model.dashboard.unassignedAgents }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 8) {
+                    ActivityDot(
+                        activity: model.dashboard.unassignedActivity,
+                        isEmpty: model.dashboard.unassignedIsEmpty)
+                    Text("No project")
+                        .font(.title3.weight(.semibold))
+                }
+                if agents.isEmpty {
+                    EmptyLine(text: "No agents without a project.", symbol: "person.2")
+                } else {
+                    GlassEffectContainer(spacing: 16) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 16)], spacing: 16) {
+                            ForEach(agents) { status in
+                                AgentCard(status: status, select: selectAgent)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: 900, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

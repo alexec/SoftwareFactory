@@ -11,14 +11,17 @@ struct ProjectView: View {
 
     @State private var newTitle = ""
     @State private var newParkedTitle = ""
-    @State private var editingDetails = false
-    @State private var description = ""
-    @State private var instructions = ""
-    @State private var path = ""
     @State private var launchError: String?
+    @State private var showingAllDone = false
 
-    private var tasks: [FactoryTask] { model.tasks(for: project.id) }
+    private var tasks: [FactoryTask] {
+        Backlog.visible(for: project.id, in: model.snapshot.tasks, recentDone: showingAllDone ? Int.max : 3)
+    }
+    private var hiddenDone: Int {
+        max(0, model.snapshot.tasks.filter { $0.projectID == project.id && $0.state == .done }.count - 3)
+    }
     private var questions: Escalations.Shown { Escalations.visible(for: project.id, in: model.snapshot.escalations) }
+    private var artifacts: [Artifact] { Artifacts.live(for: project.id, in: model.snapshot.artifacts) }
 
     var body: some View {
         List {
@@ -50,6 +53,16 @@ struct ProjectView: View {
                 }
             }
 
+            if !artifacts.isEmpty {
+                Section("Artifacts") {
+                    ForEach(artifacts) { artifact in
+                        ArtifactCard(artifact: artifact)
+                            .listRowSeparator(.hidden)
+                            .padding(.vertical, 4)
+                    }
+                }
+            }
+
             // One section per state, in a fixed order, so the Backlog section (with the
             // add row under it, where a new task lands) is always in the same place.
             // Backlog and Parked rows are draggable, onto each other (crossing the line
@@ -72,6 +85,13 @@ struct ProjectView: View {
                 } else if !group.isEmpty {
                     Section(state.word) {
                         ForEach(group) { task in row(task, reorderable: false) }
+                        if state == .done, hiddenDone > 0 {
+                            Button(showingAllDone ? "Show less" : "Show more") {
+                                showingAllDone.toggle()
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -121,8 +141,7 @@ struct ProjectView: View {
 
     private var addRow: some View {
         HStack(alignment: .top, spacing: 8) {
-            TextField("Add a task", text: $newTitle, axis: .vertical)
-                .lineLimit(1...5)
+            WorkField(prompt: "Add a task", text: $newTitle)
             Menu {
                 Button("Add to the top") { add(at: .top) }
                 Button("Add to the bottom") { add(at: .bottom) }
@@ -144,8 +163,7 @@ struct ProjectView: View {
     /// backlog's own add row lands there. (Alex, 12 Sep 2026.)
     private var parkedAddRow: some View {
         HStack(alignment: .top, spacing: 8) {
-            TextField("Add a parked task", text: $newParkedTitle, axis: .vertical)
-                .lineLimit(1...5)
+            WorkField(prompt: "Add a parked task", text: $newParkedTitle)
             Button("Add") { addParked() }
                 .buttonStyle(.glass)
                 .fixedSize()
@@ -174,25 +192,6 @@ struct ProjectView: View {
                     .toggleStyle(.switch)
                     .controlSize(.small)
                     .help("Off puts the project on hold: nothing is handed out from its backlog")
-                Button("Edit", systemImage: "pencil") {
-                    description = project.description
-                    instructions = project.instructions
-                    path = project.path ?? ""
-                    editingDetails = true
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
-                .help("Edit the description, the instructions, and the folder")
-                .popover(isPresented: $editingDetails, arrowEdge: .bottom) { detailsEditor }
-            }
-            Text(project.description.isEmpty ? "No description yet" : project.description)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            if !project.instructions.isEmpty {
-                Text(project.instructions)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
             // Where it lives. Who is on it, and starting another, are the cards below.
             HStack(spacing: 10) {
@@ -216,7 +215,7 @@ struct ProjectView: View {
 
     /// Sessions started here that no agent has registered against yet.
     private var starting: [TerminalSessions.Session] {
-        let claimed = Set(model.dashboard.agents.compactMap(\.agent.session))
+        let claimed = Set(model.dashboard.agents.map(\.agent.id.uuidString))
         return terminals.starting(for: project.id, claimed: claimed)
     }
 
@@ -237,43 +236,9 @@ struct ProjectView: View {
                     detail: AgentLauncher.isSandboxed ? "The command goes on the clipboard." : model.launchStyle.detail,
                     help: launchHelp,
                     isReady: project.path != nil,
-                    launch: { launchAgent(model.launchStyle) },
-                    launchOther: { launchAgent($0) })
+                    launch: { launchAgent($0, agent: $1) })
             }
         }
-    }
-
-    /// The description, what agents are told, and the folder they run in.
-    private var detailsEditor: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            TextField("Brief description", text: $description, axis: .vertical)
-                .lineLimit(1...3)
-            TextField("Instructions for agents", text: $instructions, axis: .vertical)
-                .lineLimit(2...6)
-            // The folder an agent runs in: type or paste a path, or pick one. Empty
-            // means the project has no folder.
-            HStack(spacing: 8) {
-                TextField("Project folder", text: $path)
-                Button("Choose...") {
-                    if let url = pickFolder() { path = url.path }
-                }
-                .buttonStyle(.glass)
-                .controlSize(.small)
-            }
-            HStack {
-                Spacer()
-                Button("Cancel") { editingDetails = false }
-                Button("Save") {
-                    model.setDescription(project, description)
-                    model.setInstructions(project, instructions)
-                    model.setPath(project, path.trimmingCharacters(in: .whitespacesAndNewlines))
-                    editingDetails = false
-                }
-                .buttonStyle(.glassProminent)
-            }
-        }
-        .padding(16)
-        .frame(width: 360)
     }
 
     private var launchHelp: String {
@@ -281,15 +246,15 @@ struct ProjectView: View {
         if AgentLauncher.isSandboxed {
             return "This build is sandboxed, so an agent it started could not reach your own environment. The command goes on the clipboard instead."
         }
-        return "Starts \(model.preferredAgent.title) in the project's folder. Watch it, and type to it, on the agent's page."
+        return "Claude Code, GitHub Copilot or Grok, in the project's folder."
     }
 
     /// In the app, where its page shows it working and you can type to it, or in
     /// Terminal, where it outlives the app.
-    private func launchAgent(_ style: AppModel.LaunchStyle) {
+    private func launchAgent(_ style: AppModel.LaunchStyle, agent: LaunchAgent) {
         // The agent is written down first, so it has a name before it starts and the
         // card, the terminal and the prompt all say the same thing.
-        launchError = StartAgent.run(project: project, style: style, model: model, terminals: terminals)
+        launchError = StartAgent.run(project: project, agent: agent, style: style, model: model, terminals: terminals)
     }
 
     private var pathDisplay: String {
@@ -371,15 +336,18 @@ struct StartingAgentCard: View {
 
 /// The card that starts another agent on this project, shaped like the agents beside it.
 private struct LaunchAgentCard: View {
+    @Environment(AppModel.self) private var model
     var title: String
     var detail: String
     var help: String
     var isReady: Bool
-    var launch: () -> Void
-    var launchOther: (AppModel.LaunchStyle) -> Void
+    var launch: (AppModel.LaunchStyle, LaunchAgent) -> Void
+
+    @State private var choosing = false
+    @State private var styleForThisLaunch: AppModel.LaunchStyle?
 
     var body: some View {
-        Button(action: launch) {
+        Button { choosing = true } label: {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     Image(systemName: "plus.circle")
@@ -402,12 +370,25 @@ private struct LaunchAgentCard: View {
         .foregroundStyle(isReady ? .primary : .tertiary)
         .glassEffect(.regular, in: .rect(cornerRadius: 18))
         .help(help)
-        // Either way, whichever the settings say by default.
+        .popover(isPresented: $choosing, arrowEdge: .bottom) {
+            LaunchChooser(onLaunch: start, onCancel: { choosing = false })
+        }
+        // Either way, whichever the settings say by default, then pick the agent.
         .contextMenu {
             ForEach(AppModel.LaunchStyle.allCases) { style in
-                Button(style.title) { launchOther(style) }
+                Button(style.title) {
+                    styleForThisLaunch = style
+                    choosing = true
+                }
             }
         }
+    }
+
+    private func start(_ agent: LaunchAgent) {
+        choosing = false
+        let style = styleForThisLaunch ?? model.launchStyle
+        styleForThisLaunch = nil
+        launch(style, agent)
     }
 }
 
@@ -480,12 +461,11 @@ struct TaskRow: View {
     var task: FactoryTask
     var selectAgent: (UUID) -> Void = { _ in }
     @State private var launchError: String?
-    @State private var commenting = false
-    @State private var comment = ""
     @State private var editing = false
     @State private var title = ""
     @State private var note = ""
     @State private var showingText = false
+    @State private var choosingAgent = false
 
     /// The agent on it, as the factory knows it.
     private var onIt: Dashboard.AgentStatus? {
@@ -514,6 +494,12 @@ struct TaskRow: View {
                 Text(task.title)
                     .strikethrough(task.state == .done)
                     .foregroundStyle(task.state == .done || task.state == .parked ? .secondary : .primary)
+                if task.work != .implement && !task.work.isPrefix(of: task.title) {
+                    Text(task.work.word)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.tertiary)
+                        .help(task.work.brief)
+                }
                 if let ending = task.note.split(whereSeparator: \.isNewline).last,
                    !ending.isEmpty,
                    ending != task.blockedWhy {
@@ -530,21 +516,26 @@ struct TaskRow: View {
                 }
             }
             .contentShape(.rect)
-            .onTapGesture { showingText = true }
+            .onTapGesture(count: 2) {
+                showingText = false
+                beginEditing()
+            }
+            .onTapGesture {
+                guard !editing else { return }
+                showingText = true
+            }
+            .help("Double-click to edit")
             .popover(isPresented: $showingText) {
                 taskText
             }
             // Who is on it, or whose it is once assigned.
             if let agent = onIt, task.state == .backlog || task.state == .inProgress {
                 AgentChip(status: agent, waiting: task.state == .backlog, select: selectAgent)
-            } else if task.state == .inProgress {
-                Text("in progress")
-                    .font(.caption.weight(.medium))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(.quaternary, in: .capsule)
             }
             Spacer()
+            Text(task.state.word)
+                .font(.callout)
+                .foregroundStyle(.secondary)
             // The person's menu: park, unpark, move, delete. Whether a task is in
             // progress or done is the agent's to say, so those are not here.
             Menu {
@@ -578,17 +569,10 @@ struct TaskRow: View {
                     // A new agent, started on this one task: the task goes into its name
                     // and it is told to claim it.
                     Button(AgentLauncher.isSandboxed ? "Copy the command for this task" : "Start an agent on this") {
-                        launchAgent()
+                        choosingAgent = true
                     }
                     .disabled(project?.path == nil)
                     .help(launchHelp)
-                }
-                if model.dashboard.projects.count > 1 {
-                    Menu("Move to") {
-                        ForEach(model.dashboard.projects.filter { $0.id != task.projectID }) { other in
-                            Button(other.project.name) { model.moveTask(task, to: other.project) }
-                        }
-                    }
                 }
                 if task.state == .backlog {
                     Divider()
@@ -597,38 +581,19 @@ struct TaskRow: View {
                 }
                 Divider()
                 Button("Edit…", action: beginEditing)
-                Button("Add a comment…") { commenting = true }
                 Button("Delete", role: .destructive) { model.delete(task) }
             } label: {
-                Text(task.state.word)
-                    .font(.callout)
+                Image(systemName: "ellipsis.circle")
                     .foregroundStyle(.secondary)
             }
-            .menuStyle(.button)
-            .buttonStyle(.borderless)
+            .menuIndicator(.hidden)
             .fixedSize()
-            .popover(isPresented: $commenting, arrowEdge: .trailing) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("A comment goes on the task, signed and dated, for whoever picks it up.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    TextField("Comment", text: $comment, axis: .vertical)
-                        .lineLimit(2...8)
-                        .onSubmit(addComment)
-                    HStack {
-                        Spacer()
-                        Button("Cancel") { commenting = false }
-                        Button("Add", action: addComment)
-                            .buttonStyle(.glassProminent)
-                            .disabled(comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                }
-                .padding(16)
-                .frame(width: 360)
-            }
+            .accessibilityLabel("Task")
             .popover(isPresented: $editing, arrowEdge: .trailing) {
                 editTask
+            }
+            .popover(isPresented: $choosingAgent, arrowEdge: .trailing) {
+                LaunchChooser(onLaunch: launchAgent, onCancel: { choosingAgent = false })
             }
         }
         .padding(.vertical, 2)
@@ -644,21 +609,16 @@ struct TaskRow: View {
         if AgentLauncher.isSandboxed {
             return "This build is sandboxed, so an agent it started could not reach your own environment. The command goes on the clipboard instead."
         }
-        return "Starts \(model.preferredAgent.title) with this task in its name, ready to claim."
+        return "Claude Code, GitHub Copilot or Grok, with this task in its name."
     }
 
     /// A new agent for this one task. It is written down, the task goes into its name,
     /// and the words it starts with say which task to claim.
-    private func launchAgent() {
+    private func launchAgent(_ agent: LaunchAgent) {
+        choosingAgent = false
         guard let project else { return }
-        launchError = StartAgent.run(project: project, task: task, style: model.launchStyle,
+        launchError = StartAgent.run(project: project, task: task, agent: agent, style: model.launchStyle,
                                      model: model, terminals: terminals)
-    }
-
-    private func addComment() {
-        model.comment(on: task, comment)
-        comment = ""
-        commenting = false
     }
 
     private func beginEditing() {
@@ -676,8 +636,7 @@ struct TaskRow: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Edit task")
                 .font(.headline)
-            TextField("Task", text: $title, axis: .vertical)
-                .lineLimit(1...4)
+            WorkField(prompt: "Task", text: $title, lineLimit: 1...4)
             TextField("Note", text: $note, axis: .vertical)
                 .lineLimit(3...8)
             HStack {
@@ -698,6 +657,12 @@ struct TaskRow: View {
                 .font(.headline)
                 .strikethrough(task.state == .done)
                 .fixedSize(horizontal: false, vertical: true)
+            if task.work != .implement && !task.work.isPrefix(of: task.title) {
+                Text(task.work.word)
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .help(task.work.brief)
+            }
             if let ending = task.note.split(whereSeparator: \.isNewline).last,
                !ending.isEmpty,
                ending != task.blockedWhy {

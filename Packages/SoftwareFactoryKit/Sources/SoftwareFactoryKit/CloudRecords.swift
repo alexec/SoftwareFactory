@@ -1,12 +1,12 @@
 import Foundation
 
 /// The store as CloudKit sees it: one record per file, its JSON carried whole in one
-/// field, so the cloud schema is four record types with the same two fields and the
+/// field, so the cloud schema is a handful of record types with the same two fields and the
 /// apps never have to agree on anything but the JSON they already share.
 ///
 /// CloudKit itself lives in the apps; this is the part that can be tested.
 public enum CloudRecords {
-    public static let types = ["Project", "Task", "Escalation", "Agent"]
+    public static let types = ["Project", "Task", "Escalation", "Artifact", "Agent"]
 
     public struct Encoded: Sendable, Equatable, Hashable {
         public var type: String
@@ -32,6 +32,7 @@ public enum CloudRecords {
         for p in snapshot.projects { out.append(encode("Project", FileStore.fileName(forProject: p.id), p, p.added)) }
         for t in snapshot.tasks { out.append(encode("Task", t.id.uuidString, t, t.updated)) }
         for e in snapshot.escalations { out.append(encode("Escalation", e.id.uuidString, e, e.decision?.at ?? e.raised)) }
+        for d in snapshot.artifacts { out.append(encode("Artifact", d.id.uuidString, d, d.updated)) }
         for a in snapshot.agents { out.append(encode("Agent", a.id.uuidString, a, a.deregistered ?? a.lastSeen)) }
         return out
     }
@@ -49,6 +50,7 @@ public enum CloudRecords {
             case "Project": if let v = try? FileStore.decoder.decode(Project.self, from: data) { snapshot.projects.append(v) }
             case "Task": if let v = try? FileStore.decoder.decode(FactoryTask.self, from: data) { snapshot.tasks.append(v) }
             case "Escalation": if let v = try? FileStore.decoder.decode(Escalation.self, from: data) { snapshot.escalations.append(v) }
+            case "Artifact": if let v = try? FileStore.decoder.decode(Artifact.self, from: data) { snapshot.artifacts.append(v) }
             case "Agent": if let v = try? FileStore.decoder.decode(Agent.self, from: data) { snapshot.agents.append(v) }
             default: break
             }
@@ -92,5 +94,26 @@ public enum CloudRecords {
     public static func tasksToAdopt(local: [FactoryTask], cloud: [FactoryTask]) -> [FactoryTask] {
         let mine = Set(local.map(\.id))
         return cloud.filter { !mine.contains($0.id) }
+    }
+
+    /// Person-made changes on another device: the cloud record is newer. Title, note,
+    /// work, rank, parking, and removal come across. In progress and done never do:
+    /// those are an agent's to say. A done task stays done. (T172, 13 Sep 2026.)
+    public static func taskChangesToAdopt(local: [FactoryTask], cloud: [FactoryTask]) -> [FactoryTask] {
+        let byID = Dictionary(uniqueKeysWithValues: local.map { ($0.id, $0) })
+        return cloud.compactMap { theirs in
+            guard let mine = byID[theirs.id], theirs.updated > mine.updated else { return nil }
+            if Backlog.personMaySet.contains(theirs.state), mine.state != .done {
+                return theirs
+            }
+            var adopted = mine
+            adopted.title = theirs.title
+            adopted.note = theirs.note
+            adopted.work = theirs.work
+            adopted.rank = theirs.rank
+            adopted.removed = theirs.removed
+            adopted.updated = theirs.updated
+            return adopted
+        }
     }
 }

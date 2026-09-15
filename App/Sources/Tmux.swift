@@ -7,7 +7,9 @@ import Foundation
 /// The person should never see tmux. It runs on a socket of its own so it never meets
 /// their own sessions, with a config of ours so their `.tmux.conf` does not apply, and
 /// that config turns off everything that would give it away: no status bar, no prefix
-/// key, no titles, no bells. What is left is a terminal that happens to survive.
+/// key. Titles and BEL still reach the outer terminal, so the factory can put the
+/// agent's title on its card and ring when it wants a look. What is left is a
+/// terminal that happens to survive.
 /// (Alex, 12 Sep 2026: zmux first, which wedged; tmux instead.)
 enum Tmux {
     /// Our own server. Nothing here shares a socket with the person's own tmux.
@@ -36,14 +38,20 @@ enum Tmux {
     set -g mouse off
     set -g escape-time 0
     set -g history-limit 100000
-    set -g set-titles off
+    setw -g automatic-rename off
+    setw -g allow-rename on
+    set -g set-titles on
+    set -g set-titles-string '#T'
     set -g visual-bell off
     set -g visual-activity off
     set -g monitor-activity off
-    set -g bell-action none
+    set -g monitor-bell on
+    set -g bell-action current
     set -g destroy-unattached off
     set -g exit-empty off
-    set -g remain-on-exit off
+    # The pane stays after its agent exits, so its last words are still readable and the
+    # window is still there to pick back up. (T-session, 13 Sep 2026.)
+    set -g remain-on-exit on
     set -g default-terminal "xterm-256color"
     set -ga terminal-overrides ",xterm-256color:Tc"
     setw -g aggressive-resize on
@@ -63,11 +71,30 @@ enum Tmux {
     /// The line our terminal runs: make the session and attach, or attach to the one
     /// that is already there. The same line serves a launch and a reattach, which is why
     /// nothing else has to remember which is which.
+    ///
+    /// `exec`, so the pane's process is the agent itself rather than a shell holding it.
+    /// That is what lets the factory know the agent's pid the moment it starts it, and
+    /// an agent whose pid the factory already has has nothing left to register.
+    /// The shell that used to sit there was only keeping the window open after the agent
+    /// exited, and `remain-on-exit on` does that better: the pane stays, and tmux says
+    /// outright that it is dead.
+    ///
+    /// SOFTWARE_FACTORY_SESSION is gone with it. The session is in the words the agent
+    /// starts with, which survive a resume; an environment variable does not.
+    /// (T-session, 13 Sep 2026.)
     static func command(session: String, running command: String, in folder: String?) -> String? {
         guard let binary, isOn else { return nil }
-        let start = "SOFTWARE_FACTORY_SESSION=\(session) \(command)"
         let place = folder.map { " -c \(AppModel.quoted($0))" } ?? ""
-        return "\(base(binary)) new-session -A -s \(AppModel.quoted(session))\(place) \(AppModel.quoted(start))"
+        return "\(base(binary)) new-session -A -s \(AppModel.quoted(session))\(place) \(AppModel.quoted("exec \(command)"))"
+    }
+
+    /// The process running in a session's pane, which with `exec` is the agent itself.
+    /// Never call this from the main thread: it runs tmux.
+    static func panePID(session: String) -> Int32? {
+        guard let binary, isOn else { return nil }
+        guard let out = run(binary, ["-L", server, "list-panes", "-t", session, "-F", "#{pane_pid}"]),
+              out.status == 0 else { return nil }
+        return Int32(out.text.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     /// Attaches to a session that is already there, for an agent whose terminal this app
@@ -83,6 +110,13 @@ enum Tmux {
     static func has(_ session: String) -> Bool {
         guard let binary, isInstalled else { return false }
         return run(binary, ["-L", server, "has-session", "-t", session])?.status == 0
+    }
+
+    /// Picks up a config written after this server started, so titles and BEL reach
+    /// sessions that have been running since before the change.
+    static func reloadConfig() {
+        guard let binary, isInstalled else { return }
+        _ = run(binary, ["-L", server, "source-file", configPath])
     }
 
     /// The sessions this app's server is holding, by name.

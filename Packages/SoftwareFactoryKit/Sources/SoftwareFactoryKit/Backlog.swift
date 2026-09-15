@@ -179,15 +179,18 @@ public enum Backlog {
     /// Changes the person-owned details of a task without disturbing its state or the
     /// agent work recorded on it. An empty title is not a task, so it leaves it alone.
     public static func edit(
-        _ task: FactoryTask, title: String, note: String, at date: Date = .now
+        _ task: FactoryTask, title: String, note: String, work: FactoryTask.Work? = nil,
+        at date: Date = .now
     ) -> FactoryTask {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return task }
         let note = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard task.title != title || task.note != note else { return task }
+        let work = work ?? task.work
+        guard task.title != title || task.note != note || task.work != work else { return task }
         var task = task
         task.title = title
         task.note = note
+        task.work = work
         task.updated = date
         return task
     }
@@ -224,18 +227,6 @@ public enum Backlog {
 
     public enum UnblockError: Error, Equatable, Sendable {
         case noMatch, ambiguous
-    }
-
-    /// Moves a task to another project's backlog, at the bottom. The note says where
-    /// it came from, so a lead reading it knows it was not filed there.
-    public static func move(_ task: FactoryTask, to project: Project, from: Project? = nil, in all: [FactoryTask], at date: Date = .now) -> FactoryTask {
-        var task = task
-        task.projectID = project.id
-        task.rank = nextRank(for: project.id, in: all)
-        task.updated = date
-        let line = "moved here from \(from?.name ?? "another project")"
-        task.note = task.note.isEmpty ? line : task.note + "\n" + line
-        return task
     }
 
     /// Marks a task blocked on one more thing. The agent keeps its name on it, so the

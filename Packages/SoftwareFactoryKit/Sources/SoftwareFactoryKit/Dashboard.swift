@@ -12,7 +12,6 @@ public struct Dashboard: Sendable, Equatable {
         public var activity: ProjectActivity
         /// Nobody is on it, so it draws no dot at all.
         public var isEmpty: Bool { agents.isEmpty }
-        public var currentTask: FactoryTask?
         public var agents: [Agent]
         public var openEscalations: Int
         public var backlogCount: Int
@@ -22,10 +21,10 @@ public struct Dashboard: Sendable, Equatable {
 
         public var id: String { project.id }
 
-        /// One line saying what the project is on. Nothing while on hold.
+        /// One line an agent on it wrote. The current task is on the backlog, not
+        /// next to the project's name. Nothing while on hold. (T168, 13 Sep 2026.)
         public var doing: String? {
             if project.onHold { return nil }
-            if let currentTask { return currentTask.title }
             if let note = agents.first?.note, !note.isEmpty { return note }
             return nil
         }
@@ -59,6 +58,11 @@ public struct Dashboard: Sendable, Equatable {
         public var id: UUID { agent.id }
 
         public var isWorking: Bool { activity == .working }
+
+        /// Nudge is there unless the agent has stopped: a working one, a blocked
+        /// one, a waiting one and a quiet one can all be poked. A process that has
+        /// gone cannot. (T197, 13 Sep 2026.)
+        public var canNudge: Bool { activity != .stopped }
     }
 
     /// The one rule behind an agent's dot. An agent that has gone quiet is idle
@@ -91,6 +95,9 @@ public struct Dashboard: Sendable, Equatable {
 
         public var id: UUID { resource.id }
         public var free: Int { max(0, resource.slots - held.count) }
+        /// Slots in use of the total, the same shape as compiles on the Capacity page.
+        /// (T184, 13 Sep 2026.)
+        public var occupancy: String { "\(held.count) of \(resource.slots)" }
     }
 
     public var inProgress: Int
@@ -104,6 +111,19 @@ public struct Dashboard: Sendable, Equatable {
     public var heldCount: Int { resources.reduce(0) { $0 + $1.held.count } }
 
     public var workingCount: Int { projects.filter { $0.activity == .working }.count }
+
+    /// Agents on no project: the sidebar's No project row. (T176, 13 Sep 2026.)
+    public var unassignedAgents: [AgentStatus] { agents.filter { $0.project == nil } }
+
+    public var unassignedIsEmpty: Bool { unassignedAgents.isEmpty }
+
+    public var unassignedActivity: AgentActivity {
+        let doing = unassignedAgents.map(\.activity)
+        if doing.contains(.working) { return .working }
+        if doing.contains(.blocked) { return .blocked }
+        if doing.contains(.waiting) { return .waiting }
+        return .idle
+    }
 
     /// Projects come from the store and from any project a registered agent names.
     public static func make(snapshot: Snapshot, now: Date = .now) -> Dashboard {
@@ -128,7 +148,7 @@ public struct Dashboard: Sendable, Equatable {
             let questions = open.filter { $0.projectID == project.id }.count
             if project.onHold {
                 return ProjectStatus(
-                    project: project, activity: .idle, currentTask: nil, agents: agents, openEscalations: questions,
+                    project: project, activity: .idle, agents: agents, openEscalations: questions,
                     backlogCount: 0, blockedCount: 0, inProgressCount: 0, doneCount: 0)
             }
             // One rule for both dots: whatever its agents are doing, the project is. The
@@ -149,7 +169,6 @@ public struct Dashboard: Sendable, Equatable {
             return ProjectStatus(
                 project: project,
                 activity: activity,
-                currentTask: Backlog.current(for: project.id, in: snapshot.tasks),
                 agents: agents,
                 openEscalations: questions,
                 backlogCount: tasks.filter { $0.state == .backlog }.count,

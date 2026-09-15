@@ -23,6 +23,8 @@ xcodebuild -project SoftwareFactory.xcodeproj -scheme SoftwareFactoryPhone -conf
 # The store build of the Mac app: the same sources, sandboxed. Swap Debug for
 # Release-AppStore anywhere you would build the Mac app for the store.
 cd Packages/SoftwareFactoryKit && swift test
+osascript -e 'tell application "Taktu: Software Factory" to quit'
+osascript -e 'tell application "Software Factory" to quit'
 open "build/DerivedData/Build/Products/Debug/Software Factory.app"
 ```
 
@@ -34,23 +36,38 @@ because nothing can answer its trust prompt from the command line.
 Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately before
 `xcodebuild`; if the Mac is claimed, do not build.
 
+Rebuild and restart at the end of every task. The server on 4747 is the binary that is
+running, not the tree: a new tool 404s until you quit and open the Debug app you just
+built. tmux keeps the agents; they reconnect. Wait until
+`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4747/api/snapshot` is 200
+before you mark the task done. Build the phone too when the change is in it.
+
 ## Shape
 
 - `Packages/SoftwareFactoryKit` (Foundation only, `swift test`):
-  - `Models`: `Project` (id is the folder path), `FactoryTask` (a task; named so because
-    `Task` is Swift's; work is design/plan/implement/fix/review/investigate/ship, default implement; backlog/inProgress/done/parked/blocked with a
-    `Blocker` saying what on; rank), `Agent` (number, self-description,
+  - `Models`: `Project` (a name; no description or instructions, T167), `FactoryTask` (a task; named so because
+    `Task` is Swift's; work is design/plan/implement/fix/review/investigate/ship, default implement, shown as Code (T181); the first word of a title is the type; backlog/inProgress/done/parked/blocked with a
+    `Blocker` saying what on; rank), `Agent` (number, terminal `title` from OSC 0/2,
+    `bel` when it rang for a look,
     project, task, lastSeen, deregistered, and the `pid` it reported with the
     `pidStartedAt` the factory read for it; working within 10 min of any call it made.
     Its `label` is its name everywhere: "A<n>", or its raw id for one that registered
     before numbers. There is no separate `name` field, and never should be again: it
-    was always the label and the two could only ever drift, T158),
+    was always the label and the two could only ever drift, T158.
+    Eight on the floor is the cap, `Agents.cap`: registered and not known to have
+    exited. `agent_create` asks the factory to start another, which sets `wantsLaunch`;
+    the app starts it. The ninth is refused. `agent_nudge` pokes another agent, sets
+    `wantsNudge`, and the app types the same line as the person's Nudge),
     `AgentMessage` (recipient, from, subject, contents, sent; private to the recipient's
     MCP inbox),
-    `Escalation` (options, one recommended; `decide(_:by:)` records a `Decision`),
+    `Escalation` (options, one recommended; optional `link` to a document to review,
+    filed as an artifact; optional `artifactID`; `decide(_:by:)` records a `Decision`),
+    `Artifact` (a document on a project: title, body, optional link; twenty live ones
+    is the cap, `Artifacts.cap`; adding the same title or the same link returns the one
+    already there),
     `Resource` (slots, maxLease), `Lease` (one slot, one agent, until; `isActive(now:)`).
   - `FileStore`: one JSON file per record under `projects/`, `tasks/`, `escalations/`,
-    `agents/`, `messages/`, `resources/`, `leases/`; atomic writes; unreadable files skipped. Tasks
+    `artifacts/`, `agents/`, `messages/`, `resources/`, `leases/`; atomic writes; unreadable files skipped. Tasks
     carry a short `number` (T509), unique across projects, given on add and settable
     (`task_number`); any `task_id` argument also takes "T509" or "509". A removed
     project (`project_remove`, or the header's Remove project) keeps its record with
@@ -77,7 +94,14 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
   - `LaunchPrompt`: the words an agent starts with, in one place: `project` (work the
     backlog), `task` (one task, already in its name, to claim), `free` (no project,
     the person says what for).
+  - `LaunchAgent`: Claude Code, GitHub Copilot or Grok, chosen at launch. Grok's
+    shell line is `grok --session-id <id> --always-approve --trust`: `--trust` grants
+    folder trust for the launch directory (the project's folder), so project hooks,
+    skills and MCP load without a prompt. The flag takes no path. (T180)
   - `Escalations.visible`: open questions in full, the newest three answered ones.
+  - `Artifacts`: live (not removed) documents on a project, newest first; `produced(by:)`
+    those one agent filed. Twenty is the cap; adding the same title or the same link
+    returns the one already there.
   - Two kinds of agent, and `Agent.isEmbedded` (it has a `session`) is the question.
     An embedded one the factory wrote down, named and started in a terminal it owns: its
     page shows it working, you can type to it, the factory can stop it, and tmux keeps it
@@ -85,15 +109,15 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     was; it does the same work and there is simply nothing here to watch or stop. Origin
     is not the same as having a terminal on screen: ours can be out of sight.
   - `ProcessCheck`: whether a process is alive, asked of the kernel. An agent reports
-    its own `pid` at `agent_register` (Claude Code has it in `CLAUDE_PID`) and the
-    factory reads when that process started, because a pid on its own is recycled and
+    its own `pid` off the pane it was launched into, and reads when that process started, because a pid on its own is recycled and
     the pair is what makes the answer trustworthy. `Agent.hasExited` is the question,
     and `Dashboard.AgentActivity.stopped` is how the floor says it. This is the one
     state silence could never tell you: a crashed agent and a thinking one are both
     quiet. Do not use `session` for this. It lives on the launch wrapper, so an agent
     that has been resumed has lost it while still working. An agent that never reported
     a pid is never called stopped: not seen is not dead.
-  - `Sweep.goneAgents`: an hour of silence and an agent is marked gone, leases released.
+  - `Sweep.stoppedAgents`: an agent whose process has gone gives back what it held. This
+    replaced an hour of silence, which was a guess: an agent thinking is silent too.
   - `Sweep.unblocked`: a task blocked on a decision now made, or a task now done, goes
     back to the backlog with a line saying so. A block on a person clears by hand.
   - `Records.version` on every record; a decoder reads an older shape without it.
@@ -104,6 +128,9 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     `AgentStatus` per agent on the floor.
   - `MCPServer`: JSON-RPC 2.0, `handle(_:)` is pure per request; `Tool.all` is the
     table; `call(_:_:)` does the work. `escalation_await` polls the store.
+    `agent_create` writes the agent down and sets `wantsLaunch`; eight is the cap.
+    `agent_nudge` puts the same words as the person's Nudge in the inbox and sets
+    `wantsNudge` so the app types them into the terminal.
   - `HTTP`: `HTTPRequest.parse`, `HTTPResponse.serialized`, and `HTTPRouter` (`POST /mcp`,
     `GET /api/snapshot`, `POST /api/decide`, `POST /api/task`; browser origins refused).
   - `SampleData`: records for a Debug build to look at.
@@ -125,35 +152,43 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
     title; anything after it is the note. No model involved any more — Apple
     Intelligence's title extraction was unreliable enough to be worse than the words
     themselves.
+  - `Shared/WorkField.swift`: the add and edit field. The first word is the work
+    (Design, Plan, Code, Fix, Review, Investigate, Ship); a matching word is offered
+    while you type it. There is no picker. (T181)
   - `software-factory` executable: `mcp` (the server over stdio), `status`, `tools`, `decide`.
 - `App/Sources`:
   - `AppModel`: `@Observable @MainActor`; reloads the store every 2 s; every write goes
     through `persist`; starts `FactoryServer` on port 4747.
   - `FactoryServer`: `NWListener` on the port, one queue per connection (a request can
     block for minutes), Bonjour `_softwarefactory._tcp`.
-  - `RootView` (split view: Dashboard, Agents, Capacity, then the projects; a page per
+  - `RootView` (split view: Dashboard, Agents, Capacity, No project, then the projects; a page per
     agent hangs off it), `DashboardView` (stat tiles, Needs you as a horizontal strip,
     the agents on the floor as cards; `AgentCard` is one of them and `AgentView` is the
-    page behind it), `AgentsView` (every agent registered, and the button that starts a
+    page behind it; an agent that is not stopped has Nudge, inbox and terminal),
+    `AgentsView` (every agent registered, and the button that starts a
     new one), `FactoryView` (the Capacity page: verdict and what each kind of work would
     be told, then one grid of cards for the Mac's own readings and every leasable
-    resource alike, each a name and a colored utilization line; add a resource, see who
+    resource alike, each a name and a colored utilization line; leasable cards show
+    slots in use of the total, same shape as compiles; add a resource, see who
     holds it, Take back. The throttle sliders that held new work on swap or memory are
     out for the moment, to be refined),
     `Notifier` (one banner per new question, options as actions; `Presence.isAtTheMac`),
     `EscalationCard`, `ProjectView` (backlog
-    with add, drag reorder, state menu, notes under rows, and Start an agent on this,
+    with add, drag reorder, state menu, notes under rows, artifacts the agents filed,
+    and Start an agent on this,
     on a backlog row: it reserves an agent, puts the task in its name and starts it on
     that one task), `AgentLauncher` and `StartAgent` (reserve, assign, launch: one path
-    for every launch), `LaunchChooser` (pick Claude Code, GitHub Copilot or Grok
+    for every launch, including agents `agent_create` asked for), `LaunchChooser` (pick Claude Code, GitHub Copilot or Grok
     at launch, with that agent's install link and plugin command, then Launch
-    <name>; no preferred-agent setting), `IntroSheet`, `SettingsView`
+    <name>; remembers the last pick, no preferred-agent setting), `IntroSheet`, `SettingsView`
     (How it works on top, in-app vs Terminal, iCloud, the store, Developer in DEBUG).
   - `TerminalSessions` and `Tmux`: an agent the app launches runs in a terminal the app
     owns (SwiftTerm), so its page shows it working and you can type to it. tmux holds the
     session on a server of its own, so the agent outlives the app: quit, rebuild, come
     back, and opening its page attaches to what has been running all along. The person
-    never sees tmux. Nothing asks tmux anything from the main thread: `TerminalSessions`
+    never sees tmux. OSC titles and BEL still reach SwiftTerm: the title is the line on
+    the agent's card, and BEL sets `bel` until the card is opened. Nothing asks tmux
+    anything from the main thread: `TerminalSessions`
     keeps `held`, refreshed off it by `lookForHeldSessions()`, because running tmux while
     the window draws is a beachball.
   - The Mac app ships twice, from one set of sources, because the sandbox decides what it
@@ -179,7 +214,7 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
   adds tasks through `CloudSync` instead, so adding works anywhere iCloud does, not only
   on the Mac's own network; a task added that way carries no number until the Mac adopts
   it and gives it one), `PhoneRootView` (network primer in place, Needs you, On the floor),
-  `PhoneBacklogView` (a project's backlog; type to add, anywhere iCloud reaches),
+  `PhoneBacklogView` (a project's backlog; add, rank and park, anywhere iCloud reaches),
   `PhoneIntroSheet`, `PhoneSettingsView`, `PhoneNotifier` (a banner per new question
   with the options as actions; announced ids kept in UserDefaults so a cold launch by a
   push still knows what is news; the primer on the floor asks), `PhoneAppDelegate`
@@ -200,14 +235,21 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
 ## Rules for changes
 
 - A rule goes in the package with a test before it goes in a view.
-- A terminal holds one agent. An agent registering into a session another agent holds
-  takes it, and the factory clears it off the old record; an agent still live in there
-  keeps it and the newcomer gets none (`Agents.claimSession`). A shell outlives its agent
-  with SOFTWARE_FACTORY_SESSION still exported, which is how two used to share one window.
-- An agent's number is its own for the life of the factory. `agent_register` takes an
-  `agent_id` (the name the app told it to use); a name a live session is working as is
-  refused, a name given out before is refused, and a name nobody has had is claimed.
-  No other tool takes an `agent_id`: the connection says who is calling.
+- **The session is the agent.** `Agent.id` is one UUID doing four jobs: the record's key,
+  the name of the tmux session it runs in, the `--session-id` its CLI is launched with,
+  and the `session_id` every MCP tool requires. The factory makes it before it launches
+  anything, and the agent is told it in the words it starts with, not in the environment:
+  an environment variable is lost when a conversation is resumed and the prompt is not.
+  A terminal therefore cannot hold two agents, and there is no name to claim.
+- **There is no registering and no goodbye.** The factory writes the agent down, names
+  it, starts it with `exec` so the pane's process is the agent, and reads the pid off the
+  pane. It knows the session, the name, the project and the process before the agent has
+  said a word. An agent stops when its process stops, which the kernel answers and a
+  crashed agent could never have told us; `Sweep.stoppedAgents` gives back what it held.
+- The caller says who it is on every call. It used to be the connection, which drops when
+  the app restarts while the agent works on, so an agent had to register again to get its
+  own identity back and came back as somebody else.
+- An agent's number is its own for the life of the factory.
 - Never change a record's JSON shape without a reader for the old shape; bump
   `Records.version` when an older reader could not cope.
 - Anything that runs on an audio or network thread is `@Sendable` and touches nothing
@@ -216,5 +258,9 @@ Check `bash ~/.claude/skills/task-board/assets/machine.sh --brief` immediately b
 - Every string a person reads follows `alex-writing-voice`; no em dashes.
 - First-run: the sheet shows once (`hasSeenIntro`) and again from Settings. Reset with the
   Developer row or `defaults delete com.alexecollins.softwarefactory hasSeenIntro`.
+- Rebuild and restart the Debug Mac app at the end of every task. The factory on 4747 is
+  the running binary; until you quit and open the new one, the floor is yesterday's
+  build. tmux holds the agents across the quit. Wait until 127.0.0.1:4747 answers 200,
+  then mark the task done and take the next.
 - Try the floor with data: Settings ▸ Developer ▸ Add sample data, or drive the server by
   hand: `printf '...json-rpc...\n' | software-factory mcp`.

@@ -95,8 +95,6 @@ struct PhoneRootView: View {
                                 Text(status.project.name).font(.headline).foregroundStyle(status.project.onHold ? .secondary : .primary)
                                 if status.project.onHold {
                                     Text("On hold").font(.subheadline).foregroundStyle(.secondary)
-                                } else if let doing = status.doing {
-                                    Text(doing).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                                 }
                             }
                             Spacer()
@@ -145,11 +143,16 @@ struct PhoneRootView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 6) {
                                 Text(status.agent.label).font(.headline)
+                                if status.agent.bel {
+                                    Image(systemName: "bell.fill").foregroundStyle(.orange)
+                                }
                                 if let project = status.project {
                                     Text(project.name).font(.caption).foregroundStyle(.secondary)
                                 }
                             }
-                            if let line = status.task?.title ?? (status.agent.note.isEmpty ? nil : status.agent.note) {
+                            if !status.agent.title.isEmpty {
+                                Text(status.agent.title).font(.subheadline).foregroundStyle(.secondary)
+                            } else if let line = status.task?.title ?? (status.agent.note.isEmpty ? nil : status.agent.note) {
                                 Text(line).font(.subheadline).foregroundStyle(.secondary)
                             }
                         }
@@ -226,6 +229,11 @@ struct PhoneEscalationCard: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+            if let artifact = escalation.artifactID.flatMap({ id in model.snapshot.artifacts.first { $0.id == id } }) {
+                ArtifactCard(artifact: artifact)
+            } else if !escalation.link.isEmpty {
+                ReviewLink(link: escalation.link)
             }
             GlassEffectContainer(spacing: 8) {
                 VStack(spacing: 8) {

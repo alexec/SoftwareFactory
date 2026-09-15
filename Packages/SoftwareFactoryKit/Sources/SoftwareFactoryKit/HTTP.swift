@@ -118,7 +118,9 @@ public struct HTTPResponse: Sendable {
 ///   notification gets 202 with no body. `GET /mcp` is 405: the server never pushes.
 /// - `/api/*`: what the apps use. `GET /api/snapshot` is the whole store as JSON, which the
 ///   phone turns into its own dashboard with `Dashboard.make`;
-///   `POST /api/decide` records a decision; `POST /api/task` files a task.
+///   `POST /api/decide` records a decision; `POST /api/task` files a task;
+///   `POST /api/task/set` parks or unparks; `POST /api/task/place` ranks one above
+///   another; `POST /api/task/move` is the list's onMove.
 public struct HTTPRouter: Sendable {
     public let server: MCPServer
     private let sessions = MCPSessions()
@@ -160,6 +162,12 @@ public struct HTTPRouter: Sendable {
             return task(request.body)
         case ("POST", "/api/task/edit"):
             return editTask(request.body)
+        case ("POST", "/api/task/set"):
+            return setTask(request.body)
+        case ("POST", "/api/task/place"):
+            return placeTask(request.body)
+        case ("POST", "/api/task/move"):
+            return moveTask(request.body)
         case ("GET", "/"):
             return .text("Taktu: Software Factory. MCP at /mcp; the apps use /api.", status: 200)
         default:
@@ -208,14 +216,11 @@ public struct HTTPRouter: Sendable {
         return .json(response)
     }
 
+    /// The transport's session is not the agent's. The agent says who it is in the call
+    /// itself, so nothing here has to remember one across requests.
+    /// (T-session, 13 Sep 2026.)
     func handle(_ request: [String: Any], sessionID: UUID) -> [String: Any]? {
-        let response = server.handle(request, agentID: sessions.agent(for: sessionID))
-        guard MCPServer.isAgentRegistration(request),
-              let response,
-              let label = MCPServer.registeredAgentLabel(in: response)
-        else { return response }
-        sessions.setAgent(label, for: sessionID)
-        return response
+        server.handle(request, agentID: nil)
     }
 
     func sessionID(in request: HTTPRequest) -> UUID? {
@@ -294,21 +299,30 @@ public struct HTTPRouter: Sendable {
         var title: String
         var position: Backlog.Position?
         var note: String?
+        var work: String?
     }
 
     func task(_ body: Data) -> HTTPResponse {
         guard let t = try? FileStore.decoder.decode(TaskBody.self, from: body) else {
-            return .text("Body: {project (name or id), title, position?, note?}", status: 400)
+            return .text("Body: {project (name or id), title, position?, note?, work?}", status: 400)
         }
         do {
             let snap = try store.load()
             let project = try server.resolveProject(t.project, in: snap, create: true)
             let position = t.position ?? .bottom
+            let work: FactoryTask.Work
+            if t.work == nil {
+                work = FactoryTask.Work.reading(title: t.title).work
+            } else if let parsed = parsedWork(t.work, defaulting: false) {
+                work = parsed
+            } else {
+                return .text("work must be design, plan, code, implement, fix, review, investigate or ship.", status: 400)
+            }
             let task = FactoryTask(number: Backlog.nextNumber(in: (try? store.loadEveryTask()) ?? snap.tasks),
                                    projectID: project.id, title: t.title,
                                    state: Backlog.state(for: position),
                                    rank: Backlog.rank(for: position, projectID: project.id, in: snap.tasks),
-                                   note: t.note ?? "", created: server.now())
+                                   note: t.note ?? "", work: work, created: server.now())
             try store.save(task)
             return .encoded(task)
         } catch let e as MCPServer.ToolError {
@@ -320,22 +334,134 @@ public struct HTTPRouter: Sendable {
         var id: UUID
         var title: String
         var note: String
+        var work: String?
     }
 
     func editTask(_ body: Data) -> HTTPResponse {
         guard let edited = try? FileStore.decoder.decode(EditTaskBody.self, from: body) else {
-            return .text("Body: {id, title, note}", status: 400)
+            return .text("Body: {id, title, note, work?}", status: 400)
         }
         do {
             guard let task = try store.load().tasks.first(where: { $0.id == edited.id }) else {
                 return .text("No such task", status: 404)
             }
-            let updated = Backlog.edit(task, title: edited.title, note: edited.note, at: server.now())
+            let work: FactoryTask.Work?
+            if edited.work != nil {
+                guard let parsed = parsedWork(edited.work, defaulting: false) else {
+                    return .text("work must be design, plan, code, implement, fix, review, investigate or ship.", status: 400)
+                }
+                work = parsed
+            } else {
+                work = FactoryTask.Work.reading(title: edited.title).work
+            }
+            let updated = Backlog.edit(task, title: edited.title, note: edited.note, work: work, at: server.now())
             guard updated.title == edited.title.trimmingCharacters(in: .whitespacesAndNewlines) else {
                 return .text("A task needs a title", status: 400)
             }
             try store.save(updated)
             return .encoded(updated)
+        } catch {
+            return .text("\(error)", status: 500)
+        }
+    }
+
+    func parsedWork(_ raw: String?, defaulting: Bool) -> FactoryTask.Work? {
+        guard let raw, !raw.isEmpty else { return defaulting ? .implement : nil }
+        return FactoryTask.Work.parse(raw)
+    }
+
+    struct SetTaskBody: Decodable {
+        var id: UUID
+        var state: String
+    }
+
+    func setTask(_ body: Data) -> HTTPResponse {
+        guard let asked = try? FileStore.decoder.decode(SetTaskBody.self, from: body),
+              let state = FactoryTask.State(rawValue: asked.state)
+        else {
+            return .text("Body: {id, state (backlog or parked)}", status: 400)
+        }
+        guard Backlog.personMaySet.contains(state) else {
+            return .text("The person parks and unparks. In progress and done are an agent's to say.", status: 400)
+        }
+        do {
+            guard let task = try store.load().tasks.first(where: { $0.id == asked.id }) else {
+                return .text("No such task", status: 404)
+            }
+            let updated = Backlog.set(task, to: state, at: server.now())
+            try store.save(updated)
+            return .encoded(updated)
+        } catch {
+            return .text("\(error)", status: 500)
+        }
+    }
+
+    struct PlaceTaskBody: Decodable {
+        var id: UUID
+        var above: UUID
+    }
+
+    func placeTask(_ body: Data) -> HTTPResponse {
+        guard let asked = try? FileStore.decoder.decode(PlaceTaskBody.self, from: body) else {
+            return .text("Body: {id, above}", status: 400)
+        }
+        do {
+            let snap = try store.load()
+            guard var task = snap.tasks.first(where: { $0.id == asked.id }) else {
+                return .text("No such task", status: 404)
+            }
+            guard let other = snap.tasks.first(where: { $0.id == asked.above }) else {
+                return .text("No such task to place above", status: 404)
+            }
+            guard task.id != other.id, Backlog.personMaySet.contains(other.state) else {
+                return .text("Place above a backlog or parked row.", status: 400)
+            }
+            if task.state != other.state {
+                task.state = other.state
+                task.agentID = nil
+            }
+            let siblings = snap.tasks.filter { $0.projectID == task.projectID && $0.state == other.state && $0.id != task.id }
+            let changed = Backlog.place(task, above: other, in: siblings + [task], states: [other.state], at: server.now())
+            for t in changed { try store.save(t) }
+            if !changed.contains(where: { $0.id == task.id }) { try store.save(task) }
+            let placed = (try store.load().tasks.first { $0.id == task.id }) ?? task
+            return .encoded(placed)
+        } catch {
+            return .text("\(error)", status: 500)
+        }
+    }
+
+    struct MoveTaskBody: Decodable {
+        var ids: [UUID]
+        var to: Int
+        var state: String
+    }
+
+    func moveTask(_ body: Data) -> HTTPResponse {
+        guard let asked = try? FileStore.decoder.decode(MoveTaskBody.self, from: body),
+              let state = FactoryTask.State(rawValue: asked.state)
+        else {
+            return .text("Body: {ids, to, state (backlog or parked)}", status: 400)
+        }
+        guard Backlog.personMaySet.contains(state) else {
+            return .text("The person ranks the backlog and what is parked.", status: 400)
+        }
+        do {
+            let snap = try store.load()
+            guard let first = asked.ids.first, let sample = snap.tasks.first(where: { $0.id == first }) else {
+                return .text("No such task", status: 404)
+            }
+            let open = snap.tasks.filter { $0.projectID == sample.projectID && $0.state == state }.sorted(by: Backlog.order)
+            var source = IndexSet()
+            for id in asked.ids {
+                guard let i = open.firstIndex(where: { $0.id == id }) else {
+                    return .text("No such task", status: 404)
+                }
+                source.insert(i)
+            }
+            let changed = Backlog.move(in: open, from: source, to: asked.to, states: [state], at: server.now())
+            for t in changed { try store.save(t) }
+            return .encoded(changed)
         } catch {
             return .text("\(error)", status: 500)
         }

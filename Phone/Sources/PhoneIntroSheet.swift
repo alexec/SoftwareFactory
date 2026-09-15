@@ -18,8 +18,8 @@ struct PhoneIntroSheet: View {
                         Text("How you use it")
                             .font(.headline)
                         step("Open it on the same Wi‑Fi as the Mac running Taktu: Software Factory. It finds the factory on its own.")
-                        step("Read what needs you.")
-                        step("Tap the option you choose. The agent carries on.")
+                        step("Read what needs you. Tap the option you choose.")
+                        step("Open a project to add, rank and park work. The agent carries on.")
                     }
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Why this one")

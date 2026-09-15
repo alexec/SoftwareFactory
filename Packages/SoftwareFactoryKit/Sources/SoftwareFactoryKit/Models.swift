@@ -12,6 +12,19 @@ public enum Records {
     /// field on a task, default implement. An older record without it reads as implement;
     /// the old `kind` of feature/bug/chore is still ignored. No bump: an older reader
     /// skips a key it does not know. (T166, 13 Sep 2026.)
+    /// An escalation may carry a `link` (http or https) to a document to review. An
+    /// older record without it reads as empty; an older reader skips a key it does not
+    /// know. No bump. (T174, 13 Sep 2026.)
+    /// An escalation may point at an `artifactID` on the project. Filing a `link` on
+    /// a question also files that URL as an artifact. An older record without the key
+    /// reads as none. No bump.
+    /// A project no longer carries a description or instructions; an agent no longer
+    /// records seenInstructions. A reader from version 3 wanted those keys on a project
+    /// it wrote itself (decodeIfPresent), so an older reader still copes. No bump.
+    /// (T167, 13 Sep 2026.)
+    /// An agent no longer carries `about`. The terminal title is the line on the card,
+    /// and `bel` is how it asks to be looked at. An older record with `about` still
+    /// reads; the field is thrown away. An older reader skips `title` and `bel`. No bump.
     public static let version = 3
 }
 
@@ -24,10 +37,6 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
     /// Stable and opaque. Projects from before 12 Sep 2026 carry their old folder path here.
     public var id: String
     public var name: String
-    /// A short explanation of when an agent should use this project.
-    public var description: String
-    /// Project-specific guidance shown once to each agent before it works its backlog.
-    public var instructions: String
     public var added: Date
     /// Set aside by the person: nothing is handed out from its backlog and agents are
     /// told so. Everything stays; the switch is in the app only.
@@ -40,11 +49,9 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
     /// requires it; a project with no single folder just leaves it unset.
     public var path: String?
 
-    public init(name: String, description: String = "", instructions: String = "", id: String = UUID().uuidString, added: Date = .now) {
+    public init(name: String, id: String = UUID().uuidString, added: Date = .now) {
         self.id = id
         self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.description = description.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.instructions = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
         self.added = added
     }
 
@@ -59,8 +66,6 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
         id = try c.decode(String.self, forKey: .id)
         name = try c.decode(String.self, forKey: .name)
-        description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
-        instructions = try c.decodeIfPresent(String.self, forKey: .instructions) ?? ""
         added = try c.decode(Date.self, forKey: .added)
         onHold = try c.decodeIfPresent(Bool.self, forKey: .onHold) ?? false
         removed = try c.decodeIfPresent(Date.self, forKey: .removed)
@@ -98,12 +103,13 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         /// Put a build in someone's hands: the device, testers, or the store.
         case ship
 
-        /// The word on the picker and the row.
+        /// The word on the row and at the start of a title. Implement is "Code"
+        /// (T181): that is what you type, and what the row used to call Implement.
         public var word: String {
             switch self {
             case .design: "Design"
             case .plan: "Plan"
-            case .implement: "Implement"
+            case .implement: "Code"
             case .fix: "Fix"
             case .review: "Review"
             case .investigate: "Investigate"
@@ -111,15 +117,56 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
             }
         }
 
+        /// The first word of a title, if it names a kind of work. "Code" and the
+        /// older "Implement" both mean implement. Anything else is nil.
+        public static func named(_ token: String) -> Work? {
+            let t = token.trimmingCharacters(in: .punctuationCharacters)
+            guard !t.isEmpty else { return nil }
+            if t.compare("code", options: .caseInsensitive) == .orderedSame { return .implement }
+            if t.compare("implement", options: .caseInsensitive) == .orderedSame { return .implement }
+            return allCases.first { $0.word.compare(t, options: .caseInsensitive) == .orderedSame }
+        }
+
+        /// MCP and HTTP: the stored raw value, the word, or "code".
+        public static func parse(_ raw: String) -> Work? {
+            if let work = Work(rawValue: raw) { return work }
+            return named(raw)
+        }
+
+        /// Work from the first token of a title, defaulting to implement when there
+        /// is none. The title is kept as typed, prefix and all.
+        public static func reading(title: String) -> (work: Work, title: String) {
+            let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let token = title.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
+            return (named(token) ?? .implement, title)
+        }
+
+        /// Work words whose spelling starts with `prefix`, excluding an exact match.
+        /// Empty prefix is none: the field is not a picker.
+        public static func completions(prefix: String) -> [Work] {
+            let p = prefix.trimmingCharacters(in: .whitespaces)
+            guard !p.isEmpty else { return [] }
+            return allCases.filter {
+                $0.word.lowercased().hasPrefix(p.lowercased())
+                    && $0.word.lowercased() != p.lowercased()
+            }
+        }
+
+        /// True when `title` already begins with this word, so the row should not
+        /// print it again.
+        public func isPrefix(of title: String) -> Bool {
+            Self.named(title.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? "") == self
+        }
+
         /// One line for an agent, a tooltip, the full task view.
         public var brief: String {
             switch self {
-            case .design: "Produce a design brief for review, then stop. Don't implement."
-            case .plan: "Plan the implementation for review and approval, then stop. Don't implement."
+            case .design: "Produce a design brief, put it on the project with artifact_add, then stop. Don't implement."
+            case .plan: "Plan the implementation, put the plan on the project with artifact_add, then stop. Don't implement."
             case .implement: "Do the work."
             case .fix: "Find the cause and fix it."
             case .review: "Look at the result. Fix what the review says to fix; log the rest."
-            case .investigate: "Find out. Don't change anything."
+            case .investigate: "Find out. Put what you found on the project with artifact_add. Don't change anything."
             case .ship: "Put a build in someone's hands: the device, testers, or the store."
             }
         }
@@ -141,7 +188,19 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         }
 
         public var kind: Kind
-        public var id: UUID?
+        /// The agent's session, and everything else about who it is. The factory makes this
+    /// before it launches anything and hands it to the agent in the words it starts
+    /// with, so one UUID is the record's key, the name of the terminal it runs in, the
+    /// `--session-id` its CLI was started with, and what it says on every call it makes.
+    ///
+    /// It is told in the prompt rather than the environment on purpose. An environment
+    /// variable is lost the moment a conversation is resumed; the prompt is part of the
+    /// conversation, so a resumed agent still knows who it is.
+    ///
+    /// One consequence worth keeping: two agents can no longer share a terminal, because
+    /// the terminal is named after the agent. There is nothing left to claim.
+    /// (Alex, 13 Sep 2026.)
+    public var id: UUID?
         public var why: String
 
         public init(kind: Kind, id: UUID? = nil, why: String) {
@@ -255,21 +314,20 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
     /// The short public identifier used by MCP callers. The UUID remains the stable
     /// storage and relationship key.
     public var number: Int?
-    public var about: String
+    /// What the agent's terminal last called itself, via OSC 0/2. Empty until it sets one.
+    /// Shown on the card in place of the old self-description.
+    public var title: String
+    /// The agent rang BEL: it wants a look. The card shows a bell until it is opened.
+    public var bel: Bool
     public var projectID: String?
-    /// The latest instructions read for each project, keyed by the stable project id.
-    /// Keeping the text makes a changed instruction visible again.
-    public var seenInstructions: [String: String]
     public var taskID: UUID?
     public var note: String
-    /// The terminal session this agent runs in, when the app started it: the name it
-    /// passes at registration from SOFTWARE_FACTORY_SESSION. The app attaches to it to
-    /// show the agent working. Nil for an agent started by hand.
-    ///
-    /// Do not use this to decide whether the agent is running. It lives on the launch
-    /// wrapper and nowhere else, so an agent that has been resumed has lost it while
-    /// still working perfectly well. `pid` is the question about running.
-    public var session: String?
+    /// The factory should start this agent. `agent_create` sets it; the app launches
+    /// and clears it. (T179, 13 Sep 2026.)
+    public var wantsLaunch: Bool = false
+    /// `agent_nudge` asked the factory to poke this agent. The app types the same
+    /// line into its terminal and clears the flag. (T195, 13 Sep 2026.)
+    public var wantsNudge: Bool = false
     /// The agent's own process, reported at registration, and when that process started.
     /// The pair is what makes an answer about running trustworthy: a pid on its own can
     /// be recycled and turn up wearing a dead agent's number, and a start time settles
@@ -284,16 +342,26 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
     public var isConnected: Bool
     public var deregistered: Date?
 
-    public init(id: UUID = UUID(), number: Int? = nil, about: String = "", projectID: String?, registered: Date = .now) {
+    public init(id: UUID = UUID(), number: Int? = nil, title: String = "", projectID: String?, registered: Date = .now) {
         self.id = id
         self.number = number
-        self.about = about
+        self.title = title
+        self.bel = false
         self.projectID = projectID
-        self.seenInstructions = [:]
         self.note = ""
         self.registered = registered
         self.lastSeen = registered
         self.isConnected = false
+    }
+
+    /// Longest terminal title we keep. The card truncates anyway; this stops a dump
+    /// sitting in the record.
+    public static let maxTitle = 200
+
+    public static func preparedTitle(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.count <= maxTitle { return trimmed }
+        return String(trimmed.prefix(maxTitle))
     }
 
     public var isRegistered: Bool { deregistered == nil }
@@ -321,21 +389,6 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
     /// never reported a pid is not dead, it is simply not something we can see.
     public var knowsItsProcess: Bool { pid != nil && pidStartedAt != nil }
 
-    /// Whether the factory started this agent, or it joined from outside.
-    ///
-    /// Two kinds of agent, and they have different lives. An embedded one was written
-    /// down before it launched, told the name to register as, and put in a terminal the
-    /// factory owns: its page shows it working, you can type to it, and the factory can
-    /// stop it. An external one registered over MCP from wherever it already was. It is
-    /// just as real and does the same work; there is simply nothing here to watch and
-    /// nothing here to stop. (Alex, 13 Sep 2026.)
-    ///
-    /// This is the agent's origin, not whether there is a terminal on screen right now.
-    /// An embedded agent whose tmux session has been killed is still ours; it is only
-    /// out of sight. Ask the app whether it holds a terminal for it, and ask this what
-    /// kind of agent it is.
-    public var isEmbedded: Bool { session != nil }
-
     /// Registered, said it was running here, and its process has gone. The one state the
     /// factory used to have no way of telling from a quiet agent.
     public var hasExited: Bool { isRegistered && knowsItsProcess && !isProcessRunning }
@@ -360,19 +413,49 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
     public func hasGoneQuiet(now: Date) -> Bool {
         isRegistered && now.timeIntervalSince(lastSeen) > Self.goneAfter
     }
+
+    enum CodingKeys: String, CodingKey {
+        case version, id, number, title, bel, projectID, taskID, note, wantsLaunch, wantsNudge
+        case pid, pidStartedAt, registered, lastSeen, isConnected, deregistered
+        case about, name
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(version, forKey: .version)
+        try c.encode(id, forKey: .id)
+        try c.encodeIfPresent(number, forKey: .number)
+        try c.encode(title, forKey: .title)
+        try c.encode(bel, forKey: .bel)
+        try c.encodeIfPresent(projectID, forKey: .projectID)
+        try c.encodeIfPresent(taskID, forKey: .taskID)
+        try c.encode(note, forKey: .note)
+        try c.encode(wantsLaunch, forKey: .wantsLaunch)
+        try c.encode(wantsNudge, forKey: .wantsNudge)
+        try c.encodeIfPresent(pid, forKey: .pid)
+        try c.encodeIfPresent(pidStartedAt, forKey: .pidStartedAt)
+        try c.encode(registered, forKey: .registered)
+        try c.encode(lastSeen, forKey: .lastSeen)
+        try c.encode(isConnected, forKey: .isConnected)
+        try c.encodeIfPresent(deregistered, forKey: .deregistered)
+    }
+
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
         id = try c.decode(UUID.self, forKey: .id)
         number = try c.decodeIfPresent(Int.self, forKey: .number)
-        // A record written before T158 carries a name. It is read and thrown away: it
-        // was always the label, and an agent from before numbers falls back to its id.
-        about = try c.decodeIfPresent(String.self, forKey: .about) ?? ""
+        title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
+        bel = try c.decodeIfPresent(Bool.self, forKey: .bel) ?? false
+        // `name` was the label (T158). `about` was a self-description that duplicated
+        // the terminal title. Both are read and thrown away.
+        _ = try c.decodeIfPresent(String.self, forKey: .name)
+        _ = try c.decodeIfPresent(String.self, forKey: .about)
         projectID = try c.decodeIfPresent(String.self, forKey: .projectID)
-        seenInstructions = try c.decodeIfPresent([String: String].self, forKey: .seenInstructions) ?? [:]
         taskID = try c.decodeIfPresent(UUID.self, forKey: .taskID)
         note = try c.decode(String.self, forKey: .note)
-        session = try c.decodeIfPresent(String.self, forKey: .session)
+        wantsLaunch = try c.decodeIfPresent(Bool.self, forKey: .wantsLaunch) ?? false
+        wantsNudge = try c.decodeIfPresent(Bool.self, forKey: .wantsNudge) ?? false
         // Added after the fact, so a record written before this simply has no pid and
         // reads as an agent whose running we cannot speak for. No version bump needed.
         pid = try c.decodeIfPresent(Int32.self, forKey: .pid)
@@ -387,6 +470,20 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
 
 /// Who works here. The number is the name: A1, A2, A3.
 public enum Agents {
+    /// How many may be on the floor at once. A hard cap, not a throttle: the ninth is
+    /// refused, from the app and from `agent_create` alike. (T179, 13 Sep 2026.)
+    public static let cap = 8
+    public static let fullMessage = "Eight agents is the cap."
+
+    /// Registered, and not known to have exited. These count toward the cap.
+    public static func onTheFloor(_ agents: [Agent]) -> [Agent] {
+        agents.filter { $0.isRegistered && !$0.hasExited }
+    }
+
+    public static func atCap(_ agents: [Agent]) -> Bool {
+        onTheFloor(agents).count >= cap
+    }
+
     /// The next free number, one more than the highest ever used. Numbers are never
     /// given out twice, so an agent that has left keeps its name in the record.
     public static func nextNumber(in agents: [Agent]) -> Int {
@@ -400,41 +497,16 @@ public enum Agents {
     ///
     /// The number comes from the factory's counter on disk, not from the agents still in
     /// the store, so a number is never handed out twice.
-    public static func reserve(number: Int, projectID: String?, session: String?, now: Date = .now) -> Agent {
-        var agent = Agent(number: number, projectID: projectID, registered: now)
-        agent.session = session
-        return agent
+    public static func reserve(number: Int, projectID: String?, now: Date = .now) -> Agent {
+        Agent(number: number, projectID: projectID, registered: now)
     }
 
-    /// What happens when an agent registers saying it is in a terminal session. One
-    /// terminal holds one agent: two on the same session means two cards, one window,
-    /// and whatever you type reaching the wrong one. (Alex, 13 Sep 2026: I have seen it.)
-    ///
-    /// A shell that outlives its agent keeps SOFTWARE_FACTORY_SESSION exported, so the
-    /// next agent started by hand in that window reports the same session. The session
-    /// goes to whoever is actually in the window: the newcomer, and it comes off the
-    /// record that held it. An agent still live in there keeps it, and the newcomer gets
-    /// no session rather than a window that is not its own.
-    public struct SessionClaim: Sendable, Equatable {
-        /// The session the newcomer keeps. Nil when someone else is still in there.
-        public var session: String?
-        /// Records to save with their session cleared.
-        public var released: [Agent]
-    }
+    /// There used to be a rule here for two agents turning up on one terminal: a shell
+    /// that outlived its agent kept SOFTWARE_FACTORY_SESSION exported, so the next agent
+    /// started in that window reported the same session, and the factory had to decide
+    /// who kept the window. The terminal is named after the agent now, so two of them
+    /// cannot land on one, and there is nothing to decide. (T156, settled by T-session.)
 
-    public static func claimSession(
-        _ session: String, for newcomer: Agent, in agents: [Agent], now: Date
-    ) -> SessionClaim {
-        let holders = agents.filter { $0.session == session && $0.id != newcomer.id && $0.isRegistered }
-        if holders.contains(where: { $0.hasLiveSession(now: now) }) {
-            return SessionClaim(session: nil, released: [])
-        }
-        return SessionClaim(session: session, released: holders.map {
-            var released = $0
-            released.session = nil
-            return released
-        })
-    }
 }
 
 /// One message in an agent's private inbox.
@@ -520,13 +592,16 @@ public enum Sweep {
             return t
         }
     }
-
-    public static func goneAgents(in snapshot: Snapshot, now: Date) -> Changes {
+    /// An agent whose process has gone, still holding something. Nobody says goodbye any
+    /// more: an agent that crashed could not, and one that exited cleanly has no reason
+    /// to, so the kernel is asked instead. Whatever it was holding goes back.
+    ///
+    /// This replaces an hour of silence and a deregistration. Silence was always a guess
+    /// (an agent thinking is silent too) and a goodbye was always optional. A process
+    /// that is not there is neither. (T-session, 13 Sep 2026.)
+    public static func stoppedAgents(in snapshot: Snapshot, now: Date) -> Changes {
         var changes = Changes(agents: [], leases: [])
-        for var agent in snapshot.agents where agent.hasGoneQuiet(now: now) {
-            agent.deregistered = now
-            agent.note = agent.note.isEmpty ? "marked gone after an hour disconnected" : agent.note + " · marked gone after an hour disconnected"
-            changes.agents.append(agent)
+        for agent in snapshot.agents where agent.hasExited {
             for var lease in Leases.heldBy(agent.id, in: snapshot.leases, now: now) {
                 lease.released = now
                 changes.leases.append(lease)
@@ -584,6 +659,11 @@ public struct Escalation: Codable, Identifiable, Hashable, Sendable {
     public var projectID: String
     public var question: String
     public var context: String
+    /// Optional URL of a document the person should read before they choose. Empty if none.
+    /// Filing one also files an artifact on the project, so the document lives here.
+    public var link: String
+    /// The document on the project they should read, when there is one.
+    public var artifactID: UUID?
     public var options: [Option]
     public var agentID: UUID?
     /// The task this question stops, when it came from one.
@@ -594,17 +674,33 @@ public struct Escalation: Codable, Identifiable, Hashable, Sendable {
 
     public init(
         id: UUID = UUID(), projectID: String, question: String, context: String = "",
-        options: [Option], agentID: UUID? = nil, taskID: UUID? = nil, raisedBy: String = "agent", raised: Date = .now
+        link: String = "", artifactID: UUID? = nil, options: [Option], agentID: UUID? = nil, taskID: UUID? = nil,
+        raisedBy: String = "agent", raised: Date = .now
     ) {
         self.id = id
         self.projectID = projectID
         self.question = question
         self.context = context
+        self.link = link
+        self.artifactID = artifactID
         self.options = options
         self.agentID = agentID
         self.taskID = taskID
         self.raisedBy = raisedBy
         self.raised = raised
+    }
+
+    /// Empty if none. http or https, with a host; anything else is refused so a bad
+    /// string never sits on the card as a dead control.
+    public static func validatedLink(_ raw: String?) throws(EscalationError) -> String {
+        let text = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return "" }
+        guard let url = URL(string: text),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              url.host != nil
+        else { throw .badLink }
+        return text
     }
 
     public var isOpen: Bool { decision == nil }
@@ -649,6 +745,8 @@ public struct Escalation: Codable, Identifiable, Hashable, Sendable {
         projectID = try c.decode(String.self, forKey: .projectID)
         question = try c.decode(String.self, forKey: .question)
         context = try c.decode(String.self, forKey: .context)
+        link = try c.decodeIfPresent(String.self, forKey: .link) ?? ""
+        artifactID = try c.decodeIfPresent(UUID.self, forKey: .artifactID)
         options = try c.decode([Option].self, forKey: .options)
         agentID = try c.decodeIfPresent(UUID.self, forKey: .agentID)
         taskID = try c.decodeIfPresent(UUID.self, forKey: .taskID)
@@ -662,6 +760,7 @@ public struct Escalation: Codable, Identifiable, Hashable, Sendable {
 public enum EscalationError: Error, Equatable, Sendable {
     case unknownOption
     case emptyAnswer
+    case badLink
 }
 
 /// Something only so many agents can use at once: a phone, a browser, the Mac itself,

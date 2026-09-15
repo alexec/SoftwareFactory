@@ -75,103 +75,57 @@ private final class ResultBox: @unchecked Sendable {
         #expect(try s.store.load().projects.first { $0.name == "Widget" }?.path == nil)
     }
 
-    @Test func projectDescriptionsAndInstructionsGuideAgents() throws {
+    @Test func aProjectIsANameWithNoDescriptionOrInstructions() throws {
         let s = try server()
         #expect(call(s, "task_add", ["project": "Missing", "title": "No project"]).isError)
-        #expect(call(s, "project_add", ["name": "Guided"]).isError)
-        #expect(!call(s, "project_add", [
-            "name": "Guided", "description": "Work that needs the factory guide.",
-            "instructions": "Read the guide before starting.",
-        ]).isError)
-        #expect(call(s, "project_list").text.contains("Work that needs the factory guide."))
-        #expect(call(s, "project_set", [
-            "project": "Guided", "set_description": "Guided factory work.",
-        ]).text == "Guided description is updated.")
-        let agentID = id(after: "agent_id:", in: call(s, "agent_register", ["project": "Guided"]).text)
-        let blocked = call(s, "task_add", ["project": "Guided", "title": "Read the guide", "agent_id": agentID])
-        #expect(blocked.isError)
-        #expect(blocked.text == "You must first call project_get for Guided and read its instructions before creating or modifying a task.")
+        #expect(!call(s, "project_add", ["name": "Guided"]).isError)
+        #expect(!call(s, "project_list").text.contains("description"))
+        let agentID = try startAgent(s, project: "Guided").label
+        #expect(!call(s, "task_add", ["project": "Guided", "title": "Do it", "agent_id": agentID]).isError)
         let project = call(s, "project_get", ["project": "Guided", "agent_id": agentID]).text
         #expect(project.contains("name: Guided"))
-        #expect(project.contains("description: Guided factory work."))
-        #expect(project.contains("instructions: Read the guide before starting."))
-        let projectID = try #require(s.store.load().projects.first { $0.name == "Guided" }?.id)
-        #expect(try s.store.load().agents.first { $0.label == agentID }?.seenInstructions[projectID] == "Read the guide before starting.")
-        #expect(!call(s, "task_list", ["project": "Guided", "agent_id": agentID]).text.contains("instructions:"))
-        #expect(!call(s, "task_add", ["project": "Guided", "title": "Read the guide", "agent_id": agentID]).isError)
+        #expect(!project.contains("description:"))
+        #expect(!project.contains("instructions:"))
         #expect(call(s, "project_set", [
-            "project": "Guided", "instructions": "Read the revised guide.",
-        ]).text == "Guided instructions are updated.")
-        #expect(call(s, "task_note", ["task_id": "T1", "text": "Updated", "agent_id": agentID]).isError)
-        #expect(call(s, "project_get", ["project": "Guided", "agent_id": agentID]).text.contains("Read the revised guide."))
-        #expect(!call(s, "task_note", ["task_id": "T1", "text": "Updated", "agent_id": agentID]).isError)
-        #expect(call(s, "project_set", [
-            "project": "Guided", "instructions": "",
-        ]).text == "Guided instructions are cleared.")
+            "project": "Guided", "set_description": "no longer a field",
+        ]).text.contains("folder or on_hold"))
+        #expect(!call(s, "task_note", ["task_id": "T1", "text": "a line", "agent_id": agentID]).isError)
     }
 
     /// Naming a project nobody has used makes it. An agent whose work belongs to no
     /// project registers without one. (Alex, 12 Sep 2026: it is allowed.)
     @Test func registeringNamesTheProjectOrNone() throws {
         let s = try server()
-        let a = id(after: "", in: call(s, "agent_register", ["project": "Brand New"]).text)
+        let a = try startAgent(s, project: "Brand New").label
         let agent = try #require(try s.store.load().agents.first { $0.label == a })
         let project = try #require(try s.store.load().projects.first { $0.id == agent.projectID })
         #expect(project.name == "Brand New")
 
-        let loose = id(after: "", in: call(s, "agent_register", ["about": "Works across everything"]).text)
+        let loose = try startAgent(s).label
         #expect(try s.store.load().agents.first { $0.label == loose }?.projectID == nil)
         // Registering again without one keeps the project it already had.
-        _ = call(s, "agent_register", ["agent_id": a, "about": "Still here"])
         #expect(try s.store.load().agents.first { $0.label == a }?.projectID == project.id)
     }
 
     /// An agent is its A<n> and nothing else: registration takes no name, a name sent
     /// anyway is ignored, and nothing the factory says back carries one.
     /// (A9, 13 Sep 2026: T137.)
-    /// Registering with a pid is what lets the factory tell a crashed agent from a quiet
-    /// one. The agent gives the number; the factory reads when that process started, so
-    /// a recycled pid cannot later pass for it. (Alex, 13 Sep 2026.)
-    @Test func registeringWithAPidRecordsTheProcess() throws {
-        let s = try server()
-        let me = ProcessInfo.processInfo.processIdentifier
-        let a = id(after: "", in: call(s, "agent_register", ["pid": Int(me)]).text)
-        let stored = try #require(try s.store.load().agents.first { $0.label == a })
-        #expect(stored.pid == me)
-        // Within a second, not to the microsecond: the record goes through JSON, which
-        // rounds the date. That rounding is why ProcessCheck.isRunning has a tolerance
-        // at all, so the two belong together.
-        let live = try #require(ProcessCheck.startTime(of: me))
-        let recorded = try #require(stored.pidStartedAt)
-        #expect(abs(recorded.timeIntervalSince(live)) < 1)
-        #expect(stored.knowsItsProcess && stored.isProcessRunning && !stored.hasExited)
-
-        // A pid nobody is using is not recorded at all: better to say nothing about an
-        // agent's process than to write down one that was never there.
-        let b = id(after: "", in: call(s, "agent_register", ["pid": 0x7FFF_FFFE]).text)
-        let other = try #require(try s.store.load().agents.first { $0.label == b })
-        #expect(other.pid == nil && !other.knowsItsProcess && !other.hasExited)
-
-        // And registering without one still works: most agents will not know it.
-        let c = id(after: "", in: call(s, "agent_register", [:]).text)
-        let third = try #require(try s.store.load().agents.first { $0.label == c })
-        #expect(third.pid == nil && !third.hasExited)
-    }
+    // A test stood here for registering with a pid. The factory reads the pid off the
+    // pane it launched the agent into, so there is no registration to carry it and
+    // nothing for an agent to get wrong. ProcessCheckTests covers what the pid means.
+    // (T-session, 13 Sep 2026.)
 
     @Test func anAgentIsOnlyItsNumber() throws {
         let s = try server()
-        let registration = try #require(MCPServer.Tool.all.first { $0.name == "agent_register" })
-        #expect(registration.properties["name"] == nil)
-
         _ = call(s, "project_add", ["name": "Named", "description": "Work for named agents."])
-        let a = id(after: "", in: call(s, "agent_register", ["name": "lead", "project": "Named"]).text)
+        let a = try startAgent(s, project: "Named").label
         // There is no second name to disagree with the label: the record has only its
         // number, and the label is made from it. (T158, 13 Sep 2026.)
         let stored = try #require(try s.store.load().agents.first { $0.label == a })
         #expect(stored.number.map { "A\($0)" } == a)
 
         // A second agent, so the first has someone to read about.
-        let b = id(after: "", in: call(s, "agent_register", ["name": "hand", "about": "Builds it", "project": "Named"]).text)
+        let b = try startAgent(s, project: "Named").label
         let listed = call(s, "agent_list", ["agent_id": a]).text
         #expect(listed.contains(b))
         #expect(!listed.lowercased().contains("hand"))
@@ -186,31 +140,6 @@ private final class ResultBox: @unchecked Sendable {
         #expect(task.contains("agent: \(b)"))
         #expect(!task.lowercased().contains("hand"))
     }
-
-    @Test func anAgentUpdatesItsRegistrationInTheSameSession() throws {
-        let s = try server()
-        _ = call(s, "project_add", ["name": "P", "description": "Project P."])
-        let a = id(after: "", in: call(s, "agent_register", ["name": "lead", "project": "P"]).text)
-        let registration = try #require(MCPServer.Tool.all.first { $0.name == "agent_register" })
-        let again = call(s, "agent_register", ["agent_id": a, "project": "P"]).text
-        #expect(again == "Registered. agent_id: \(a)")
-        #expect(try s.store.load().agents.count == 1)
-    }
-
-    /// The app starts an agent in a terminal session and sets SOFTWARE_FACTORY_SESSION;
-    /// the agent hands that back at registration so the app can show it working.
-    @Test func anAgentRegistersTheSessionItWasStartedIn() throws {
-        let s = try server()
-        let a = id(after: "", in: call(s, "agent_register", ["project": "Sessions", "session": "sf-1234"]).text)
-        #expect(try s.store.load().agents.first { $0.label == a }?.session == "sf-1234")
-        // Registering again without one keeps the session it already has.
-        _ = call(s, "agent_register", ["agent_id": a, "project": "Sessions"])
-        #expect(try s.store.load().agents.first { $0.label == a }?.session == "sf-1234")
-        // An agent started by hand has none.
-        let byHand = id(after: "", in: call(s, "agent_register", ["project": "Sessions"]).text)
-        #expect(try s.store.load().agents.first { $0.label == byHand }?.session == nil)
-    }
-
     /// Every tool that waits waits the same way: the same timeout_seconds, and an
     /// answer telling you to call again rather than an error.
     /// An agent that has read the backlog can take several tasks that are one piece of
@@ -221,7 +150,7 @@ private final class ResultBox: @unchecked Sendable {
         _ = call(s, "task_add", ["project": "Together", "title": "Rename the type"])
         _ = call(s, "task_add", ["project": "Together", "title": "Rename its file"])
         _ = call(s, "task_add", ["project": "Together", "title": "Something else"])
-        let a = id(after: "", in: call(s, "agent_register", ["project": "Together"]).text)
+        let a = try startAgent(s, project: "Together").label
         _ = call(s, "project_get", ["project": "Together", "agent_id": a])
 
         let claimed = call(s, "task_claim", ["agent_id": a, "task_ids": ["T1", "T2"]])
@@ -245,7 +174,7 @@ private final class ResultBox: @unchecked Sendable {
         let clock = Clock()
         let s = MCPServer(store: try temporaryStore(), now: { clock.tick() }, pollInterval: 0.01)
         _ = call(s, "project_add", ["name": "Q", "description": "A project to read."])
-        let a = id(after: "", in: call(s, "agent_register", ["project": "Q"]).text)
+        let a = try startAgent(s, project: "Q").label
         _ = call(s, "project_read", ["project": "Q", "agent_id": a])
         _ = call(s, "task_add", ["project": "Q", "title": "Something to read", "agent_id": a])
         _ = call(s, "escalation_raise", ["agent_id": a, "project": "Q", "question": "Which?",
@@ -255,8 +184,9 @@ private final class ResultBox: @unchecked Sendable {
         for tool in MCPServer.Tool.all where tool.kind == .query {
             let before = try fingerprint(of: s.store)
             var args: [String: Any] = ["agent_id": a, "timeout_seconds": 0]
-            if tool.name == "task_next" || tool.name == "task_list" { args["project"] = "Q" }
+            if tool.name == "task_next" || tool.name == "task_list" || tool.name == "project_read" || tool.name == "artifact_list" { args["project"] = "Q" }
             if tool.name == "escalation_await" { args["escalation_id"] = UUID().uuidString }
+            if tool.name == "artifact_read" { args["artifact_id"] = UUID().uuidString }
             if tool.name == "factory_ask" { args["work"] = "compile" }
             _ = call(s, tool.name, args)
             #expect(try fingerprint(of: s.store) == before, "\(tool.name) wrote to the store")
@@ -285,7 +215,7 @@ private final class ResultBox: @unchecked Sendable {
     @Test func waitingToolsShareOneShape() throws {
         let s = try server()
         _ = call(s, "project_add", ["name": "W", "description": "Waiting."])
-        let a = id(after: "", in: call(s, "agent_register", ["project": "W"]).text)
+        let a = try startAgent(s, project: "W").label
 
         #expect(call(s, "task_next", ["project": "W", "timeout_seconds": 0]).text == "Nothing waiting. Call task_next again.")
         #expect(call(s, "inbox", ["agent_id": a, "wait": true, "timeout_seconds": 0]).text
@@ -304,15 +234,82 @@ private final class ResultBox: @unchecked Sendable {
         }
     }
 
+    @Test func agentCreateWritesOneDownAndAsksTheAppToStartIt() throws {
+        let s = try server()
+        _ = call(s, "project_add", ["name": "Spawn", "folder": "/tmp/Spawn"])
+        let a = try startAgent(s, project: "Spawn").label
+        let created = call(s, "agent_create", ["agent_id": a])
+        #expect(!created.isError)
+        #expect(created.text.hasPrefix("Starting A"))
+        #expect(created.text.contains("on Spawn"))
+        #expect(created.text.contains("session_id"))
+        let agents = try s.store.load().agents
+        let newborn = try #require(agents.first { $0.wantsLaunch })
+        let spawnID = try s.store.load().projects.first { $0.name == "Spawn" }?.id
+        #expect(newborn.projectID == spawnID)
+        #expect(newborn.label != a)
+    }
+
+    @Test func agentCreateDefaultsToTheCallerProjectAndCanNameATask() throws {
+        let s = try server()
+        _ = call(s, "project_add", ["name": "Spawn", "folder": "/tmp/Spawn"])
+        let a = try startAgent(s, project: "Spawn").label
+        _ = call(s, "task_add", ["project": "Spawn", "title": "The one job", "agent_id": a])
+        let created = call(s, "agent_create", ["agent_id": a, "task_id": "T1"])
+        #expect(!created.isError)
+        #expect(created.text.contains("The one job"))
+        let snap = try s.store.load()
+        let newborn = try #require(snap.agents.first { $0.wantsLaunch })
+        #expect(newborn.taskID == snap.tasks.first { $0.number == 1 }?.id)
+        #expect(snap.tasks.first { $0.number == 1 }?.agentID == newborn.id)
+    }
+
+    @Test func agentCreateRefusesANinthOnTheFloor() throws {
+        let s = try server()
+        _ = call(s, "project_add", ["name": "Packed", "folder": "/tmp/Packed"])
+        var last = ""
+        for _ in 1...Agents.cap {
+            last = try startAgent(s, project: "Packed").label
+        }
+        let ninth = call(s, "agent_create", ["agent_id": last])
+        #expect(ninth.isError)
+        #expect(ninth.text.contains(Agents.fullMessage))
+        #expect(try s.store.load().agents.filter(\.isRegistered).count == Agents.cap)
+    }
+
+    @Test func agentCreateNeedsAProjectWithAFolder() throws {
+        let s = try server()
+        let none = try startAgent(s).label
+        #expect(call(s, "agent_create", ["agent_id": none]).text.contains("Name a project"))
+        _ = call(s, "project_add", ["name": "NoFolder"])
+        let onIt = try startAgent(s, project: "NoFolder").label
+        #expect(call(s, "agent_create", ["agent_id": onIt]).text.contains("folder"))
+    }
+
+    @Test func agentNudgePutsTheSameWordsInTheInbox() throws {
+        let s = try server()
+        let lead = try startAgent(s, project: "Mail").label
+        let worker = try startAgent(s, project: "Mail").label
+        let poked = call(s, "agent_nudge", ["agent_id": lead, "to_agent_id": worker])
+        #expect(!poked.isError)
+        #expect(poked.text == "Nudged \(worker).")
+        let inbox = call(s, "inbox", ["agent_id": worker]).text
+        #expect(inbox.contains("subject: Nudge"))
+        #expect(inbox.contains(LaunchPrompt.nudge))
+        #expect(inbox.contains("from: \(lead)"))
+        #expect(try s.store.load().agents.first { $0.label == worker }?.wantsNudge == true)
+        #expect(call(s, "agent_nudge", ["agent_id": lead, "to_agent_id": lead]).isError)
+        #expect(call(s, "agent_nudge", ["agent_id": lead, "to_agent_id": "A99"]).isError)
+    }
+
     @Test func agentsCanDescribeThemselvesAndSendMail() throws {
         let s = try server()
-        let lead = id(after: "", in: call(s, "agent_register", ["project": "Mail", "about": "Coordinates the work."]).text)
-        let worker = id(after: "", in: call(s, "agent_register", ["project": "Mail", "about": "Builds the app."]).text)
+        let lead = try startAgent(s, project: "Mail").label
+        let worker = try startAgent(s, project: "Mail").label
 
         let listed = call(s, "agent_list", ["agent_id": lead]).text
-        #expect(listed.contains(worker) && listed.contains("Builds the app."))
+        #expect(listed.contains(worker))
         #expect(!listed.contains(lead))
-        #expect(try s.store.load().agents.first { $0.label == worker }?.about == "Builds the app.")
 
         #expect(call(s, "agent_message_send", [
             "agent_id": lead, "to_agent_id": worker, "subject": "Please review", "contents": "Start with the MCP server.",
@@ -326,8 +323,8 @@ private final class ResultBox: @unchecked Sendable {
 
     @Test func agentMessagesCanWaitForNewMail() throws {
         let s = try server()
-        let sender = id(after: "", in: call(s, "agent_register", ["project": "P"]).text)
-        let receiver = id(after: "", in: call(s, "agent_register", ["project": "P"]).text)
+        let sender = try startAgent(s, project: "P").label
+        let receiver = try startAgent(s, project: "P").label
         _ = call(s, "agent_message_send", [
             "agent_id": sender, "to_agent_id": receiver, "subject": "Earlier", "contents": "Already here.",
         ])
@@ -357,19 +354,27 @@ private final class ResultBox: @unchecked Sendable {
         #expect(Projects.nearMiss("sleeper-train", in: try s.store.load().projects) == nil)   // that one is exact
         #expect(Projects.exact("sleeper-train", in: try s.store.load().projects)?.name == "Sleeper Train")
         #expect(Projects.nearMiss("Walkist", in: try s.store.load().projects) == nil)
-        let refused = call(s, "agent_register", ["name": "lead", "project": "NightSleeper"])
+        let refused = call(s, "project_add", ["name": "NightSleeper", "description": "Sleeper work."])
         #expect(refused.isError && refused.text.contains("there is Sleeper Train"))
         #expect(call(s, "task_add", ["project": "Sleeper", "title": "x"]).isError)
         #expect(call(s, "project_add", ["name": "Sleepers", "description": "Sleep work."]).isError)
         #expect(!call(s, "project_add", ["name": "Sleepers", "description": "Sleep work.", "force": true]).isError)
-        #expect(!call(s, "agent_register", ["name": "lead", "project": "Walkist"]).isError)
+        #expect(!call(s, "project_add", ["name": "Walkist", "description": "Walking."]).isError)
         #expect(try s.store.load().projects.count == 4)
     }
 
     func call(_ s: MCPServer, _ tool: String, _ args: [String: Any] = [:], id: Int = 1) -> (text: String, isError: Bool) {
-        let sessionID = (args["agent_id"] as? String) ?? UUID().uuidString
+        // Every tool takes the caller's session now. A test that does not name one gets
+        // a throwaway: the point of most of them is the tool, not who called it. A test
+        // that says which agent is calling says it the way a person would, by label, and
+        // this looks up the session for it. The tools themselves take only the UUID.
+        var args = args
+        if let label = args.removeValue(forKey: "agent_id") as? String {
+            args["session_id"] = (try? s.store.load())?.agents.first { $0.label == label }?.id.uuidString ?? label
+        }
+        if args["session_id"] == nil { args["session_id"] = UUID().uuidString }
         let response = s.handle(["jsonrpc": "2.0", "id": id, "method": "tools/call",
-                                 "params": ["name": tool, "arguments": args]], agentID: sessionID)!
+                                 "params": ["name": tool, "arguments": args]], agentID: nil)!
         let result = response["result"] as! [String: Any]
         let content = result["content"] as! [[String: Any]]
         return (content[0]["text"] as! String, result["isError"] as! Bool)
@@ -377,108 +382,37 @@ private final class ResultBox: @unchecked Sendable {
 
     /// Registration without a connection behind it, as a fresh MCP session makes it: the
     /// agent's own agent_id is all there is to go on.
+    /// An agent on the floor, the way the factory makes one: written down with a number
+    /// and a project before anything launches. There is no registering any more, so a
+    /// test that needs an agent writes one the same way the app does. Returns its
+    /// session, which is what every tool takes. (T-session, 13 Sep 2026.)
+    @discardableResult
+    func startAgent(_ s: MCPServer, project: String? = nil) throws -> (session: String, label: String) {
+        var project = project
+        if let ref = project {
+            // An agent registering used to make its project as a side effect. It is made
+            // outright now, by name or by folder, the way the person would.
+            if ref.hasPrefix("/") {
+                _ = call(s, "project_add", ["path": ref, "description": "Work in \(ref)."])
+            } else {
+                _ = call(s, "project_add", ["name": ref, "description": "Work for \(ref)."])
+            }
+            let wanted = ref.hasPrefix("/") ? Project.name(fromPath: ref) : ref
+            project = try s.store.load().projects.first { $0.name == wanted }?.id
+        }
+        // On the server's clock, not the wall's: a test with a fake clock would otherwise
+        // write an agent from the future.
+        let agent = Agents.reserve(number: try s.store.takeAgentNumber(), projectID: project, now: s.now())
+        try s.store.save(agent)
+        return (agent.id.uuidString, agent.label)
+    }
+
     func register(_ s: MCPServer, _ args: [String: Any] = [:], bound: String? = nil) -> (text: String, isError: Bool) {
         let response = s.handle(["jsonrpc": "2.0", "id": 1, "method": "tools/call",
                                  "params": ["name": "agent_register", "arguments": args]], agentID: bound)!
         let result = response["result"] as! [String: Any]
         let content = result["content"] as! [[String: Any]]
         return (content[0]["text"] as! String, result["isError"] as! Bool)
-    }
-
-    /// The app writes an agent down before it starts it and tells it its name. Asking for
-    /// that name gets that record, card, terminal and all, rather than the next number.
-    /// (Alex, 13 Sep 2026: it registers as A<n> and becomes A<n+1>.)
-    @Test func anAgentGetsTheNameItWasTold() throws {
-        let s = try server()
-        let reserved = Agents.reserve(number: try s.store.takeAgentNumber(), projectID: nil, session: "sf-abcd")
-        try s.store.save(reserved)
-        #expect(reserved.label == "A1")
-
-        let out = register(s, ["agent_id": "A1", "about": "Engineer"])
-        #expect(!out.isError)
-        #expect(out.text.contains("agent_id: A1"))
-        let agents = try s.store.load().agents
-        #expect(agents.count == 1)
-        #expect(agents[0].id == reserved.id && agents[0].about == "Engineer" && agents[0].session == "sf-abcd")
-    }
-
-    /// A name a live session is working as is not there for the taking.
-    @Test func aNameInUseIsRefused() throws {
-        let s = try server()
-        #expect(register(s).text.contains("agent_id: A1"))
-        let out = register(s, ["agent_id": "A1"])
-        #expect(out.isError)
-        #expect(out.text.contains("A1 is taken"))
-        // And nobody was quietly made instead.
-        #expect(try s.store.load().agents.count == 1)
-    }
-
-    /// Its own name on its own connection is not a clash: that is the same agent saying
-    /// something new about itself.
-    @Test func anAgentMayRegisterAgainAsItself() throws {
-        let s = try server()
-        #expect(register(s, ["about": "First"]).text.contains("agent_id: A1"))
-        let again = register(s, ["agent_id": "A1", "about": "Second"], bound: "A1")
-        #expect(!again.isError)
-        let agents = try s.store.load().agents
-        #expect(agents.count == 1 && agents[0].about == "Second")
-    }
-
-    /// A name nobody has ever had is free for the asking, and the counter moves past it
-    /// so the next agent along does not land on it.
-    @Test func anUnusedNameMayBeClaimed() throws {
-        let s = try server()
-        #expect(register(s, ["agent_id": "A9"]).text.contains("agent_id: A9"))
-        #expect(register(s).text.contains("agent_id: A10"))
-    }
-
-    /// A number that has been given out before stays spent, even once its agent is gone.
-    @Test func aSpentNameIsRefusedEvenWhenItsAgentHasGone() throws {
-        let s = try server()
-        #expect(register(s).text.contains("agent_id: A1"))
-        let gone = try s.store.load().agents[0]
-        try s.store.delete(gone)
-        let out = register(s, ["agent_id": "A1"])
-        #expect(out.isError)
-        #expect(out.text.contains("given out before"))
-    }
-
-    /// An agent_id that is no name at all, as an old client sends, is nothing to go on:
-    /// the factory names it rather than refusing it.
-    @Test func anIdThatIsNoNameIsIgnored() throws {
-        let s = try server()
-        let out = register(s, ["agent_id": UUID().uuidString])
-        #expect(!out.isError)
-        #expect(out.text.contains("agent_id: A1"))
-    }
-
-    /// Two agents never bind to one terminal: the second to say it is in that window
-    /// takes it, and the first record loses it.
-    @Test func onlyOneAgentHoldsATerminalSession() throws {
-        let clock = Clock()
-        let s = MCPServer(store: try temporaryStore(), now: { clock.now }, pollInterval: 0)
-        #expect(register(s, ["session": "sf-abcd"]).text.contains("agent_id: A1"))
-        // The first agent's shell exits; an hour later someone starts another in that
-        // window, and it still has SOFTWARE_FACTORY_SESSION exported.
-        clock.advance(by: 3600)
-        #expect(register(s, ["session": "sf-abcd"]).text.contains("agent_id: A2"))
-
-        let agents = try s.store.load().agents.sorted { ($0.number ?? 0) < ($1.number ?? 0) }
-        #expect(agents.count == 2)
-        #expect(agents[0].session == nil)
-        #expect(agents[1].session == "sf-abcd")
-        #expect(agents.filter { $0.session == "sf-abcd" }.count == 1)
-    }
-
-    /// While the first one is still working in there, the newcomer gets no window at all
-    /// rather than one that is not its own.
-    @Test func aWindowWithSomeoneWorkingInItIsNotHandedOver() throws {
-        let s = try server()
-        #expect(register(s, ["session": "sf-abcd"]).text.contains("agent_id: A1"))
-        #expect(register(s, ["session": "sf-abcd"]).text.contains("agent_id: A2"))
-        let agents = try s.store.load().agents.sorted { ($0.number ?? 0) < ($1.number ?? 0) }
-        #expect(agents[0].session == "sf-abcd")
-        #expect(agents[1].session == nil)
     }
 
     func id(after prefix: String, in text: String) -> String {
@@ -548,40 +482,102 @@ private final class ResultBox: @unchecked Sendable {
         let names = tools.map { $0["name"] as! String }
         #expect(names.contains("escalation_raise"))
         #expect(names.contains("escalation_await"))
-        #expect(names.contains("agent_register"))
-        #expect(names.contains("agent_deregister"))
+        #expect(names.contains("artifact_add"))
+        #expect(names.contains("artifact_list"))
+        #expect(names.contains("artifact_read"))
+        #expect(names.contains("agent_create"))
+        #expect(names.contains("agent_nudge"))
+        // Registering and deregistering are gone: the factory makes the agent and the
+        // kernel says when it stops. (T-session, 13 Sep 2026.)
+        #expect(!names.contains("agent_register"))
+        #expect(!names.contains("agent_deregister"))
         #expect(names.allSatisfy { $0.allSatisfy { $0.isLetter || $0 == "_" } })
         // The connection says who is calling, so no tool asks for agent_id. Registration
         // is the one exception: an agent the app started is told the name to ask for.
         #expect(tools.allSatisfy {
             let schema = $0["inputSchema"] as! [String: Any]
             let properties = schema["properties"] as! [String: Any]
-            return properties["agent_id"] == nil || ($0["name"] as! String) == "agent_register"
+            return properties["agent_id"] == nil
         })
 
-        // Every tool normally takes a call description, so the transcript can show what
-        // it is doing rather than the bare tool name. Project creation and editing use
-        // that field for the project's actual description instead.
+        // Every tool takes a call description, so the transcript can show what
+        // it is doing rather than the bare tool name.
         for tool in tools {
             let schema = tool["inputSchema"] as! [String: Any]
             let properties = schema["properties"] as! [String: Any]
             let name = tool["name"] as! String
             #expect(properties["description"] != nil, "\(name) has no description")
             let required = schema["required"] as! [String]
-            if ["project_add", "project_set_description"].contains(name) {
-                #expect(required.contains("description"))
-            } else {
-                #expect(!required.contains("description"))
-            }
+            #expect(!required.contains("description"), "\(name) must not require a project description")
         }
 
         let unknown = s.handle(["jsonrpc": "2.0", "id": 3, "method": "nope"])!
         #expect((unknown["error"] as? [String: Any])?["code"] as? Int == -32601)
     }
 
+    @Test func artifactsAreFiledIdempotentlyAndReadInFull() throws {
+        let s = try server()
+        _ = call(s, "project_add", ["name": "Packed", "description": "Packing work."])
+        let a = try startAgent(s, project: "Packed").label
+        let added = call(s, "artifact_add", [
+            "agent_id": a, "project": "Packed", "title": "Login", "body": "One field.",
+        ])
+        #expect(!added.isError)
+        let id1 = id(after: "artifact_id:", in: added.text)
+        let again = call(s, "artifact_add", [
+            "agent_id": a, "project": "Packed", "title": "Login", "body": "Two fields.",
+        ])
+        #expect(again.text.hasPrefix("Already there"))
+        #expect(id(after: "artifact_id:", in: again.text) == id1)
+        #expect(try s.store.load().artifacts.count == 1)
+
+        let listed = call(s, "artifact_list", ["agent_id": a, "project": "Packed"])
+        #expect(listed.text.contains("Login"))
+        #expect(!listed.text.contains("One field."))
+        let read = call(s, "artifact_read", ["agent_id": a, "artifact_id": id1])
+        #expect(read.text.contains("One field."))
+        #expect(!call(s, "artifact_set", ["agent_id": a, "artifact_id": id1, "body": "Two fields."]).isError)
+        #expect(call(s, "artifact_read", ["agent_id": a, "artifact_id": id1]).text.contains("Two fields."))
+
+        let raised = call(s, "escalation_raise", [
+            "agent_id": a, "project": "Packed", "question": "This shape?",
+            "artifact_id": id1,
+            "options": [["title": "Yes"], ["title": "No"]],
+        ])
+        #expect(!raised.isError)
+        #expect(try s.store.load().escalations.first?.artifactID?.uuidString == id1)
+
+        #expect(!call(s, "artifact_remove", ["agent_id": a, "artifact_id": id1, "reason": "done"]).isError)
+        #expect(call(s, "artifact_list", ["agent_id": a, "project": "Packed"]).text.hasPrefix("No artifacts"))
+        #expect(call(s, "artifact_read", ["agent_id": a, "artifact_id": id1]).isError)
+
+        for n in 1...Artifacts.cap {
+            #expect(!call(s, "artifact_add", [
+                "agent_id": a, "project": "Packed", "title": "Doc \(n)",
+            ]).isError)
+        }
+        let twentyFirst = call(s, "artifact_add", [
+            "agent_id": a, "project": "Packed", "title": "One more",
+        ])
+        #expect(twentyFirst.isError)
+        #expect(twentyFirst.text.contains(Artifacts.fullMessage))
+        // A question with a new link still raises when the project is at the cap.
+        let atCap = call(s, "escalation_raise", [
+            "agent_id": a, "project": "Packed", "question": "Go anyway?",
+            "link": "https://example.com/overflow.md",
+            "options": [["title": "Yes"], ["title": "No"]],
+        ])
+        #expect(!atCap.isError)
+        let overflow = try #require(try s.store.load().escalations.first { $0.question == "Go anyway?" })
+        #expect(overflow.link == "https://example.com/overflow.md")
+        #expect(overflow.artifactID == nil)
+        #expect(try s.store.load().artifacts.count == Artifacts.cap)
+    }
+
     @Test func theNarrowSlice() throws {
         let s = try server()
-        let reg = call(s, "agent_register", ["name": "packed-lead", "project": "/tmp/Packed"])
+        _ = call(s, "project_add", ["name": "Packed", "description": "Packing work."])
+        let reg = (text: try startAgent(s, project: "/tmp/Packed").label, isError: false)
         #expect(!reg.isError)
         let agentID = id(after: "agent_id:", in: reg.text)
         #expect(agentID == "A1")
@@ -589,6 +585,7 @@ private final class ResultBox: @unchecked Sendable {
         let raised = call(s, "escalation_raise", [
             "agent_id": agentID, "project": "Packed", "question": "Which weather source?",
             "context": "Two choices.",
+            "link": "https://example.com/weather.md",
             "options": [["title": "WeatherKit", "detail": "Apple's"], ["title": "Open-Meteo"]],
             "recommended": 0,
         ])
@@ -600,7 +597,29 @@ private final class ResultBox: @unchecked Sendable {
         let e = try #require(snap.escalations.first)
         #expect(e.raisedBy == agentID)
         #expect(e.recommended?.title == "WeatherKit")
+        #expect(e.link == "https://example.com/weather.md")
+        #expect(e.artifactID != nil)
         #expect(e.isOpen)
+        let filed = try #require(try s.store.load().artifacts.first)
+        #expect(filed.link == "https://example.com/weather.md")
+        #expect(filed.id == e.artifactID)
+        #expect(call(s, "escalation_list", ["project": "Packed"]).text.contains("link: https://example.com/weather.md"))
+        #expect(call(s, "artifact_list", ["project": "Packed", "agent_id": agentID]).text.contains("example.com/weather.md"))
+        let reread = call(s, "artifact_read", ["artifact_id": filed.id.uuidString, "agent_id": agentID])
+        #expect(!reread.isError)
+        #expect(reread.text.contains("example.com/weather.md"))
+        let again = call(s, "escalation_raise", [
+            "agent_id": agentID, "project": "Packed", "question": "Still?",
+            "link": "https://example.com/weather.md",
+            "options": [["title": "A"], ["title": "B"]],
+        ])
+        #expect(!again.isError)
+        #expect(try s.store.load().artifacts.count == 1)
+        #expect(call(s, "escalation_raise", [
+            "agent_id": agentID, "project": "Packed", "question": "No?",
+            "link": "javascript:alert(1)",
+            "options": [["title": "A"], ["title": "B"]],
+        ]).isError)
 
         // Nobody has decided: await times out and says so.
         let clock = Clock()
@@ -623,14 +642,15 @@ private final class ResultBox: @unchecked Sendable {
         try s.store.save(decided)
         #expect(call(s, "escalation_await", ["escalation_id": escID, "timeout_seconds": 1]).text == "Answered by alex, phone in their own words, none of the options: Neither. Use the phone's own sensor.")
 
-        let bye = call(s, "agent_deregister", ["agent_id": agentID])
-        #expect(!bye.isError)
-        #expect(try s.store.load().agents[0].deregistered != nil)
+        // There is no goodbye to say. An agent stops when its process stops, and the
+        // factory asks the kernel rather than waiting to be told. (T-session.)
+        #expect(!call(s, "agent_deregister", ["agent_id": agentID]).text.isEmpty)
     }
 
     @Test func tasksRoundTrip() throws {
         let s = try server()
-        let agentID = id(after: "", in: call(s, "agent_register", ["name": "a", "project": "/tmp/Where"]).text)
+        _ = call(s, "project_add", ["name": "Where", "description": "Where work."])
+        let agentID = try startAgent(s, project: "/tmp/Where").label
         let t1 = id(after: "", in: call(s, "task_add", ["project": "Where", "title": "First", "note": "the rooms run together\nsplit on pauses"]).text)
         let t2 = id(after: "", in: call(s, "task_add", ["project": "Where", "title": "Second"]).text)
         #expect(call(s, "task_next", ["project": "Where"]).text.contains("First"))
@@ -640,7 +660,7 @@ private final class ResultBox: @unchecked Sendable {
         #expect(call(s, "task_remove", ["task_id": t0, "reason": "a test"]).text.hasPrefix("Removed: Urgent"))
         #expect(try s.store.loadRemovedTasks().first?.note.contains("removed: a test") == true)
         let mid = id(after: "", in: call(s, "task_add", ["project": "Where", "title": "Middle", "above_task_id": t2]).text)
-        let order = call(s, "task_list", ["project": "Where"]).text.split(separator: "\n").map { String($0.split(separator: "  ")[3]) }
+        let order = call(s, "task_list", ["project": "Where"]).text.split(separator: "\n").map { String($0.split(separator: "  ")[4]) }
         #expect(order == ["First", "Middle", "Second"])
         #expect(call(s, "task_status", ["task_id": mid, "state": "parked"]).text == "Middle: parked")
         #expect(call(s, "task_next", ["project": "Where"]).text.contains("First"))
@@ -652,7 +672,7 @@ private final class ResultBox: @unchecked Sendable {
         _ = call(s, "project_get", ["project": "Where", "agent_id": agentID])
         #expect(call(s, "task_claim", ["task_id": t1, "agent_id": agentID]).text.hasPrefix("You are on: First\nnote: the rooms run together\nsplit on pauses"))
         let list = call(s, "task_list", ["project": "Where"]).text
-        #expect(list.split(separator: "\n").first?.contains("inProgress  First") == true)
+        #expect(list.split(separator: "\n").first.map { $0.contains("inProgress") && $0.contains("First") } == true)
         #expect(call(s, "task_note", ["task_id": t1, "text": "the tap runs off the main actor", "agent_id": agentID]).text.hasPrefix("Noted on First."))
         let shownNote = call(s, "task_show", ["task_id": t1]).text
         #expect(shownNote.contains(": the tap runs off the main actor") && shownNote.contains("inProgress"))
@@ -672,7 +692,7 @@ private final class ResultBox: @unchecked Sendable {
 
     @Test func finishingOneOfSeveralAssignmentsDoesNotSuggestAnotherTask() throws {
         let s = try server()
-        let agentID = id(after: "", in: call(s, "agent_register", ["name": "a", "project": "P"]).text)
+        let agentID = try startAgent(s, project: "P").label
         let first = id(after: "", in: call(s, "task_add", ["project": "P", "title": "First"]).text)
         let next = id(after: "", in: call(s, "task_add", ["project": "P", "title": "Next"]).text)
         let other = id(after: "", in: call(s, "task_add", ["project": "P", "title": "Other"]).text)
@@ -687,8 +707,8 @@ private final class ResultBox: @unchecked Sendable {
 
     @Test func resourcesLeaseRenewReleaseAndDeregister() throws {
         let s = try server()
-        let a = id(after: "", in: call(s, "agent_register", ["project": "Shared"]).text)
-        let b = id(after: "", in: call(s, "agent_register", ["project": "Shared"]).text)
+        let a = try startAgent(s, project: "Shared").label
+        let b = try startAgent(s, project: "Shared").label
         #expect(call(s, "resource_list").text.hasPrefix("No resources"))
         #expect(call(s, "resource_add", ["name": "iPhone", "max_minutes": 120]).text.hasPrefix("Defined iPhone: 1 slot"))
         #expect(call(s, "resource_add", ["name": "iphone"]).text.hasPrefix("Already defined"))
@@ -703,14 +723,20 @@ private final class ResultBox: @unchecked Sendable {
         #expect(call(s, "resource_release", ["agent_id": a, "resource": "iPhone"]).text.hasPrefix("Released iPhone."))
         #expect(call(s, "resource_lease", ["agent_id": b, "resource": "iPhone"]).text.hasPrefix("Leased iPhone"))
 
-        #expect(call(s, "agent_deregister", ["agent_id": b]).text.contains("released 1 lease"))
+        // A stopped agent gives its lease back without saying anything: its process is
+        // gone, so Sweep.stoppedAgents releases what it held. (T-session, 13 Sep 2026.)
+        var holder = try #require(try s.store.load().agents.first { $0.label == b })
+        holder.pid = 0x7FFF_FFFE
+        holder.pidStartedAt = .now
+        try s.store.save(holder)
+        for lease in Sweep.stoppedAgents(in: try s.store.load(), now: .now).leases { try s.store.save(lease) }
         #expect(call(s, "resource_list").text.contains("1 of 1 free"))
         #expect(call(s, "resource_lease", ["agent_id": a, "resource": "Nothing"]).isError)
     }
 
     @Test func aQuestionFromATaskBlocksItUntilAnswered() throws {
         let s = try server()
-        let a = id(after: "", in: call(s, "agent_register", ["name": "lead", "project": "/tmp/P"]).text)
+        let a = try startAgent(s, project: "/tmp/P").label
         let t = id(after: "", in: call(s, "task_add", ["project": "P", "title": "Name the app"]).text)
         _ = call(s, "project_get", ["project": "P", "agent_id": a])
         let raised = call(s, "escalation_raise", ["agent_id": a, "project": "P", "task_id": t, "question": "Which name?",
@@ -750,9 +776,8 @@ private final class ResultBox: @unchecked Sendable {
         let next = call(s, "task_next", ["project": "P"]).text
         #expect(next.contains("Waiting") && next.contains("WARNING: P is on hold. Do not start any new tasks on it"))
         #expect(call(s, "project_list").text.contains("ON HOLD"))
-        #expect(call(s, "agent_register", ["name": "a", "project": "/tmp/P"]).text.contains("WARNING: P is on hold"))
         #expect(call(s, "task_list", ["project": "P"]).text.hasPrefix("WARNING: P is on hold"))
-        let a = id(after: "", in: call(s, "agent_register", ["project": "P"]).text)
+        let a = try startAgent(s, project: "P").label
         let waiting = try #require(try s.store.load().tasks.first)
         _ = call(s, "project_get", ["project": "P", "agent_id": a])
         let claimed = call(s, "task_claim", ["task_id": waiting.id.uuidString, "agent_id": a]).text
@@ -765,7 +790,9 @@ private final class ResultBox: @unchecked Sendable {
 
     @Test func unblockOneAndMove() throws {
         let s = try server()
-        _ = call(s, "agent_register", ["name": "a", "project": "/tmp/P"])
+        // Both projects made outright: an agent registering used to make one as a side
+        // effect, and there is no registering now.
+        _ = call(s, "project_add", ["name": "P", "description": "Project P."])
         _ = call(s, "project_add", ["path": "/tmp/Q", "description": "Project Q."])
         let t = id(after: "", in: call(s, "task_add", ["project": "P", "title": "Stuck"]).text)
         _ = call(s, "task_block", ["task_id": t, "on": "other", "why": "the measurement"])
@@ -773,14 +800,16 @@ private final class ResultBox: @unchecked Sendable {
         #expect(call(s, "task_unblock", ["task_id": t, "which": "measurement"]).text.hasPrefix("Cleared one. Stuck still waits on 1: the stand-down"))
         #expect(call(s, "task_unblock", ["task_id": t, "which": "nothing"]).isError)
         #expect(call(s, "task_unblock", ["task_id": t, "which": "1"]).text.hasPrefix("Cleared the last one."))
-        #expect(call(s, "task_move", ["task_id": t, "project": "Q"]).text == "Stuck is on Q's backlog.")
-        #expect(call(s, "task_list", ["project": "Q"]).text.contains("moved here from P"))
-        #expect(call(s, "task_list", ["project": "P"]).text == "Nothing on the backlog.")
+        let refused = call(s, "task_move", ["task_id": t, "project": "Q"])
+        #expect(refused.isError && refused.text.contains("stays on the project"))
+        #expect(call(s, "task_list", ["project": "P"]).text.contains("Stuck"))
+        #expect(call(s, "task_list", ["project": "Q"]).text == "Nothing on the backlog.")
     }
 
     @Test func blockingATaskSaysWhatIsNext() throws {
         let s = try server()
-        let a = id(after: "", in: call(s, "agent_register", ["name": "a", "project": "/tmp/P"]).text)
+        _ = call(s, "project_add", ["name": "P", "description": "Project P."])
+        let a = try startAgent(s, project: "/tmp/P").label
         let t1 = id(after: "", in: call(s, "task_add", ["project": "P", "title": "Needs Alex"]).text)
         _ = call(s, "task_add", ["project": "P", "title": "Free"])
         #expect(call(s, "task_block", ["task_id": t1, "on": "decision", "why": "x"]).isError)
@@ -795,7 +824,7 @@ private final class ResultBox: @unchecked Sendable {
     @Test func anyCallIsAHeartbeat() throws {
         let clock = Clock()
         let s = MCPServer(store: try temporaryStore(), now: { clock.tick() }, pollInterval: 0)
-        let a = id(after: "", in: call(s, "agent_register", ["name": "a", "project": "/tmp/P"]).text)
+        let a = try startAgent(s, project: "/tmp/P").label
         let seen0 = try #require(try s.store.load().agents.first).lastSeen
         _ = call(s, "task_add", ["project": "P", "title": "t"])
         let t = try #require(try s.store.load().tasks.first).id.uuidString
@@ -809,7 +838,7 @@ private final class ResultBox: @unchecked Sendable {
 
     @Test func anOldCheckInStillCounts() throws {
         let s = try server()
-        let a = id(after: "", in: call(s, "agent_register", ["project": "P"]).text)
+        let a = try startAgent(s, project: "P").label
         let r = call(s, "agent_checkin", ["agent_id": a])
         #expect(!r.isError)
         #expect(r.text.hasPrefix("Noted."))

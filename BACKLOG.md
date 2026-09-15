@@ -19,9 +19,10 @@ the thinking that does not fit a task row.
 - **The server as a separate process.** It ran as an embedded executable for an hour on
   12 September and moved into the app on a port the same day: one address every client
   shares, and the factory is open exactly while the app is.
-- **A kind on a task.** Alex, 12 September 2026: the picker went first, then the field
-  itself on 12 September, because nothing ever read it. A task is a title, a note and
-  where it sits.
+- ~~**A kind on a task.**~~ Feature, bug or chore came out on 12 September because nothing
+  read it. T166, 13 September 2026, put **work** on a task instead: design, plan,
+  implement, fix, review, investigate or ship. The agent reads it; it is what to produce,
+  not a taxonomy.
 
 ## Decisions worth keeping
 

@@ -28,10 +28,12 @@ func wholeSecond() -> Date {
         try escalation.decide(escalation.options[1], at: now)
         let agent = Agent(number: 1, projectID: project.id, registered: now)
         let message = AgentMessage(recipientID: agent.id, from: "agent-2", subject: "Hello", contents: "Can you help?", sent: now)
+        let artifact = Artifact(projectID: project.id, title: "Brief", body: "Do this.", agentID: agent.id, addedBy: agent.label, added: now)
 
         try store.save(project)
         try store.save(task)
         try store.save(escalation)
+        try store.save(artifact)
         try store.save(agent)
         try store.save(message)
 
@@ -39,7 +41,12 @@ func wholeSecond() -> Date {
         #expect(snap.projects == [project])
         #expect(snap.tasks == [task])
         #expect(snap.escalations == [escalation])
+        #expect(snap.artifacts == [artifact])
         #expect(snap.agents == [agent])
+        var gone = artifact
+        gone.removed = now
+        try store.save(gone)
+        #expect(try store.load().artifacts.isEmpty)
         #expect(try store.messages(for: agent.id) == [message])
         #expect(snap.escalations[0].chosen?.title == "B")
         #expect(try #require(store.escalation(escalation.id)) == escalation)
@@ -52,6 +59,8 @@ func wholeSecond() -> Date {
         let file = store.root.appending(path: "projects/\(FileStore.fileName(forProject: project.id)).json")
         let text = String(decoding: try Data(contentsOf: file), as: UTF8.self)
         #expect(text.contains("\"version\" : \(Records.version)"))
+        #expect(!text.contains("description"))
+        #expect(!text.contains("instructions"))
 
         // An older writer never wrote the field; the record still reads, as version 1.
         var stripped = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
@@ -63,10 +72,21 @@ func wholeSecond() -> Date {
 
         #expect(FactoryTask(projectID: "/a", title: "t", rank: 0).version == Records.version)
         #expect(Escalation(projectID: "/a", question: "q", options: []).version == Records.version)
+        #expect(Artifact(projectID: "/a", title: "Brief").version == Records.version)
         #expect(Agent(number: 1, projectID: nil).version == Records.version)
         #expect(AgentMessage(recipientID: UUID(), from: "a", subject: "s", contents: "c").version == Records.version)
         #expect(Resource(name: "r").version == Records.version)
         #expect(Lease(resourceID: UUID(), agentID: UUID(), why: "", since: .now, until: .now).version == Records.version)
+    }
+
+    @Test func aProjectWrittenWithDescriptionStillReads() throws {
+        let json = """
+        {"version":3,"id":"/p","name":"Old","description":"when to use it","instructions":"read this",
+         "added":"2026-09-12T10:00:00Z"}
+        """
+        let p = try FileStore.decoder.decode(Project.self, from: Data(json.utf8))
+        #expect(p.name == "Old")
+        #expect(p.id == "/p")
     }
 
     @Test func sameIDLandsInOneFile() throws {
@@ -149,36 +169,59 @@ func wholeSecond() -> Date {
             try e.decide(.init(title: "C"))
         }
     }
+
+    @Test func aLinkIsOptionalAndMustBeHttpOrHttps() throws {
+        #expect(try Escalation.validatedLink(nil) == "")
+        #expect(try Escalation.validatedLink("  ") == "")
+        #expect(try Escalation.validatedLink("https://example.com/brief.md") == "https://example.com/brief.md")
+        #expect(try Escalation.validatedLink("http://127.0.0.1:4747/doc") == "http://127.0.0.1:4747/doc")
+        #expect(throws: EscalationError.badLink) { try Escalation.validatedLink("javascript:alert(1)") }
+        #expect(throws: EscalationError.badLink) { try Escalation.validatedLink("not a url") }
+        #expect(throws: EscalationError.badLink) { try Escalation.validatedLink("file:///tmp/secret") }
+
+        let withLink = Escalation(projectID: "/p", question: "q", link: "https://example.com/brief.md",
+                                  options: [.init(title: "A"), .init(title: "B")])
+        let again = try FileStore.decoder.decode(Escalation.self, from: FileStore.encoder.encode(withLink))
+        #expect(again.link == "https://example.com/brief.md")
+
+        // An older record without the key still reads.
+        let old = Data(#"""
+        {"id":"\#(withLink.id.uuidString)","projectID":"/p","question":"q","context":"",
+         "options":[{"id":"\#(withLink.options[0].id.uuidString)","title":"A","detail":"","recommended":false},
+                    {"id":"\#(withLink.options[1].id.uuidString)","title":"B","detail":"","recommended":false}],
+         "raisedBy":"agent","raised":"2026-09-13T12:00:00Z"}
+        """#.utf8)
+        #expect(try FileStore.decoder.decode(Escalation.self, from: old).link.isEmpty)
+        #expect(try FileStore.decoder.decode(Escalation.self, from: old).artifactID == nil)
+    }
 }
 
 @Suite struct AgentTests {
-    @Test func anHourOfSilenceIsGoneWhateverTheConnectionSays() {
+    /// A process that has gone gives back whatever its agent was holding. This used to
+    /// be an hour of silence, which was a guess: an agent thinking is silent too.
+    @Test func aStoppedAgentGivesBackWhatItHeld() throws {
         let now = Date()
-        var silent = Agent(number: 1, projectID: nil, registered: now.addingTimeInterval(-3600))
-        silent.lastSeen = now.addingTimeInterval(-61 * 60)
-        silent.isConnected = true
-        var talking = Agent(number: 2, projectID: nil, registered: now.addingTimeInterval(-3600))
-        talking.lastSeen = now.addingTimeInterval(-60)
-        var left = Agent(number: 3, projectID: nil, registered: now.addingTimeInterval(-3600))
-        left.lastSeen = now.addingTimeInterval(-3600)
-        left.deregistered = now.addingTimeInterval(-1800)
+        let me = ProcessInfo.processInfo.processIdentifier
+        var alive = Agent(number: 1, projectID: nil, registered: now.addingTimeInterval(-3600))
+        alive.lastSeen = now.addingTimeInterval(-3600)   // silent for an hour, and fine
+        alive.pid = me
+        alive.pidStartedAt = try #require(ProcessCheck.startTime(of: me))
+
+        var stopped = Agent(number: 2, projectID: nil, registered: now.addingTimeInterval(-60))
+        stopped.lastSeen = now                           // spoke a moment ago, and gone
+        stopped.pid = 0x7FFF_FFFE
+        stopped.pidStartedAt = now
+
         let phone = Resource(name: "iPhone")
-        let held = Lease(resourceID: phone.id, agentID: silent.id, why: "", since: now.addingTimeInterval(-1000), until: now.addingTimeInterval(1000))
-        let snap = Snapshot(agents: [silent, talking, left], resources: [phone], leases: [held])
-        // An open connection still reads as working: an agent waiting on a question is
-        // alive and its next call is minutes away.
-        #expect(silent.isWorking(now: now))
-        // But it does not keep it alive for ever. A session that died with the app never
-        // says goodbye, so an hour without a call is gone either way.
-        #expect(Sweep.goneAgents(in: snap, now: now).agents.map(\.label) == ["A1"])
-        silent.isConnected = false
-        let disconnected = Snapshot(agents: [silent, talking, left], resources: [phone], leases: [held])
-        let changes = Sweep.goneAgents(in: disconnected, now: now)
-        #expect(changes.agents.map(\.label) == ["A1"])
-        #expect(changes.agents[0].deregistered == now)
+        let held = Lease(resourceID: phone.id, agentID: stopped.id, why: "", since: now.addingTimeInterval(-1000), until: now.addingTimeInterval(1000))
+        let mine = Lease(resourceID: phone.id, agentID: alive.id, why: "", since: now.addingTimeInterval(-1000), until: now.addingTimeInterval(1000))
+        let snap = Snapshot(agents: [alive, stopped], resources: [phone], leases: [held, mine])
+
+        let changes = Sweep.stoppedAgents(in: snap, now: now)
+        // Only the stopped one's lease comes back. Silence is not an exit.
         #expect(changes.leases.map(\.id) == [held.id])
         #expect(changes.leases[0].released == now)
-        #expect(Sweep.goneAgents(in: Snapshot(agents: [talking, left]), now: now).isEmpty)
+        #expect(!alive.hasExited && stopped.hasExited)
     }
 
     @Test func quietAfterTwoMinutes() {
@@ -192,6 +235,64 @@ func wholeSecond() -> Date {
         a.deregistered = now
         #expect(!a.isRegistered)
         #expect(!a.isWorking(now: now))
+    }
+
+    @Test func eightOnTheFloorIsTheCap() {
+        let now = Date()
+        let eight = (1...8).map { Agent(number: $0, projectID: nil, registered: now) }
+        #expect(Agents.onTheFloor(eight).count == 8)
+        #expect(Agents.atCap(eight))
+        var extra = eight
+        extra.append(Agent(number: 9, projectID: nil, registered: now))
+        #expect(Agents.atCap(extra))
+
+        var oneGone = eight
+        oneGone[0].deregistered = now
+        #expect(!Agents.atCap(oneGone))
+        #expect(Agents.onTheFloor(oneGone).count == 7)
+    }
+
+    @Test func aStoppedAgentDoesNotCountTowardTheCap() {
+        let now = Date()
+        var eight = (1...8).map { Agent(number: $0, projectID: nil, registered: now) }
+        eight[0].pid = 0x7FFF_FFFE
+        eight[0].pidStartedAt = now
+        #expect(eight[0].hasExited)
+        #expect(Agents.onTheFloor(eight).count == 7)
+        #expect(!Agents.atCap(eight))
+    }
+
+    @Test func anOlderAboutIsThrownAwayAndTitleAndBelRead() throws {
+        let agent = Agent(number: 1, projectID: nil)
+        var json = try #require(try JSONSerialization.jsonObject(with: FileStore.encoder.encode(agent)) as? [String: Any])
+        #expect(json["about"] == nil)
+        json["about"] = "Builds the app."
+        json.removeValue(forKey: "title")
+        json.removeValue(forKey: "bel")
+        let decoded = try FileStore.decoder.decode(Agent.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(decoded.title.isEmpty)
+        #expect(!decoded.bel)
+
+        var ringing = agent
+        ringing.title = "Reviewing the brief"
+        ringing.bel = true
+        let again = try FileStore.decoder.decode(Agent.self, from: FileStore.encoder.encode(ringing))
+        #expect(again.title == "Reviewing the brief")
+        #expect(again.bel)
+        #expect(Agent.preparedTitle("  hi  ") == "hi")
+        #expect(Agent.preparedTitle(String(repeating: "x", count: Agent.maxTitle + 8)).count == Agent.maxTitle)
+    }
+
+    @Test func anAgentWrittenBeforeWantsLaunchStillReads() throws {
+        let agent = Agent(number: 1, projectID: nil)
+        var json = try #require(try JSONSerialization.jsonObject(with: FileStore.encoder.encode(agent)) as? [String: Any])
+        json.removeValue(forKey: "wantsLaunch")
+        let decoded = try FileStore.decoder.decode(Agent.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(!decoded.wantsLaunch)
+        #expect(!decoded.wantsNudge)
+        json.removeValue(forKey: "wantsNudge")
+        let older = try FileStore.decoder.decode(Agent.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(!older.wantsNudge)
     }
 
     @Test func olderAgentsStartTheirQuietTimerFromLastSeen() throws {

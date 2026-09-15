@@ -75,13 +75,6 @@ final class AppModel {
     static let port = FactoryServer.defaultPort
     static var endpoint: String { "http://127.0.0.1:\(port)/mcp" }
 
-    nonisolated static let claudePluginCommand = """
-    claude plugin marketplace add alexec/SoftwareFactory && \
-    claude plugin install software-factory@software-factory-plugins
-    """
-
-    nonisolated static let copilotPluginCommand = "copilot plugin install alexec/SoftwareFactory:Plugins/software-factory"
-
     /// Nobody is connected to a server that has just started. Agents from sessions that
     /// died with the last run would otherwise sit here marked connected for ever.
     /// (Alex, 12 Sep 2026.)
@@ -117,7 +110,7 @@ final class AppModel {
         } catch {
             storeError = error.localizedDescription
         }
-        let gone = Sweep.goneAgents(in: snapshot, now: .now)
+        let gone = Sweep.stoppedAgents(in: snapshot, now: .now)
         let unblocked = Sweep.unblocked(in: snapshot, now: .now)
         if !gone.isEmpty || !unblocked.isEmpty {
             do {
@@ -167,10 +160,13 @@ final class AppModel {
         lastCloudPull = .now
         guard let theirs = await cloud.pullEscalations() else { return }
         let adopted = CloudRecords.decisionsToAdopt(local: snapshot.escalations, cloud: theirs)
-        // Tasks added on the phone away from the Mac: adopted with a number if they
-        // arrived without one.
-        let newTasks = (await cloud.pullTasks()).map { CloudRecords.tasksToAdopt(local: snapshot.tasks, cloud: $0) } ?? []
-        guard !adopted.isEmpty || !newTasks.isEmpty else { return }
+        // Tasks added or changed on the phone away from the Mac: new ones get a
+        // number if they arrived without one; parks, ranks and edits come across
+        // when the cloud record is newer.
+        let pulledTasks = await cloud.pullTasks() ?? []
+        let newTasks = CloudRecords.tasksToAdopt(local: snapshot.tasks, cloud: pulledTasks)
+        let changedTasks = CloudRecords.taskChangesToAdopt(local: snapshot.tasks, cloud: pulledTasks)
+        guard !adopted.isEmpty || !newTasks.isEmpty || !changedTasks.isEmpty else { return }
         do {
             for e in adopted { try store.save(e) }
             let every = (try? store.loadEveryTask()) ?? snapshot.tasks
@@ -179,6 +175,7 @@ final class AppModel {
                 if t.number == nil { t.number = nextNumber; nextNumber += 1 }
                 try store.save(t)
             }
+            for t in changedTasks { try store.save(t) }
             try loadState(from: store)
             dashboard = Dashboard.make(snapshot: snapshot)
         } catch {
@@ -229,6 +226,37 @@ final class AppModel {
         }
     }
 
+    /// The agent's terminal set a title. That line is what the card shows.
+    func setTitle(session: String, title: String) {
+        guard let id = UUID(uuidString: session),
+              var agent = snapshot.agents.first(where: { $0.id == id }) else { return }
+        let title = Agent.preparedTitle(title)
+        guard agent.title != title else { return }
+        agent.title = title
+        persist { try $0.save(agent) }
+    }
+
+    /// BEL: the agent wants a look. The card keeps the bell until it is opened.
+    func ring(session: String) {
+        guard let id = UUID(uuidString: session),
+              var agent = snapshot.agents.first(where: { $0.id == id }),
+              !agent.bel else { return }
+        agent.bel = true
+        persist { try $0.save(agent) }
+    }
+
+    func clearBell(_ agent: Agent) {
+        guard agent.bel else { return }
+        var agent = agent
+        agent.bel = false
+        persist { try $0.save(agent) }
+    }
+
+    /// A poke for an agent sitting waiting: the same words land in its inbox.
+    func nudge(_ agent: Agent) {
+        sendMessage(to: agent.id, subject: "Nudge", contents: LaunchPrompt.nudge)
+    }
+
     /// A note from the person, dropped straight into the agent's inbox.
     func sendMessage(to agentID: UUID, subject: String, contents: String) {
         let subject = subject.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -240,12 +268,11 @@ final class AppModel {
     }
 
     /// A project is a name. The same name again is the same project.
-    func addProject(named name: String, description: String, instructions: String = "") {
+    func addProject(named name: String) {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let description = description.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, !description.isEmpty else { return }
+        guard !name.isEmpty else { return }
         if snapshot.projects.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) { return }
-        persist { try $0.save(Project(name: name, description: description, instructions: instructions)) }
+        persist { try $0.save(Project(name: name)) }
     }
 
     /// Open tasks that stop a project being removed; the person moves or deletes them first.
@@ -273,73 +300,22 @@ final class AppModel {
         persist { try $0.save(p) }
     }
 
-    func setDescription(_ project: Project, _ description: String) {
-        let description = description.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !description.isEmpty else { return }
-        var p = project
-        p.description = description
-        persist { try $0.save(p) }
-    }
-
-    func setInstructions(_ project: Project, _ instructions: String) {
-        var p = project
-        p.instructions = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
-        persist { try $0.save(p) }
-    }
-
-    /// Which agent the person runs; Settings lets them switch it, and Launch agent
-    /// uses it to pick the command.
-    enum PreferredAgent: String, CaseIterable, Identifiable, Hashable {
-        case claudeCode, copilot
-
-        var id: String { rawValue }
-        var title: String {
-            switch self {
-            case .claudeCode: "Claude Code"
-            case .copilot: "GitHub Copilot"
-            }
-        }
-        var installURL: URL {
-            switch self {
-            case .claudeCode: URL(string: "https://code.claude.com/docs/en/quickstart")!
-            case .copilot: URL(string: "https://docs.github.com/en/copilot/get-started/cli-quickstart")!
-            }
-        }
-        var setupCommand: String {
-            switch self {
-            case .claudeCode: AppModel.claudePluginCommand
-            case .copilot: AppModel.copilotPluginCommand
-            }
-        }
-        /// What Launch an agent runs, once the shell is already in the project's folder.
-        /// The prompt names the project, so an agent starts on the right backlog without
-        /// being asked. (Alex, 12 Sep 2026.) Given a task, it names that instead: the
-        /// task is already in the agent's name, so it is told which one to claim.
-        func launchCommand(for project: Project, task: FactoryTask? = nil, as name: String) -> String {
-            if let task { return command(for: LaunchPrompt.task(task, in: project, as: name)) }
-            return command(for: LaunchPrompt.project(project, as: name))
-        }
-
-        /// The same agent, told something else: a browser owner, a reviewer, whatever
-        /// the person types.
-        func command(for prompt: String) -> String {
-            let quoted = AppModel.quoted(prompt)
-            switch self {
-            case .claudeCode: return "claude --permission-mode=auto \(quoted)"
-            case .copilot: return "copilot --allow-all --interactive \(quoted)"
-            }
-        }
-    }
-
     /// Writes the agent down before it starts, so it has a name, a card and a terminal
     /// from the moment the person clicks. The agent registers with this same id.
-    func reserveAgent(for project: Project?, session: String) -> Agent? {
+    /// Writes the agent down before anything launches. Its id is its session: the name
+    /// of the terminal it will run in, the `--session-id` its CLI is started with, and
+    /// what it says on every call it makes. (T-session, 13 Sep 2026.)
+    func reserveAgent(for project: Project?) -> Agent? {
         guard let store else { return nil }
+        if Agents.atCap(snapshot.agents) {
+            storeError = Agents.fullMessage
+            return nil
+        }
         do {
             // The number comes off the factory's counter on disk, so the agent that
-            // registers with this name is the one on this card.
+            // turns up in this session is the one on this card.
             let agent = Agents.reserve(number: try store.takeAgentNumber(),
-                                       projectID: project?.id, session: session)
+                                       projectID: project?.id)
             try store.save(agent)
             refresh()
             return agent
@@ -349,9 +325,53 @@ final class AppModel {
         }
     }
 
+    /// `agent_create` asked the factory to start this one. The app launches it and
+    /// this clears the flag so it is not started twice. (T179)
+    func clearLaunchRequest(_ agent: Agent) {
+        var a = agent
+        guard a.wantsLaunch else { return }
+        a.wantsLaunch = false
+        persist { try $0.save(a) }
+    }
+
+    func noteError(_ message: String) {
+        storeError = message
+    }
+
+    /// `agent_nudge` asked the factory to poke this one. The app types the line
+    /// and this clears the flag so it is not typed twice. (T195)
+    func clearNudgeRequest(_ agent: Agent) {
+        var a = agent
+        guard a.wantsNudge else { return }
+        a.wantsNudge = false
+        persist { try $0.save(a) }
+    }
+
+    /// Writes down the process an agent is running in, once its terminal is up. The
+    /// factory starts the agent, so it can find this out for itself rather than asking:
+    /// that is what makes registering unnecessary, and it means an agent is watchable
+    /// from the moment it launches rather than from whenever it gets round to saying
+    /// hello. The looking happens off the main thread, because it runs tmux.
+    /// (T-session, 13 Sep 2026.)
+    func findTheProcess(for agent: Agent) {
+        let session = agent.id.uuidString
+        Task { [weak self] in
+            let pid = await Task.detached(priority: .utility) {
+                TerminalSessions.agentPID(session: session)
+            }.value
+            guard let self, let pid, let started = ProcessCheck.startTime(of: pid) else { return }
+            self.persist { store in
+                guard var found = try store.load().agents.first(where: { $0.id == agent.id }) else { return }
+                found.pid = pid
+                found.pidStartedAt = started
+                try store.save(found)
+            }
+        }
+    }
+
     /// Anything a shell has to take literally.
     nonisolated static func quoted(_ words: String) -> String {
-        "'" + words.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        LaunchAgent.quoted(words)
     }
 
     /// Where a launched agent runs: in the app, where you can watch and type to it, or
@@ -391,13 +411,6 @@ final class AppModel {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: Self.launchStyleKey) }
     }
 
-    static let preferredAgentKey = "preferredAgent"
-
-    var preferredAgent: PreferredAgent {
-        get { PreferredAgent(rawValue: UserDefaults.standard.string(forKey: Self.preferredAgentKey) ?? "") ?? .claudeCode }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: Self.preferredAgentKey) }
-    }
-
     /// A project that only exists because an agent named it is written down the first
     /// time something is filed against it, so the record outlives the agent.
     private func ensureStored(_ projectID: String) {
@@ -412,13 +425,14 @@ final class AppModel {
         Backlog.visible(for: projectID, in: snapshot.tasks)
     }
 
-    func addTask(to projectID: String, title: String, at position: Backlog.Position = .bottom, note: String = "") {
+    func addTask(to projectID: String, title: String, at position: Backlog.Position = .bottom, note: String = "",
+                 work: FactoryTask.Work = .implement) {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
         ensureStored(projectID)
         var task = FactoryTask(
             projectID: projectID, title: title, state: Backlog.state(for: position),
-            rank: Backlog.rank(for: position, projectID: projectID, in: snapshot.tasks), note: note)
+            rank: Backlog.rank(for: position, projectID: projectID, in: snapshot.tasks), note: note, work: work)
         persist { store in
             task.number = Backlog.nextNumber(in: (try? store.loadEveryTask()) ?? snapshot.tasks)
             try store.save(task)
@@ -430,7 +444,8 @@ final class AppModel {
     /// never on the backlog.
     func addTask(to projectID: String, from text: String, at position: Backlog.Position) async {
         let drafted = await TaskTitler.draft(from: text)
-        addTask(to: projectID, title: drafted.title, at: position, note: drafted.note)
+        let parsed = FactoryTask.Work.reading(title: drafted.title)
+        addTask(to: projectID, title: parsed.title, at: position, note: drafted.note, work: parsed.work)
     }
 
     /// The person parks and unparks. In progress and done are an agent's to say.
@@ -446,15 +461,9 @@ final class AppModel {
         persist { try $0.save(moved) }
     }
 
-    /// A line from the person on a task, for the agent that picks it up next.
-    func comment(on task: FactoryTask, _ text: String) {
-        let noted = Backlog.comment(on: task, text, by: "Alex")
-        guard noted.note != task.note else { return }
-        persist { try $0.save(noted) }
-    }
-
-    func edit(_ task: FactoryTask, title: String, note: String) {
-        let edited = Backlog.edit(task, title: title, note: note)
+    func edit(_ task: FactoryTask, title: String, note: String, work: FactoryTask.Work? = nil) {
+        let parsed = FactoryTask.Work.reading(title: title)
+        let edited = Backlog.edit(task, title: parsed.title, note: note, work: work ?? parsed.work)
         guard edited != task else { return }
         persist { try $0.save(edited) }
     }
@@ -479,11 +488,6 @@ final class AppModel {
     /// Nothing is deleted: the task is kept with the reason, out of every list.
     func delete(_ task: FactoryTask) {
         persist { try $0.save(Backlog.remove(task, why: "by Alex, in the app")) }
-    }
-
-    func moveTask(_ task: FactoryTask, to project: Project) {
-        ensureStored(project.id)
-        persist { try $0.save(Backlog.move(task, to: project, from: self.project(for: task.projectID), in: snapshot.tasks)) }
     }
 
     func unblock(_ task: FactoryTask, _ blocker: FactoryTask.Blocker) {
@@ -569,7 +573,7 @@ final class AppModel {
 
     // MARK: Plumbing
 
-    private func persist(_ write: (FileStore) throws -> Void) {
+    func persist(_ write: (FileStore) throws -> Void) {
         guard let store else { return }
         do {
             try write(store)

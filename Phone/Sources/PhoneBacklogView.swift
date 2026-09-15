@@ -1,23 +1,35 @@
 import SwiftUI
 import SoftwareFactoryKit
 
-/// One project's backlog on the phone: read it anywhere, add to it near the Mac.
+/// One project's backlog on the phone: read it anywhere, add, rank and park.
 struct PhoneBacklogView: View {
     @Environment(PhoneModel.self) private var model
     var project: Project
 
     @State private var newTitle = ""
+    @State private var newParkedTitle = ""
     @State private var selectedTask: FactoryTask?
     @State private var editingTask: FactoryTask?
+    @State private var showingAllDone = false
 
-    private var tasks: [FactoryTask] { Backlog.visible(for: project.id, in: model.snapshot.tasks) }
+    private var canAdd: Bool { model.source == .factory || model.cloud.isReady }
+
+    private var tasks: [FactoryTask] {
+        Backlog.visible(for: project.id, in: model.snapshot.tasks, recentDone: showingAllDone ? Int.max : 3)
+    }
+    private var hiddenDone: Int {
+        max(0, model.snapshot.tasks.filter { $0.projectID == project.id && $0.state == .done }.count - 3)
+    }
     private var status: Dashboard.ProjectStatus? { model.dashboard.projects.first { $0.id == project.id } }
     private var questions: Escalations.Shown { Escalations.visible(for: project.id, in: model.snapshot.escalations) }
+    private var artifacts: [Artifact] { Artifacts.live(for: project.id, in: model.snapshot.artifacts) }
 
     var body: some View {
         List {
-            Section {
-                header
+            if project.onHold || (status?.isEmpty ?? true) {
+                Section {
+                    header
+                }
             }
             if !questions.open.isEmpty || !questions.decided.isEmpty {
                 Section("Questions") {
@@ -25,83 +37,59 @@ struct PhoneBacklogView: View {
                     ForEach(questions.decided) { PhoneDecidedRow(escalation: $0) }
                 }
             }
-            if tasks.isEmpty {
-                Section {
-                    Label("Nothing on the backlog.", systemImage: "list.bullet")
-                        .foregroundStyle(.secondary)
+            if !artifacts.isEmpty {
+                Section("Artifacts") {
+                    ForEach(artifacts) { ArtifactCard(artifact: $0) }
                 }
             }
-            ForEach(Backlog.blocks(tasks), id: \.state) { block in
-              Section(block.state.word) {
-                ForEach(block.tasks) { task in
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            if let label = task.label {
-                                Text(label).font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
+            ForEach([FactoryTask.State.blocked, .inProgress, .backlog, .parked, .done], id: \.self) { state in
+                let group = tasks.filter { $0.state == state }
+                if state == .backlog {
+                    Section("Backlog") {
+                        ForEach(group) { task in row(task) }
+                            .onMove { source, dest in
+                                move(group, from: source, to: dest, state: .backlog)
                             }
-                            Text(task.title)
-                                .strikethrough(task.state == .done)
-                                .foregroundStyle(task.state == .done || task.state == .parked ? .secondary : .primary)
-                            Spacer()
-                            Text(task.state == .inProgress ? "In progress" : (task.state == .done ? "Done" : (task.state == .parked ? "Parked" : "")))
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(task.state == .inProgress ? .green : .secondary)
-                        }
-                        if let ending = task.note.split(whereSeparator: \.isNewline).last,
-                           !ending.isEmpty,
-                           ending != task.blockedWhy {
-                            Text(ending)
-                                .font(.caption)
+                        if canAdd { addRow }
+                        else {
+                            Text("Adding a task needs iCloud, which is not signed in on this phone.")
+                                .font(.callout)
                                 .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-                        if task.state == .blocked, !task.blockers.isEmpty {
-                            Text(task.blockedWhy).font(.caption).foregroundStyle(.orange).lineLimit(2)
                         }
                     }
-                    .padding(.vertical, 2)
-                    .contentShape(.rect)
-                    .onTapGesture { selectedTask = task }
-                }
-              }
-            }
-            if model.source == .factory || model.cloud.isReady {
-                Section("Add") {
-                    HStack(alignment: .top, spacing: 8) {
-                        TextField("Add a task", text: $newTitle, axis: .vertical)
-                            .lineLimit(1...5)
-                        Menu {
-                            Button("Add to the top") { add(at: .top) }
-                            Button("Add to the bottom") { add(at: .bottom) }
-                        } label: {
-                            Text("Add")
-                        } primaryAction: {
-                            add(at: .bottom)
+                } else if state == .parked {
+                    Section("Parked") {
+                        ForEach(group) { task in row(task) }
+                            .onMove { source, dest in
+                                move(group, from: source, to: dest, state: .parked)
+                            }
+                        if canAdd { parkedAddRow }
+                    }
+                } else if !group.isEmpty {
+                    Section(state.word) {
+                        ForEach(group) { task in row(task) }
+                        if state == .done, hiddenDone > 0 {
+                            Button(showingAllDone ? "Show less" : "Show more") {
+                                showingAllDone.toggle()
+                            }
                         }
                     }
-                    .onSubmit { add(at: .bottom) }
-                    if model.source != .factory {
-                        Text("Away from the Mac; this goes through iCloud and lands there in a moment, numbered once it does.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            } else {
-                Section {
-                    Text("Adding a task needs iCloud, which is not signed in on this phone.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
                 }
             }
-
         }
         .navigationTitle(project.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { EditButton() }
         .sheet(item: $selectedTask) { task in
             VStack(alignment: .leading, spacing: 12) {
                 Text(task.title)
                     .font(.headline)
                     .strikethrough(task.state == .done)
+                if task.work != .implement && !task.work.isPrefix(of: task.title) {
+                    Text(task.work.word)
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
                 if let ending = task.note.split(whereSeparator: \.isNewline).last,
                    !ending.isEmpty,
                    ending != task.blockedWhy {
@@ -129,10 +117,101 @@ struct PhoneBacklogView: View {
         }
     }
 
+    @ViewBuilder
+    private func row(_ task: FactoryTask) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if let label = task.label {
+                    Text(label).font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
+                }
+                Text(task.title)
+                    .strikethrough(task.state == .done)
+                    .foregroundStyle(task.state == .done || task.state == .parked ? .secondary : .primary)
+                if task.work != .implement && !task.work.isPrefix(of: task.title) {
+                    Text(task.work.word)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer()
+                Text(task.state == .inProgress ? "In progress" : (task.state == .done ? "Done" : (task.state == .parked ? "Parked" : "")))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(task.state == .inProgress ? .green : .secondary)
+            }
+            if let ending = task.note.split(whereSeparator: \.isNewline).last,
+               !ending.isEmpty,
+               ending != task.blockedWhy {
+                Text(ending)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            if task.state == .blocked, !task.blockers.isEmpty {
+                Text(task.blockedWhy).font(.caption).foregroundStyle(.orange).lineLimit(2)
+            }
+        }
+        .padding(.vertical, 2)
+        .contentShape(.rect)
+        .onTapGesture { selectedTask = task }
+        .swipeActions(edge: .trailing) {
+            if task.state == .parked {
+                Button("Back to the backlog") {
+                    _Concurrency.Task { await model.set(task, to: .backlog) }
+                }
+                .tint(.blue)
+            } else if task.state != .done {
+                Button("Park") {
+                    _Concurrency.Task { await model.set(task, to: .parked) }
+                }
+                .tint(.orange)
+            }
+        }
+    }
+
+    private var addRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 8) {
+                WorkField(prompt: "Add a task", text: $newTitle)
+                Menu {
+                    Button("Add to the top") { add(at: .top) }
+                    Button("Add to the bottom") { add(at: .bottom) }
+                } label: {
+                    Text("Add")
+                } primaryAction: {
+                    add(at: .bottom)
+                }
+            }
+            .onSubmit { add(at: .bottom) }
+            if model.source != .factory {
+                Text("Away from the Mac; this goes through iCloud and lands there in a moment, numbered once it does.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var parkedAddRow: some View {
+        HStack(alignment: .top, spacing: 8) {
+            WorkField(prompt: "Add a parked task", text: $newParkedTitle)
+            Button("Add") { addParked() }
+        }
+        .onSubmit { addParked() }
+    }
+
     private func add(at position: Backlog.Position) {
         let title = newTitle
         newTitle = ""
         _Concurrency.Task { await model.addTask(to: project, title: title, at: position) }
+    }
+
+    private func addParked() {
+        let title = newParkedTitle
+        newParkedTitle = ""
+        _Concurrency.Task { await model.addTask(to: project, title: title, at: .parked) }
+    }
+
+    private func move(_ group: [FactoryTask], from source: IndexSet, to dest: Int, state: FactoryTask.State) {
+        let ids = source.compactMap { group.indices.contains($0) ? group[$0].id : nil }
+        _Concurrency.Task { await model.move(ids: ids, to: dest, state: state, projectID: project.id) }
     }
 
     private var header: some View {
@@ -143,8 +222,13 @@ struct PhoneBacklogView: View {
                           : (status?.activity == .working ? Color.green
                              : (status?.activity == .waiting ? Color.orange : Color.secondary.opacity(0.4))))
                     .frame(width: 8, height: 8)
-                Text(project.onHold ? "On hold" : (status?.doing ?? "Nobody is on it"))
-                    .font(.headline)
+                if project.onHold {
+                    Text("On hold")
+                        .font(.headline)
+                } else if status?.isEmpty ?? true {
+                    Text("Nobody is on it")
+                        .font(.headline)
+                }
             }
         }
         .padding(.vertical, 4)
@@ -168,8 +252,7 @@ private struct PhoneTaskEditor: View {
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Task", text: $title, axis: .vertical)
-                    .lineLimit(1...4)
+                WorkField(prompt: "Task", text: $title, lineLimit: 1...4)
                 TextField("Note", text: $note, axis: .vertical)
                     .lineLimit(3...8)
             }

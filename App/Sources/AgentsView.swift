@@ -9,6 +9,7 @@ struct AgentsView: View {
 
     @State private var writingPrompt = false
     @State private var prompt = ""
+    @State private var launchError: String?
 
     var body: some View {
         ScrollView {
@@ -23,7 +24,7 @@ struct AgentsView: View {
 
     /// Sessions started here that no agent has registered against yet.
     private var starting: [TerminalSessions.Session] {
-        let claimed = Set(model.dashboard.agents.compactMap(\.agent.session))
+        let claimed = Set(model.dashboard.agents.map(\.agent.id.uuidString))
         return terminals.starting(for: nil, claimed: claimed)
     }
 
@@ -74,44 +75,54 @@ struct AgentsView: View {
         .buttonStyle(.plain)
         .glassEffect(.regular, in: .rect(cornerRadius: 18))
         .popover(isPresented: $writingPrompt, arrowEdge: .bottom) { promptSheet }
+        .alert("The agent did not start", isPresented: Binding(get: { launchError != nil }, set: { if !$0 { launchError = nil } })) {
+            Button("OK") { launchError = nil }
+        } message: {
+            Text(launchError ?? "")
+        }
     }
 
     private var promptSheet: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("What is this agent for?")
-                .font(.headline)
-            Text("It starts in your home folder, on no project, and hears from other agents through its inbox.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            TextField("You're the browser owner. Agents send you messages when they want you to use Chrome for them.",
-                      text: $prompt, axis: .vertical)
-                .lineLimit(3...8)
-            HStack {
-                Spacer()
-                Button("Cancel") { writingPrompt = false }
-                Button("Launch", action: launch)
-                    .buttonStyle(.glassProminent)
-                    .disabled(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        LaunchChooser(
+            canLaunch: !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            onLaunch: launch,
+            onCancel: { writingPrompt = false }
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("What is this agent for?")
+                    .font(.headline)
+                Text("It starts in your home folder, on no project, and hears from other agents through its inbox.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                TextField("You're the browser owner. Agents send you messages when they want you to use Chrome for them.",
+                          text: $prompt, axis: .vertical)
+                    .lineLimit(3...8)
             }
         }
-        .padding(16)
-        .frame(width: 380)
     }
 
-    private func launch() {
+    private func launch(_ agent: LaunchAgent) {
         let words = prompt
         writingPrompt = false
-        let session = "sf-\(UUID().uuidString.prefix(8).lowercased())"
-        let reserved = model.reserveAgent(for: nil, session: session)
-        let name = reserved?.label ?? "an agent"
+        if Agents.atCap(model.snapshot.agents) {
+            launchError = Agents.fullMessage
+            return
+        }
+        guard let reserved = model.reserveAgent(for: nil) else {
+            launchError = model.storeError
+            return
+        }
+        let session = reserved.id
+        let name = reserved.label
         let command = { (prompt: String) in
-            model.preferredAgent.command(for: LaunchPrompt.free(prompt, as: name))
+            agent.command(for: LaunchPrompt.free(prompt, as: name, session: session), session: session)
         }
         guard !AgentLauncher.isSandboxed else {
             AgentLauncher.copyCommand(command(words))
             return
         }
-        terminals.start(prompt: words, session: session, agentID: reserved?.id, command: command)
+        terminals.start(prompt: words, session: session.uuidString, agentID: reserved.id, command: command)
+        model.findTheProcess(for: reserved)
     }
 }

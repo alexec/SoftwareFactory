@@ -8,8 +8,6 @@ struct DashboardView: View {
     @Environment(AppModel.self) private var model
     @State private var addingProject = false
     @State private var newProjectName = ""
-    @State private var newProjectDescription = ""
-    @State private var newProjectInstructions = ""
 
     var body: some View {
         ScrollView {
@@ -89,18 +87,13 @@ struct DashboardView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             TextField("Project name", text: $newProjectName)
-            TextField("Brief description", text: $newProjectDescription, axis: .vertical)
-                .lineLimit(2...4)
-            TextField("Instructions for agents (optional)", text: $newProjectInstructions, axis: .vertical)
-                .lineLimit(2...6)
                 .onSubmit(addProject)
             HStack {
                 Spacer()
                 Button("Cancel") { addingProject = false }
                 Button("Add", action: addProject)
                     .buttonStyle(.glassProminent)
-                    .disabled(newProjectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                              newProjectDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(newProjectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(16)
@@ -108,10 +101,8 @@ struct DashboardView: View {
     }
 
     private func addProject() {
-        model.addProject(named: newProjectName, description: newProjectDescription, instructions: newProjectInstructions)
+        model.addProject(named: newProjectName)
         newProjectName = ""
-        newProjectDescription = ""
-        newProjectInstructions = ""
         addingProject = false
     }
 
@@ -182,18 +173,12 @@ struct AgentCard: View {
     var status: Dashboard.AgentStatus
     var select: (UUID) -> Void
 
-    /// Whose agent this is. One the factory started and put in a terminal of its own, or
-    /// one that registered over MCP from wherever it already was. An external agent is
-    /// just as real and does the same work; there is simply nothing here to watch.
-    private var isOurs: Bool { status.agent.isEmbedded }
-
-    /// Whether there is a terminal to look at right now. Not the same question as whose
-    /// agent it is: ours can be out of sight, if the app was restarted without tmux to
-    /// hold the session, or if the session was killed. Saying "outside" then would be a
-    /// lie about where the agent came from. (Alex, 13 Sep 2026: two kinds of agent.)
+    /// Whether there is a terminal to look at right now. Every agent is one the factory
+    /// started, so this is no longer a question about where the agent came from: it is
+    /// only whether the window is still here to watch. (T-session, 13 Sep 2026.)
     private var hasTerminal: Bool {
-        if terminals.session(for: status.agent) != nil { return true }
-        return status.agent.session.map(terminals.isHeld) ?? false
+        terminals.session(for: status.agent) != nil
+            || terminals.isHeld(status.agent.id.uuidString)
     }
 
     /// Its process has gone. Worth saying out loud: the terminal outlives the agent by
@@ -204,13 +189,17 @@ struct AgentCard: View {
     private var hasStopped: Bool { status.activity == .stopped }
 
     var body: some View {
-        Button { select(status.agent.id) } label: {
+        Button {
+            model.clearBell(status.agent)
+            select(status.agent.id)
+        } label: {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     AgentActivityDot(activity: status.activity)
                     Text(status.agent.label)
                         .font(.headline)
                     if hasStopped { StoppedMark() }
+                    if status.agent.bel { AgentBellMark() }
                     Spacer(minLength: 0)
                 }
                 Text(status.project?.name ?? "No project")
@@ -218,12 +207,12 @@ struct AgentCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 VStack(alignment: .leading, spacing: 2) {
-                    if !status.agent.about.isEmpty {
-                        Text(status.agent.about)
+                    if !status.agent.title.isEmpty {
+                        Text(status.agent.title)
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
-                            .help(status.agent.about)
+                            .help(status.agent.title)
                     }
                     if let task = status.task {
                         Text(task.title)
@@ -240,12 +229,10 @@ struct AgentCard: View {
                     // symbol says it and the tooltip spells it out: the words sat on
                     // every card saying the same thing, and the time needs the room.
                     // (Alex, 13 Sep 2026.)
-                    Image(systemName: isOurs ? "macwindow" : "arrow.up.forward.app")
-                        .help(isOurs
-                              ? (hasTerminal
-                                 ? "The factory started this one: its page shows the terminal, and you can type to it"
-                                 : "The factory started this one, but its terminal has gone: its page shows what it has told the factory")
-                              : "This one joined from outside: its page shows what it has told the factory, and there is no terminal to watch")
+                    Image(systemName: hasTerminal ? "macwindow" : "arrow.up.forward.app")
+                        .help(hasTerminal
+                              ? "Its terminal is here: its page shows it working, and you can type to it"
+                              : "Its terminal has gone: its page shows what it has told the factory, and nothing to type into")
                     // The cards go down to 190 points wide, so on the narrowest one the
                     // time drops its prefix rather than losing its last characters;
                     // "2 minutes ago" reads as a last seen on its own.
@@ -267,6 +254,17 @@ struct AgentCard: View {
         }
         .buttonStyle(.plain)
         .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        .overlay(alignment: .topTrailing) {
+            if status.canNudge {
+                Button("Nudge") {
+                    sendNudge(to: status.agent, model: model, terminals: terminals)
+                }
+                .buttonStyle(.glass)
+                .controlSize(.small)
+                .help("Tell it to pick up the next task")
+                .padding(10)
+            }
+        }
         .help("Show \(status.agent.label)")
         .contextMenu {
             Button("Delete \(status.agent.label)", role: .destructive) { model.delete(status.agent) }
@@ -320,7 +318,7 @@ struct AgentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .task(id: agent.session) { await reattach() }
+        .task(id: agent.id) { await reattach() }
         .toolbar {
             if let back {
                 ToolbarItem(placement: .navigation) {
@@ -346,7 +344,8 @@ struct AgentView: View {
     /// part happens off the main thread and the page stays live while it does. Nothing
     /// here ever blocks the window. (Alex, 13 Sep 2026: not at the price of a beachball.)
     private func reattach() async {
-        guard terminals.session(for: agent) == nil, let id = agent.session else { return }
+        guard terminals.session(for: agent) == nil else { return }
+        let id = agent.id.uuidString
         await terminals.lookForHeldSessions()
         guard terminals.session(for: agent) == nil, terminals.isHeld(id) else { return }
         terminals.attach(id)
@@ -361,12 +360,21 @@ struct AgentView: View {
             Text(agent.label)
                 .font(.title3.weight(.semibold))
             if status.activity == .stopped { StoppedMark() }
+            if agent.bel { AgentBellMark() }
             if let project = status.project {
                 Text(project.name)
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            if status.canNudge {
+                Button("Nudge") {
+                    sendNudge(to: agent, model: model, terminals: terminals)
+                }
+                .buttonStyle(.glass)
+                .controlSize(.small)
+                .help("Tell it to pick up the next task")
+            }
             Text(agent.lastSeen, format: .relative(presentation: .named))
                 .font(.callout)
                 .foregroundStyle(.tertiary)
@@ -381,13 +389,14 @@ struct AgentView: View {
     private var inspector: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                if !agent.about.isEmpty {
-                    Text(agent.about)
+                if !agent.title.isEmpty {
+                    Text(agent.title)
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 assignedTasks
+                artifacts
                 messages
                 resources
                 details
@@ -435,6 +444,20 @@ struct AgentView: View {
                             .foregroundStyle(.secondary)
                     }
                     if task.id != tasks.last?.id { Divider() }
+                }
+            }
+        }
+    }
+
+    private var artifacts: some View {
+        let mine = Artifacts.produced(by: agent.id, in: model.snapshot.artifacts)
+        return Group {
+            if !mine.isEmpty {
+                AgentPanel("Artifacts") {
+                    ForEach(mine) { artifact in
+                        ArtifactCard(artifact: artifact)
+                        if artifact.id != mine.last?.id { Divider() }
+                    }
                 }
             }
         }
@@ -561,6 +584,24 @@ private struct SendMessage: View {
     }
 }
 
+/// Inbox, and the line typed into its terminal when there is one: the agent cannot
+/// tell the typed line from a person at the keyboard.
+@MainActor
+private func sendNudge(to agent: Agent, model: AppModel, terminals: TerminalSessions) {
+    model.nudge(agent)
+    terminals.sendLine(LaunchPrompt.nudge, to: agent.id.uuidString)
+}
+
+/// Agents `agent_nudge` asked the factory to poke: the words are already in the inbox;
+/// this types them into the terminal when there is one. (T195)
+@MainActor
+func deliverPendingNudges(model: AppModel, terminals: TerminalSessions) {
+    for agent in model.snapshot.agents where agent.wantsNudge {
+        model.clearNudgeRequest(agent)
+        terminals.sendLine(LaunchPrompt.nudge, to: agent.id.uuidString)
+    }
+}
+
 /// An agent, small: its dot and its name, in a capsule that opens the agent. Used
 /// wherever a row has to say who is on something.
 struct AgentChip: View {
@@ -600,6 +641,19 @@ struct StoppedMark: View {
             .foregroundStyle(.secondary)
             .help("Stopped: its terminal is still here and you can read what it said, but the agent is not running in it any more")
             .accessibilityLabel("Stopped")
+    }
+}
+
+/// BEL from the agent's terminal: it wants a look. Wiggles until the card is opened.
+struct AgentBellMark: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Image(systemName: "bell.fill")
+            .foregroundStyle(.orange)
+            .symbolEffect(.wiggle, options: .repeating, isActive: !reduceMotion)
+            .help("It rang for your attention")
+            .accessibilityLabel("Wants a look")
     }
 }
 

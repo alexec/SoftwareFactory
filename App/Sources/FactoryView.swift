@@ -233,7 +233,7 @@ private struct LeasableResourceCard: View {
             HStack {
                 Text(status.resource.name).font(.callout).foregroundStyle(.secondary)
                 Spacer()
-                Text("\(status.free) of \(status.resource.slots) free").font(.callout.weight(.medium)).monospacedDigit()
+                Text(status.occupancy).font(.callout.weight(.medium)).monospacedDigit()
                 Menu {
                     Button("Remove", role: .destructive) { model.remove(status.resource) }
                 } label: {

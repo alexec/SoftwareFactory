@@ -88,28 +88,62 @@ enum StartAgent {
     static func run(
         project: Project,
         task: FactoryTask? = nil,
+        agent: LaunchAgent,
         style: AppModel.LaunchStyle,
         model: AppModel,
         terminals: TerminalSessions
     ) -> String? {
-        let session = "sf-\(UUID().uuidString.prefix(8).lowercased())"
-        guard let reserved = model.reserveAgent(for: project, session: session) else {
-            return "The agent could not be written down. The store said no."
+        if Agents.atCap(model.snapshot.agents) { return Agents.fullMessage }
+        guard let reserved = model.reserveAgent(for: project) else {
+            return model.storeError ?? "The agent could not be written down. The store said no."
         }
+        let session = reserved.id
         if let task { model.assign(task, to: reserved) }
-        let command = model.preferredAgent.launchCommand(for: project, task: task, as: reserved.label)
+        let command = agent.launchCommand(for: project, task: task, as: reserved.label, session: session)
         guard !AgentLauncher.isSandboxed else {
             AgentLauncher.copy(project, command: command)
             return nil
         }
         do {
             switch style {
-            case .embedded: try terminals.start(in: project, command: command, session: session, agentID: reserved.id)
+            case .embedded:
+                try terminals.start(in: project, command: command, session: session.uuidString, agentID: reserved.id)
+                model.findTheProcess(for: reserved)
             case .terminal: try AgentLauncher.launch(project, command: command)
             }
             return nil
         } catch {
             return error.localizedDescription
+        }
+    }
+
+    /// Agents `agent_create` asked for: written down already, waiting for a terminal.
+    /// Uses the last coding agent the person launched, and the in-app vs Terminal style
+    /// they have set. (T179, 13 Sep 2026.)
+    static func launchPending(model: AppModel, terminals: TerminalSessions) {
+        let pending = model.snapshot.agents.filter(\.wantsLaunch)
+        for agent in pending {
+            model.clearLaunchRequest(agent)
+            guard let projectID = agent.projectID,
+                  let project = model.project(for: projectID) else { continue }
+            let kind = LaunchAgent.remembered(UserDefaults.standard.string(forKey: lastLaunchAgentKey))
+            let task = agent.taskID.flatMap { id in model.snapshot.tasks.first { $0.id == id } }
+            let command = kind.launchCommand(for: project, task: task, as: agent.label, session: agent.id)
+            guard !AgentLauncher.isSandboxed else {
+                AgentLauncher.copy(project, command: command)
+                continue
+            }
+            do {
+                switch model.launchStyle {
+                case .embedded:
+                    try terminals.start(in: project, command: command, session: agent.id.uuidString, agentID: agent.id)
+                    model.findTheProcess(for: agent)
+                case .terminal:
+                    try AgentLauncher.launch(project, command: command)
+                }
+            } catch {
+                model.noteError(error.localizedDescription)
+            }
         }
     }
 }

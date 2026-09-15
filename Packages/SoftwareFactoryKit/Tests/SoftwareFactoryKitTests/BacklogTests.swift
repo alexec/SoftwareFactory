@@ -167,7 +167,7 @@ import Testing
         #expect(throws: Backlog.UnblockError.ambiguous) { try Backlog.unblock(same, matching: "wait") }
     }
 
-    @Test func removingKeepsTheRecordAndMovingSaysWhereFrom() throws {
+    @Test func removingKeepsTheRecord() throws {
         let gone = Backlog.remove(task("gone", rank: 0), why: "filed twice")
         #expect(gone.removed != nil)
         #expect(gone.note.contains("removed: filed twice"))
@@ -176,12 +176,6 @@ import Testing
         try store.save(task("kept", rank: 1))
         #expect(try store.load().tasks.map(\.title) == ["kept"])
         #expect(try store.loadRemovedTasks().map(\.title) == ["gone"])
-
-        let elsewhere = Project(name: "Elsewhere", id: "/Users/alex/Elsewhere")
-        let moved = Backlog.move(task("wrong place", rank: 0), to: elsewhere, from: Project(name: "Here", id: p), in: [FactoryTask(projectID: elsewhere.id, title: "x", rank: 4)])
-        #expect(moved.projectID == elsewhere.id)
-        #expect(moved.rank == 5)
-        #expect(moved.note.contains("moved here from Here"))
     }
 
     @Test func aVersionOneBlockerStillReads() throws {
@@ -191,8 +185,10 @@ import Testing
         """
         let t = try FileStore.decoder.decode(FactoryTask.self, from: Data(json.utf8))
         #expect(t.blockers.map(\.why) == ["alex"])
+        #expect(t.work == .implement)
         let again = try FileStore.decoder.decode(FactoryTask.self, from: FileStore.encoder.encode(t))
         #expect(again.blockers == t.blockers)
+        #expect(again.work == .implement)
     }
 
     @Test func nextRankFollowsTheProject() {
@@ -299,12 +295,13 @@ import Testing
         #expect(d.projects.map(\.project.name) == ["a", "b"])   // /c's agent has left
         // Its agent has a question open, so the project waits with it.
         #expect(d.projects[0].activity == .waiting)   // grey, not orange: nothing is stuck
-        #expect(d.projects[0].doing == "on it")
+        // The current task is on the backlog, not next to the project's name. (T168)
+        #expect(d.projects[0].doing == nil)
         #expect(d.projects[0].backlogCount == 1)
         #expect(d.projects[0].openEscalations == 1)
         // Its agent has said nothing for fifteen minutes: nothing is moving.
         #expect(d.projects[1].activity == .idle)
-        #expect(d.projects[1].doing == "also on it")
+        #expect(d.projects[1].doing == nil)
         #expect(d.workingCount == 0)
         #expect(d.agents.map(\.agent.label) == ["A1", "A2"])
         #expect(d.agents[0].waitingOnYou)
@@ -315,12 +312,12 @@ import Testing
     /// off the factory's counter, so nothing about the agents still in the store can
     /// hand the same one out twice.
     @Test func anAgentCanBeReservedBeforeItRegisters() {
-        let reserved = Agents.reserve(number: 5, projectID: "/p", session: "sf-1234", now: now)
+        let reserved = Agents.reserve(number: 5, projectID: "/p", now: now)
         #expect(reserved.number == 5)
         #expect(reserved.label == "A5")
-        #expect(reserved.projectID == "/p" && reserved.session == "sf-1234")
+        #expect(reserved.projectID == "/p")
         #expect(reserved.isRegistered)
-        #expect(Agents.reserve(number: 1, projectID: nil, session: nil, now: now).label == "A1")
+        #expect(Agents.reserve(number: 1, projectID: nil, now: now).label == "A1")
     }
 
     /// The cards keep their places: agents read in the order they registered, whatever
@@ -334,6 +331,9 @@ import Testing
         third.lastSeen = now.addingTimeInterval(-60)
         let d = Dashboard.make(snapshot: Snapshot(agents: [third, second, first]), now: now)
         #expect(d.agents.map(\.agent.label) == ["A1", "A2", "A3"])
+        #expect(d.unassignedAgents.map(\.agent.label) == ["A1", "A2", "A3"])
+        #expect(d.unassignedActivity == .waiting)
+        #expect(!d.unassignedIsEmpty)
     }
 
     /// A project reads the way its agents do: green working, orange waiting or blocked,
@@ -419,6 +419,10 @@ import Testing
         #expect(edited.state == .inProgress && edited.agentID == task.agentID && edited.blockers == task.blockers)
         #expect(edited.updated == day)
         #expect(Backlog.edit(edited, title: " ", note: "ignored").title == "after")
+        #expect(edited.work == .implement)
+        let designed = Backlog.edit(edited, title: "after", note: "new note", work: .design, at: day)
+        #expect(designed.work == .design && designed.updated == day)
+        #expect(Backlog.edit(designed, title: "after", note: "new note", work: .design) == designed)
     }
 
     /// The four states behind an agent's dot: working, blocked, waiting, idle.
@@ -450,11 +454,30 @@ import Testing
         let question = Escalation(projectID: project.id, question: "?", options: [.init(title: "x")], agentID: agent.id, raised: now)
         #expect(activity(agent, [task], [question]) == .waiting)
 
+        func status(_ agent: Agent, _ tasks: [FactoryTask], _ escalations: [Escalation] = []) -> Dashboard.AgentStatus {
+            Dashboard.make(snapshot: Snapshot(projects: [project], tasks: tasks, escalations: escalations, agents: [agent]), now: now)
+                .agents[0]
+        }
+        // A nudge is there unless the agent has stopped. Working, blocked,
+        // waiting and idle all get one. (T197)
+        #expect(status(empty, []).canNudge)
+        #expect(status(agent, [task], [question]).canNudge)
+        #expect(status(agent, [task]).canNudge)
+        #expect(status(agent, [blocked]).canNudge)
+
         // Ten minutes without a word and no connection open: idle, task or no task.
         var quiet = agent
         quiet.lastSeen = now.addingTimeInterval(-700)
         #expect(activity(quiet, [task]) == .idle)
         #expect(activity(quiet, [blocked]) == .idle)
+        #expect(status(quiet, [task]).canNudge)
+
+        // Its process has gone: stopped, and no nudge. The pid is one nobody holds.
+        var dead = agent
+        dead.pid = 0x7FFF_FFFE
+        dead.pidStartedAt = now
+        #expect(activity(dead, [task]) == .stopped)
+        #expect(!status(dead, [task]).canNudge)
     }
 
     /// A folder under home reads as "~/…"; anything else reads as it is.
@@ -476,6 +499,9 @@ import Testing
         let lease = Lease(resourceID: phone.id, agentID: holder.id, why: "a capture run", since: now, until: now.addingTimeInterval(600))
         let d = Dashboard.make(snapshot: Snapshot(agents: [holder], resources: [phone], leases: [lease]), now: now)
         #expect(d.resources[0].held.map(\.agentName) == ["A12"])
+        #expect(d.resources[0].occupancy == "1 of 1")
+        let empty = Dashboard.make(snapshot: Snapshot(resources: [phone]), now: now)
+        #expect(empty.resources[0].occupancy == "0 of 1")
     }
 
     @Test func idleProjectWithNothingOnShowsNothing() {

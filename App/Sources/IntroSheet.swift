@@ -19,7 +19,7 @@ struct IntroSheet: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("How you use it")
                             .font(.headline)
-                        step("Register the factory's MCP server with your agent, once. Settings has the command.")
+                        step("Launch an agent. The factory shows how to install it and the command to register, then starts it.")
                         step("Agents check in, pick up tasks, and ask when they cannot decide.")
                         step("Answer a question by clicking one of the options the agent offered. The agent carries on.")
                         step("Keep each project's backlog in order: features, bugs and chores, top to bottom.")

@@ -203,10 +203,12 @@ final class PhoneModel {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
         let drafted = await TaskTitler.draft(from: title)
+        let parsed = FactoryTask.Work.reading(title: drafted.title)
         if source == .factory, let client {
             let body = (try? JSONSerialization.data(withJSONObject: [
-                "project": project.id, "title": drafted.title,
+                "project": project.id, "title": parsed.title,
                 "note": drafted.note, "position": position.rawValue,
+                "work": parsed.work.rawValue,
             ])) ?? Data()
             do {
                 let response = try await client.send(HTTPRequest(
@@ -220,21 +222,23 @@ final class PhoneModel {
         }
         guard cloud.isReady else { return }
         let task = FactoryTask(
-            projectID: project.id, title: drafted.title,
+            projectID: project.id, title: parsed.title,
             state: Backlog.state(for: position),
             rank: Backlog.rank(for: position, projectID: project.id, in: snapshot.tasks),
-            note: drafted.note)
+            note: drafted.note, work: parsed.work)
         await cloud.push(task: task)
         snapshot.tasks.append(task)
         dashboard = Dashboard.make(snapshot: snapshot)
     }
 
-    func editTask(_ task: FactoryTask, title: String, note: String) async {
-        let edited = Backlog.edit(task, title: title, note: note)
+    func editTask(_ task: FactoryTask, title: String, note: String, work: FactoryTask.Work? = nil) async {
+        let parsed = FactoryTask.Work.reading(title: title)
+        let edited = Backlog.edit(task, title: parsed.title, note: note, work: work ?? parsed.work)
         guard edited != task else { return }
         if source == .factory, let client {
             let body = (try? JSONSerialization.data(withJSONObject: [
                 "id": edited.id.uuidString, "title": edited.title, "note": edited.note,
+                "work": edited.work.rawValue,
             ])) ?? Data()
             do {
                 let response = try await client.send(HTTPRequest(
@@ -250,6 +254,98 @@ final class PhoneModel {
         await cloud.push(task: edited)
         guard let index = snapshot.tasks.firstIndex(where: { $0.id == edited.id }) else { return }
         snapshot.tasks[index] = edited
+        dashboard = Dashboard.make(snapshot: snapshot)
+    }
+
+    /// Parks or unparks. In progress and done are an agent's to say.
+    func set(_ task: FactoryTask, to state: FactoryTask.State) async {
+        guard Backlog.personMaySet.contains(state) else { return }
+        if source == .factory, let client {
+            let body = (try? JSONSerialization.data(withJSONObject: [
+                "id": task.id.uuidString, "state": state.rawValue,
+            ])) ?? Data()
+            do {
+                let response = try await client.send(HTTPRequest(
+                    method: "POST", path: "/api/task/set", headers: ["Content-Type": "application/json"], body: body))
+                guard response.status == 200 else { throw FactoryClient.ClientError.failed("The factory answered \(response.status).") }
+                await poll()
+            } catch {
+                lastError = error.localizedDescription
+            }
+            return
+        }
+        guard cloud.isReady else { return }
+        let updated = Backlog.set(task, to: state)
+        await cloud.push(task: updated)
+        guard let index = snapshot.tasks.firstIndex(where: { $0.id == updated.id }) else { return }
+        snapshot.tasks[index] = updated
+        dashboard = Dashboard.make(snapshot: snapshot)
+    }
+
+    /// One row dropped onto another: above it, in that row's section.
+    func place(_ task: FactoryTask, above other: FactoryTask) async {
+        guard task.id != other.id, Backlog.personMaySet.contains(other.state) else { return }
+        if source == .factory, let client {
+            let body = (try? JSONSerialization.data(withJSONObject: [
+                "id": task.id.uuidString, "above": other.id.uuidString,
+            ])) ?? Data()
+            do {
+                let response = try await client.send(HTTPRequest(
+                    method: "POST", path: "/api/task/place", headers: ["Content-Type": "application/json"], body: body))
+                guard response.status == 200 else { throw FactoryClient.ClientError.failed("The factory answered \(response.status).") }
+                await poll()
+            } catch {
+                lastError = error.localizedDescription
+            }
+            return
+        }
+        guard cloud.isReady else { return }
+        var moved = task
+        if moved.state != other.state {
+            moved.state = other.state
+            moved.agentID = nil
+        }
+        let siblings = snapshot.tasks.filter { $0.projectID == task.projectID && $0.state == other.state && $0.id != task.id }
+        let changed = Backlog.place(moved, above: other, in: siblings + [moved], states: [other.state])
+        var saved = changed
+        if !saved.contains(where: { $0.id == moved.id }) { saved.append(moved) }
+        for t in saved {
+            await cloud.push(task: t)
+            if let i = snapshot.tasks.firstIndex(where: { $0.id == t.id }) { snapshot.tasks[i] = t }
+            else { snapshot.tasks.append(t) }
+        }
+        dashboard = Dashboard.make(snapshot: snapshot)
+    }
+
+    /// Reorder within backlog or parked, the list's onMove.
+    func move(ids: [UUID], to destination: Int, state: FactoryTask.State, projectID: String) async {
+        guard Backlog.personMaySet.contains(state), !ids.isEmpty else { return }
+        if source == .factory, let client {
+            let body = (try? JSONSerialization.data(withJSONObject: [
+                "ids": ids.map(\.uuidString), "to": destination, "state": state.rawValue,
+            ])) ?? Data()
+            do {
+                let response = try await client.send(HTTPRequest(
+                    method: "POST", path: "/api/task/move", headers: ["Content-Type": "application/json"], body: body))
+                guard response.status == 200 else { throw FactoryClient.ClientError.failed("The factory answered \(response.status).") }
+                await poll()
+            } catch {
+                lastError = error.localizedDescription
+            }
+            return
+        }
+        guard cloud.isReady else { return }
+        let open = snapshot.tasks.filter { $0.projectID == projectID && $0.state == state }.sorted(by: Backlog.order)
+        var source = IndexSet()
+        for id in ids {
+            guard let i = open.firstIndex(where: { $0.id == id }) else { return }
+            source.insert(i)
+        }
+        let changed = Backlog.move(in: open, from: source, to: destination, states: [state])
+        for t in changed {
+            await cloud.push(task: t)
+            if let i = snapshot.tasks.firstIndex(where: { $0.id == t.id }) { snapshot.tasks[i] = t }
+        }
         dashboard = Dashboard.make(snapshot: snapshot)
     }
 

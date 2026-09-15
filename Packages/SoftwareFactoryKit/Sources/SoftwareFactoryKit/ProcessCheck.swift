@@ -10,7 +10,7 @@ import Foundation
 /// that is merely quiet looks the same as one that has gone. Matching on the launch
 /// command line breaks the moment an agent is resumed, because a resumed agent has no
 /// launch wrapper. Silence is not an exit: an agent thinking, building or waiting on the
-/// person is silent too, which is why `Sweep.goneAgents` waits an hour before it decides.
+/// person is silent too, which is why the factory used to wait an hour before it decided.
 ///
 /// A process id settles it, as long as it is not asked on its own. Process ids are
 /// recycled, so a pid that answers might be somebody else's process wearing a dead

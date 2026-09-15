@@ -20,7 +20,7 @@ import Testing
     @Test func aDeletedAgentDoesNotGiveItsNameBack() throws {
         let store = try temporaryStore()
         let number = try store.takeAgentNumber()
-        let agent = Agents.reserve(number: number, projectID: nil, session: nil)
+        let agent = Agents.reserve(number: number, projectID: nil)
         try store.save(agent)
         try store.delete(agent)
         #expect(try store.load().agents.isEmpty)
@@ -51,64 +51,16 @@ import Testing
         #expect(Set(taken.values).count == 25)
     }
 
-    // MARK: One terminal, one agent
-
-    /// A shell that outlives its agent keeps SOFTWARE_FACTORY_SESSION exported, so the
-    /// next agent started by hand in that window reports the same session. The window has
-    /// one agent in it, and it is the newcomer. (Alex, 13 Sep 2026: I have seen two.)
-    @Test func aSessionMovesToWhoeverIsActuallyInTheWindow() {
-        let now = wholeSecond()
-        var old = Agents.reserve(number: 1, projectID: nil, session: "sf-abcd", now: now.addingTimeInterval(-3600))
-        old.lastSeen = now.addingTimeInterval(-3600)         // silent for an hour: gone
-        let newcomer = Agents.reserve(number: 2, projectID: nil, session: nil, now: now)
-
-        let claim = Agents.claimSession("sf-abcd", for: newcomer, in: [old], now: now)
-        #expect(claim.session == "sf-abcd")
-        #expect(claim.released.count == 1)
-        #expect(claim.released[0].id == old.id && claim.released[0].session == nil)
-    }
-
-    /// An agent still working in that window keeps it, and the newcomer gets no session
-    /// rather than a window that is not its own.
-    @Test func aLiveSessionIsNotTakenFromTheAgentInIt() {
-        let now = wholeSecond()
-        var live = Agents.reserve(number: 1, projectID: nil, session: "sf-abcd", now: now)
-        live.isConnected = true
-        live.lastSeen = now
-        let newcomer = Agents.reserve(number: 2, projectID: nil, session: nil, now: now)
-
-        let claim = Agents.claimSession("sf-abcd", for: newcomer, in: [live], now: now)
-        #expect(claim.session == nil)
-        #expect(claim.released.isEmpty)
-    }
-
-    /// An agent saying its own session again changes nothing.
-    @Test func anAgentKeepsItsOwnSession() {
-        let now = wholeSecond()
-        var mine = Agents.reserve(number: 1, projectID: nil, session: "sf-abcd", now: now)
-        mine.isConnected = true
-        let claim = Agents.claimSession("sf-abcd", for: mine, in: [mine], now: now)
-        #expect(claim.session == "sf-abcd")
-        #expect(claim.released.isEmpty)
-    }
-
-    /// An agent that has left is not in the way of the window it used to be in.
-    @Test func aDeregisteredAgentDoesNotHoldItsWindow() {
-        let now = wholeSecond()
-        var gone = Agents.reserve(number: 1, projectID: nil, session: "sf-abcd", now: now)
-        gone.isConnected = true
-        gone.lastSeen = now
-        gone.deregistered = now
-        let newcomer = Agents.reserve(number: 2, projectID: nil, session: nil, now: now)
-        let claim = Agents.claimSession("sf-abcd", for: newcomer, in: [gone], now: now)
-        #expect(claim.session == "sf-abcd")
-        #expect(claim.released.isEmpty)
-    }
-
     final class Mutex: @unchecked Sendable {
         private let lock = NSLock()
         private var numbers: [Int] = []
         func add(_ n: Int) { lock.lock(); numbers.append(n); lock.unlock() }
         var values: [Int] { lock.lock(); defer { lock.unlock() }; return numbers }
     }
+
+    // Four tests stood here for the window two agents could land on: it moved to
+    // whoever was actually in it, was not taken from one still working, stayed with its
+    // own agent, and was let go by one that had deregistered. The terminal is named
+    // after the agent now, so two of them cannot land on one and there is nothing left
+    // to arbitrate. (T-session, 13 Sep 2026, settling T156 by construction.)
 }

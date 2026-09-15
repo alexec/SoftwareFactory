@@ -6,12 +6,13 @@ import Testing
     @Test func everyRecordRoundTrips() {
         let snap = SampleData.snapshot(now: wholeSecond())
         let encoded = CloudRecords.encode(snap)
-        #expect(encoded.count == snap.projects.count + snap.tasks.count + snap.escalations.count + snap.agents.count)
+        #expect(encoded.count == snap.projects.count + snap.tasks.count + snap.escalations.count + snap.artifacts.count + snap.agents.count)
         #expect(Set(encoded.map(\.recordName)).count == encoded.count)
         let back = CloudRecords.decode(encoded)
         #expect(Set(back.projects) == Set(snap.projects))
         #expect(Set(back.tasks) == Set(snap.tasks))
         #expect(Set(back.escalations) == Set(snap.escalations))
+        #expect(Set(back.artifacts) == Set(snap.artifacts))
         #expect(Set(back.agents) == Set(snap.agents))
     }
 
@@ -63,5 +64,30 @@ import Testing
         let addedOnThePhone = FactoryTask(projectID: "/p", title: "added away from the Mac", rank: 1)
         let adopted = CloudRecords.tasksToAdopt(local: [mine], cloud: [mine, addedOnThePhone])
         #expect(adopted.map(\.id) == [addedOnThePhone.id])
+    }
+
+    @Test func aNewerParkOnThePhoneIsAdoptedAndDoneIsNotUndone() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        var local = FactoryTask(projectID: "/p", title: "the row", rank: 0)
+        local.updated = now
+        var parked = local
+        parked.state = .parked
+        parked.updated = now.addingTimeInterval(10)
+        #expect(CloudRecords.taskChangesToAdopt(local: [local], cloud: [parked]).map(\.state) == [.parked])
+        #expect(CloudRecords.taskChangesToAdopt(local: [local], cloud: [local]).isEmpty)
+
+        var done = local
+        done.state = .done
+        done.updated = now
+        var fromPhone = done
+        fromPhone.state = .parked
+        fromPhone.updated = now.addingTimeInterval(10)
+        #expect(CloudRecords.taskChangesToAdopt(local: [done], cloud: [fromPhone]).map(\.state) == [.done])
+        #expect(CloudRecords.taskChangesToAdopt(local: [done], cloud: [fromPhone]).first?.updated == fromPhone.updated)
+
+        var claimed = local
+        claimed.state = .inProgress
+        claimed.updated = now.addingTimeInterval(20)
+        #expect(CloudRecords.taskChangesToAdopt(local: [claimed], cloud: [parked]).isEmpty)
     }
 }

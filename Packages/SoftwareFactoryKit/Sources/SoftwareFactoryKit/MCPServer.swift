@@ -46,7 +46,6 @@ public struct MCPServer: Sendable {
     /// Reads one JSON-RPC message per line from stdin until it closes.
     public func serve() {
         FileHandle.standardError.write(Data("software-factory mcp: store \(store.root.path)\n".utf8))
-        var registeredAgentID: String?
         while let line = readLine(strippingNewline: true) {
             guard !line.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
             guard let data = line.data(using: .utf8),
@@ -55,20 +54,11 @@ public struct MCPServer: Sendable {
                 emit(Self.error(id: nil, code: -32700, message: "Parse error"))
                 continue
             }
-            if let response = handle(request) {
-                if Self.isAgentRegistration(request), let label = Self.registeredAgentLabel(in: response) {
-                    registeredAgentID = label
-                }
-                emit(response)
-            }
+            if let response = handle(request) { emit(response) }
         }
-        if let registeredAgentID {
-            do {
-                try setConnection(connected: false, for: registeredAgentID)
-            } catch {
-                FileHandle.standardError.write(Data("software-factory mcp: could not record disconnect: \(error)\n".utf8))
-            }
-        }
+        // Nothing to record on the way out. The connection closing says nothing about
+        // the agent: it may have been the app restarting, and the agent works on. Its
+        // process is what says whether it is there. (T-session, 13 Sep 2026.)
     }
 
     private func emit(_ message: [String: Any]) {
@@ -99,13 +89,12 @@ public struct MCPServer: Sendable {
             return Self.result(id: id, ["tools": Tool.all.map(\.descriptor)])
         case "tools/call":
             let name = params["name"] as? String ?? ""
-            var args = params["arguments"] as? [String: Any] ?? [:]
-            // The connection's own name, kept apart from the argument so a registration
-            // can tell "this is me again" from "I am asking for that name".
-            if let agentID {
-                args["agent_id"] = agentID
-                args["bound_agent_id"] = agentID
-            }
+            let args = params["arguments"] as? [String: Any] ?? [:]
+            // The caller says who it is on every call, rather than the connection
+            // remembering. A connection drops when the app restarts and the agent lives
+            // on, so an identity that belonged to the connection had to be registered
+            // again to get it back, and the agent came back as somebody else.
+            // (Alex, 13 Sep 2026.)
             do {
                 let text = try call(name, args)
                 return Self.result(id: id, ["content": [["type": "text", "text": text]], "isError": false])
@@ -204,10 +193,9 @@ public struct MCPServer: Sendable {
         are already waiting. Without it you are given the next free name instead. If SOFTWARE_FACTORY_SESSION is set in your environment, pass its value as \
         `session` when you register: the app started you and shows your terminal on your page. \
         Work from the \
-        backlog: before you create or change a task, call project_read for its project and read its \
-        description and instructions. Read the backlog (task_list) and take the work in the order it \
+        backlog. Read the backlog (task_list) and take the work in the order it \
         is in; tasks that belong together sit together, and you may claim several at once when they \
-        are one piece of work. A task's work says what to produce: design a brief and stop, plan \
+        are one piece of work. Ask the factory to start another agent (agent_create); eight on the floor is the cap. Nudge another agent (agent_nudge). A task's work says what to produce: design a brief and stop, plan \
         and stop, implement, fix a cause, review, investigate without changing anything, or ship a \
         build. task_next hands you the top task nobody is on when you would rather be \
         handed one, and never a parked one — parked is set aside on purpose, not yours to start on \
@@ -215,7 +203,9 @@ public struct MCPServer: Sendable {
         on hold, finish what you are on and start nothing new on it. When you cannot decide \
         something yourself, raise it \
         (escalation_raise) with two or more \
-        options and your recommendation, then wait for the answer (escalation_await). If a task is \
+        options and your recommendation, then wait for the answer (escalation_await). Put a document \
+        on the project (artifact_add) when they should read it here; a link on the question is filed \
+        as an artifact too. If a task is \
         blocked (waiting on a decision, another task, or a person), mark it (task_block) and pick up \
         the next one (task_next); the factory unblocks it when the wait is over. Before using \
         anything shared (a phone, a simulator, the browser, the whole Mac) lease it (resource_lease) and \
@@ -247,6 +237,10 @@ public struct MCPServer: Sendable {
         var properties: [String: Any]
         var required: [String]
         var kind: Kind = .command
+        /// When set, overrides the default (queries and destructive tools are
+        /// idempotent; commands are not). artifact_add writes, but the same title
+        /// or link returns the one already there.
+        var idempotentHint: Bool? = nil
 
         /// Every tool takes this, the same way Claude Code's own Bash tool does: a short
         /// line in active voice saying what this particular call is doing ("Claiming
@@ -257,37 +251,50 @@ public struct MCPServer: Sendable {
             str("One line, active voice, what this call is doing right now, e.g. \"Claiming T509\" — shown to the person in place of the tool's name.")
         }
 
+        /// Every tool takes this, and every tool requires it. The caller says who it is
+        /// on each call rather than the connection remembering, because a connection
+        /// drops when the app restarts while the agent works on. An identity that
+        /// belonged to the connection had to be registered again to get it back, and the
+        /// agent came back as somebody else. (Alex, 13 Sep 2026.)
+        static var sessionID: [String: Any] {
+            str("The UUID the factory started you with, in the words you began with. It is your session: your name here, the terminal you run in, and the conversation you can be resumed into.")
+        }
+
         var descriptor: [String: Any] {
             var properties = properties
-            // Project descriptions are actual tool input, so they take precedence over
-            // the transcript-only call description used by the other tools.
             if properties["description"] == nil {
                 properties["description"] = Self.callDescription
             }
+            properties["session_id"] = Self.sessionID
             // The hints a client reads to decide what it may do on its own.
             let annotations: [String: Any] = [
                 "readOnlyHint": kind == .query,
                 "destructiveHint": kind == .destructive,
-                "idempotentHint": kind != .command,
+                "idempotentHint": idempotentHint ?? (kind != .command),
             ]
             return ["name": name, "description": description,
                     "annotations": annotations,
-                    "inputSchema": ["type": "object", "properties": properties, "required": required]]
+                    "inputSchema": ["type": "object", "properties": properties,
+                                    "required": required + ["session_id"]]]
         }
 
         public static var all: [Tool] { [
             // Agents
-            Tool(name: "agent_register", description: "Register this MCP session with the factory. Leave agent_id out and the factory gives you the next A<n>. Every call you make counts as a sign of life; there is no separate check-in. Call again to update this registration.",
-                 properties: ["pid": ["type": "integer", "description": "Your own process id, so the factory can tell whether you are still running rather than merely quiet. Claude Code has it in CLAUDE_PID. Otherwise run `ps -o ppid= -p $$` in a shell: the parent of any shell you run is you. Do not send $$ itself, which is that shell and will have exited by the time anyone asks"],
-                              "agent_id": str("The name you were told to register as, when you were told one, like A6. Leave it out and the factory gives you the next free name. A name a live session is working as is refused, and so is one that has been used before: a number belongs to one agent for the life of the factory"),
-                              "about": str("Optional self-description for other agents"),
-                              "project": str("The project you work on, by name: an app, a role across apps, a piece of tooling. Leave it out if your work belongs to no project. A name close to an existing project's is refused; a genuinely new name makes a new project"),
-                              "session": str("The value of SOFTWARE_FACTORY_SESSION, when it is set: the terminal session the app started you in, so it can show you working")],
-                 required: []),
-            Tool(name: "agent_deregister", description: "Leave the factory permanently when you will not work here again. Releases every lease you hold.",
-                 properties: [:], required: []),
-            Tool(name: "agent_list", description: "Other agents registered with the factory, with their A<n> ids, projects and self-descriptions.",
+            // agent_register and agent_deregister stood here. Neither has anything left
+            // to do. The factory writes an agent down and starts it, so it knows the
+            // session, the name, the project and the process before the agent has said
+            // a word: there is nothing to announce. And a process that has exited is
+            // the goodbye, said by the kernel and not to be taken on trust from an agent
+            // that may have crashed instead. (T-session, 13 Sep 2026.)
+            Tool(name: "agent_list", description: "Other agents registered with the factory, with their A<n> ids, projects and terminal titles.",
                  properties: [:], required: [], kind: .query),
+            Tool(name: "agent_create", description: "Ask the factory to start another agent. It is written down, named and started the same way as one you launch from the app. Eight on the floor is the cap.",
+                 properties: ["project": str("Project it works; defaults to yours"),
+                              "task_id": str("Optional: start it on this task, already in its name")],
+                 required: []),
+            Tool(name: "agent_nudge", description: "Poke another agent the same way the person's Nudge does: the words land in its inbox, and in its terminal when it has one. Tells it there is work waiting.",
+                 properties: ["to_agent_id": str("The agent's A<n> id from agent_list")],
+                 required: ["to_agent_id"]),
             Tool(name: "message_send", description: "Send a message to another agent's inbox.",
                  properties: ["to_agent_id": str("The recipient's id from agent_list"),
                               "subject": str("The message subject"),
@@ -301,22 +308,18 @@ public struct MCPServer: Sendable {
             // Projects
             Tool(name: "project_list", description: "Every project, with what is in progress and who is on it.",
                  properties: [:], required: [], kind: .query),
-            Tool(name: "project_read", description: "Read one project's name, description and instructions, and record that you have read them. Do this before creating or changing one of its tasks.",
-                 properties: ["project": str("Project name or id")], required: ["project"]),
-            Tool(name: "project_add", description: "Add a project with a description saying when agents should use it. Instructions are optional guidance agents must read before changing its tasks. A project is a name, not a folder. Returns the project if the name is already taken. A name close to an existing one is refused unless force is set.",
+            Tool(name: "project_read", description: "Read one project's name, folder and whether it is on hold.",
+                 properties: ["project": str("Project name or id")], required: ["project"], kind: .query),
+            Tool(name: "project_add", description: "Add a project. A project is a name, not a folder. Returns the project if the name is already taken. A name close to an existing one is refused unless force is set.",
                  properties: ["name": str("The project's name"), "force": ["type": "boolean", "description": "Make it even though the name is close to another project's"],
-                              "folder": str("Optional: the folder an agent should run in for this project"),
-                              "description": str("A brief description saying when to use this project"),
-                              "instructions": str("Optional instructions for agents working this project")],
-                 required: ["name", "description"]),
-            Tool(name: "project_set", description: "Change a project: its description, its instructions, the folder agents run in, or whether it is on hold. Give only what you are changing; an empty value clears instructions or the folder. A project on hold hands out no work.",
+                              "folder": str("Optional: the folder an agent should run in for this project")],
+                 required: ["name"]),
+            Tool(name: "project_set", description: "Change a project: the folder agents run in, or whether it is on hold. Give only what you are changing; an empty folder clears it. A project on hold hands out no work.",
                  properties: ["project": str("Project name"),
-                              "set_description": str("A brief description saying when to use this project"),
-                              "instructions": str("Instructions agents must read; empty clears them"),
                               "folder": str("The folder an agent runs in; empty clears it"),
                               "on_hold": ["type": "boolean", "description": "True stops work being handed out; false starts it again"]],
                  required: ["project"]),
-            Tool(name: "project_remove", description: "Take a project out of the factory: a wrong name, a project that is over. Refused while it has tasks in the backlog, in progress or blocked; move or remove those first. Nothing is deleted: the record stays on disk, out of every list, and its done and parked tasks go with it.",
+            Tool(name: "project_remove", description: "Take a project out of the factory: a wrong name, a project that is over. Refused while it has tasks in the backlog, in progress or blocked; remove those first. Nothing is deleted: the record stays on disk, out of every list, and its done and parked tasks go with it.",
                  properties: ["project": str("Project name"), "reason": str("Why")],
                  required: ["project"], kind: .destructive),
 
@@ -337,8 +340,8 @@ public struct MCPServer: Sendable {
                               "above_task_id": str("Put it directly above this task instead"),
                               "note": str("Why, and anything the next reader needs"),
                               "work": ["type": "string",
-                                       "enum": ["design", "plan", "implement", "fix", "review", "investigate", "ship"],
-                                       "description": "What the agent should do. Defaults to implement."],
+                                       "enum": ["design", "plan", "implement", "code", "fix", "review", "investigate", "ship"],
+                                       "description": "What the agent should do. Defaults to implement (Code)."],
                               "number": ["type": "integer", "description": "A short number of your choosing (T509), to match a number already in use elsewhere; otherwise the next free one is given"]],
                  required: ["project", "title"]),
             Tool(name: "task_claim", description: "You are on this task now, or on several that are one piece of work. Marks them in progress under your name. Read task_list first: tasks that belong together are usually next to each other.",
@@ -356,14 +359,13 @@ public struct MCPServer: Sendable {
                               "task_ids": ["type": "array", "items": ["type": "string"], "description": "Several tasks the line belongs on"],
                               "text": str("What to add")],
                  required: ["text"]),
-            Tool(name: "task_set", description: "Change what a task is rather than where it stands: its title, its number, the work the agent should do, the project it belongs to, where it sits on the backlog, or whose name is on it. Give only what you are changing.",
+            Tool(name: "task_set", description: "Change what a task is rather than where it stands: its title, its number, the work the agent should do, where it sits on the backlog, or whose name is on it. Give only what you are changing. A task stays on the project it was filed on.",
                  properties: ["task_id": str("The task"),
                               "title": str("A new title"),
                               "number": ["type": "integer", "description": "A short number (T509), unique across every project"],
                               "work": ["type": "string",
-                                       "enum": ["design", "plan", "implement", "fix", "review", "investigate", "ship"],
+                                       "enum": ["design", "plan", "implement", "code", "fix", "review", "investigate", "ship"],
                                        "description": "What the agent should do"],
-                              "project": str("Move it to this project's backlog, at the bottom, with a note saying where it came from"),
                               "above_task_id": str("Put it directly above this task on the same backlog"),
                               "assign_to": str("An agent's A<n> id: the task is theirs, and task_next passes over it for everyone else. Empty takes the name off")],
                  required: ["task_id"]),
@@ -379,9 +381,11 @@ public struct MCPServer: Sendable {
                  properties: ["task_id": str("The task"), "reason": str("Why")], required: ["task_id"], kind: .destructive),
 
             // Questions
-            Tool(name: "escalation_raise", description: "Ask the person to decide something. Give two or more options and say which you recommend. Returns the escalation_id; then call escalation_await. Give task_id when the question stops a task: the task is marked blocked on the decision and unblocks itself when the answer lands.",
+            Tool(name: "escalation_raise", description: "Ask the person to decide something. Give two or more options and say which you recommend. Returns the escalation_id; then call escalation_await. Give task_id when the question stops a task: the task is marked blocked on the decision and unblocks itself when the answer lands. Give artifact_id for a document already on the project, or link for a URL: a link is filed as an artifact on the project.",
                  properties: ["project": str("Project name"), "task_id": str("The task this question stops, if any"),
                               "question": str("The question, in one line"), "context": str("What the person needs to know to choose"),
+                              "artifact_id": str("A document already on the project they should read before they choose"),
+                              "link": str("Optional http or https URL of a document they should read before they choose. Filed as an artifact."),
                               "options": ["type": "array", "minItems": 2, "items": ["type": "object",
                                           "properties": ["title": str("Short name"), "detail": str("What it means")],
                                           "required": ["title"]]],
@@ -394,6 +398,27 @@ public struct MCPServer: Sendable {
             Tool(name: "escalation_list", description: "Open questions, for one project or all.",
                  properties: ["project": str("Project name; omit for all")], required: [], kind: .query),
 
+            // Documents
+            Tool(name: "artifact_add", description: "Put a document on a project for the person to read. The same title or the same link as one already there returns that one. Twenty live artifacts is the cap for a project.",
+                 properties: ["project": str("Project name"), "title": str("The document, in one line"),
+                              "body": str("The document itself, markdown"),
+                              "link": str("Optional http or https URL this document is"),
+                              "task_id": str("The task that produced it, if any")],
+                 required: ["project", "title"], idempotentHint: true),
+            Tool(name: "artifact_list", description: "A project's documents: titles, who added them, when. Use artifact_read for the body.",
+                 properties: ["project": str("Project name")], required: ["project"], kind: .query),
+            Tool(name: "artifact_read", description: "One document in full: its title, body, and link if it has one.",
+                 properties: ["artifact_id": str("From artifact_add or artifact_list")],
+                 required: ["artifact_id"], kind: .query),
+            Tool(name: "artifact_set", description: "Change a document: its title, its body, or its link. Give only what you are changing.",
+                 properties: ["artifact_id": str("The document"), "title": str("A new title"),
+                              "body": str("A new body"),
+                              "link": str("A new http or https URL; empty clears it")],
+                 required: ["artifact_id"]),
+            Tool(name: "artifact_remove", description: "Take a document off the project. Nothing is deleted: the record stays with your reason, out of every list.",
+                 properties: ["artifact_id": str("The document"), "reason": str("Why")],
+                 required: ["artifact_id"], kind: .destructive),
+
             // Resources
             Tool(name: "resource_list", description: "Every shared resource: slots, who holds them and until when. Lease one before using a phone, a simulator, the browser or the whole Mac.",
                  properties: [:], required: [], kind: .query),
@@ -405,7 +430,7 @@ public struct MCPServer: Sendable {
                  properties: ["resource": str("Resource name or id"),
                               "minutes": ["type": "integer", "description": "How long you need it; capped by the resource's longest lease"], "why": str("What for, in one line")],
                  required: ["resource"]),
-            Tool(name: "resource_release", description: "Give a resource back early. Deregistering releases everything you hold.",
+            Tool(name: "resource_release", description: "Give a resource back early. Everything you hold goes back on its own when your process stops.",
                  properties: ["resource": str("Resource name or id")],
                  required: ["resource"]),
 
@@ -453,69 +478,55 @@ public struct MCPServer: Sendable {
         }
         // Every call is a sign of life. It happens here, once, so a handler is free to
         // read the caller without writing: a query writes nothing else. (Alex, 12 Sep 2026.)
-        if let ref = args["agent_id"] as? String, var caller = agentRef(ref, in: snap), caller.isRegistered {
+        if let ref = args["session_id"] as? String, var caller = agentRef(ref, in: snap), caller.isRegistered {
             caller.lastSeen = now()
             try? store.save(caller)
         }
         switch name {
-        case "agent_register":
-            let about = args["about"] as? String
-            // Most agents work a project; some do not, and that is allowed. Naming one
-            // nobody has used makes it. (Alex, 12 Sep 2026: mandatory, then not.)
-            var project: Project?
-            if let ref = (args["project"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !ref.isEmpty {
-                project = try resolveProject(ref, in: snap, create: true)
-            }
-            // The name it was told to use, when it was told one: the app writes an agent
-            // down before it starts, and the words it starts with name it. Registering
-            // without one asks the factory for the next free number.
-            let asked = (args["agent_id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            var agent: Agent
-            if let asked, !asked.isEmpty,
-               let claimed = try registering(as: asked, boundTo: args["bound_agent_id"] as? String, in: snap, now: now()) {
-                agent = claimed
-                agent.deregistered = nil
-                agent.lastSeen = now()
-                if let about { agent.about = about.trimmingCharacters(in: .whitespacesAndNewlines) }
-                if project != nil { agent.projectID = project?.id }
-            } else {
-                let number = try store.takeAgentNumber()
-                agent = Agent(number: number,
-                              about: about?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
-                              projectID: project?.id, registered: now())
-            }
-            // The terminal session the app started it in, when it was started that way.
-            // One terminal holds one agent: a shell that outlives its agent keeps
-            // SOFTWARE_FACTORY_SESSION exported, so the next one started by hand in that
-            // window reports the same session and would bind to the same terminal.
-            if let session = (args["session"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !session.isEmpty {
-                let claim = Agents.claimSession(session, for: agent, in: snap.agents, now: now())
-                agent.session = claim.session
-                for released in claim.released { try store.save(released) }
-            }
-            // The process it runs in, so the factory can answer whether it is still
-            // running rather than guess from silence. The agent gives its pid; the start
-            // time is read here, because a pid on its own is recycled and the pair is
-            // what makes the answer trustworthy. (Alex, 13 Sep 2026.)
-            if let reported = (args["pid"] as? NSNumber)?.int32Value ?? (args["pid"] as? Int).map(Int32.init),
-               let started = ProcessCheck.startTime(of: reported) {
-                agent.pid = reported
-                agent.pidStartedAt = started
-            }
-            agent.isConnected = true
-            try store.save(agent)
-            return "Registered. agent_id: \(agent.label)" + Self.holdWarning(project)
+        // Registering and deregistering used to live here. The factory writes the agent
+        // down, names it, starts it and reads its pid, all before the agent speaks, so
+        // there was nothing left for a registration to tell it. Leases a stopped agent
+        // was holding are released by Sweep.stoppedAgents, which asks the kernel rather
+        // than waiting to be told by an agent that may not be there to tell it.
+        // (T-session, 13 Sep 2026.)
 
-        case "agent_deregister":
-            var agent = try agent(args, in: snap)
-            agent.deregistered = now()
-            try store.save(agent)
-            let held = Leases.heldBy(agent.id, in: snap.leases, now: now())
-            for var lease in held {
-                lease.released = now()
-                try store.save(lease)
+        case "agent_create":
+            let caller = try agent(args, in: snap)
+            if Agents.atCap(snap.agents) { throw ToolError(message: Agents.fullMessage) }
+            let project: Project
+            if let ref = args["project"] as? String, !ref.isEmpty {
+                project = try resolveProject(ref, in: snap, create: false)
+            } else if let id = caller.projectID, let p = snap.projects.first(where: { $0.id == id }) {
+                project = p
+            } else {
+                throw ToolError(message: "Name a project, or work one yourself.")
             }
-            return held.isEmpty ? "Deregistered. Thank you." : "Deregistered and released \(held.count) lease\(held.count == 1 ? "" : "s"). Thank you."
+            guard project.path?.isEmpty == false else {
+                throw ToolError(message: "Set the project's folder first: an agent has to start somewhere.")
+            }
+            var task: FactoryTask?
+            if let ref = args["task_id"] as? String, !ref.isEmpty {
+                guard let found = taskRef(ref, in: snap) else {
+                    throw ToolError(message: "Unknown task_id: \(ref). A task's UUID, or its number as T509.")
+                }
+                guard found.projectID == project.id else {
+                    throw ToolError(message: "\(found.label ?? "That task") is not on \(project.name).")
+                }
+                task = found
+            }
+            var created = Agents.reserve(number: try store.takeAgentNumber(), projectID: project.id, now: now())
+            created.wantsLaunch = true
+            if let task {
+                created.taskID = task.id
+                created.note = task.title
+                try store.save(Backlog.assign(task, to: created.id, named: created.label, by: caller.label, at: now()))
+            }
+            try store.save(created)
+            let forTask = task.map { t in
+                let label = t.label.map { "\($0), " } ?? ""
+                return " for \(label)\"\(t.title)\""
+            } ?? ""
+            return "Starting \(created.label) on \(project.name)\(forTask). Its session_id is \(created.id.uuidString). It will appear on the floor."
 
         case "agent_list":
             let caller = try agent(args, in: snap)
@@ -525,9 +536,23 @@ public struct MCPServer: Sendable {
             return agents.sorted { ($0.number ?? .max, $0.label) < ($1.number ?? .max, $1.label) }.map { listed in
                 let project = listed.projectID.flatMap { id in snap.projects.first { $0.id == id } }?.name
                 let activity = listed.isWorking(now: now()) ? "working" : "quiet"
-                let about = listed.about.isEmpty ? "" : "  \(listed.about)"
-                return "\(listed.label)  [\(activity)]\(project.map { "  \($0)" } ?? "")\(about)"
+                let title = listed.title.isEmpty ? "" : "  \(listed.title)"
+                return "\(listed.label)  [\(activity)]\(project.map { "  \($0)" } ?? "")\(title)"
             }.joined(separator: "\n")
+
+        case "agent_nudge":
+            let sender = try agent(args, in: snap)
+            guard let recipient = agentRef(try string("to_agent_id", args), in: snap),
+                  recipient.isRegistered
+            else { throw ToolError(message: "No active agent has that to_agent_id.") }
+            guard recipient.id != sender.id else { throw ToolError(message: "Nudge another agent, not yourself.") }
+            let message = AgentMessage(recipientID: recipient.id, from: sender.label,
+                                       subject: "Nudge", contents: LaunchPrompt.nudge, sent: now())
+            try store.save(message)
+            var poked = recipient
+            poked.wantsNudge = true
+            try store.save(poked)
+            return "Nudged \(recipient.label)."
 
         case "message_send":
             let sender = try agent(args, in: snap)
@@ -560,32 +585,22 @@ public struct MCPServer: Sendable {
                 let doing = p.doing.map { " · \($0)" } ?? ""
                 let who = p.agents.map(\.label).joined(separator: ", ")
                 let hold = p.project.onHold ? "  ON HOLD" : ""
-                let description = p.project.description.isEmpty ? "" : "  \(p.project.description)"
-                return "\(p.project.name)\(description)  [\(p.activity.rawValue)\(who.isEmpty ? "" : ": " + who)]\(doing)\(hold)"
+                return "\(p.project.name)  [\(p.activity.rawValue)\(who.isEmpty ? "" : ": " + who)]\(doing)\(hold)"
             }.joined(separator: "\n")
 
         case "project_read":
             let project = try resolveProject(try string("project", args), in: snap, create: false)
-            var caller = try agent(args, in: snap)
-            caller.seenInstructions[project.id] = project.instructions
-            try store.save(caller)
+            let folder = project.path ?? "(none)"
             return """
                 name: \(project.name)
-                description: \(project.description)
-                instructions: \(project.instructions.isEmpty ? "(none)" : project.instructions)
+                folder: \(folder)
+                on_hold: \(project.onHold)
                 """
 
         case "project_add":
             let ref = (args["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? (args["path"] as? String) ?? ""
             guard !ref.isEmpty else { throw ToolError(message: "name is required") }
-            let name = ref.hasPrefix("/") ? Project.name(fromPath: ref) : ref
-            let existing = snap.projects.first { $0.id == ref } ?? Projects.exact(name, in: snap.projects)
-            let description = (args["description"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if existing == nil, description.isEmpty {
-                throw ToolError(message: "description is required when creating a project")
-            }
-            var project = try resolveProject(ref, in: snap, create: true, force: args["force"] as? Bool ?? false,
-                                             description: description, instructions: args["instructions"] as? String ?? "")
+            var project = try resolveProject(ref, in: snap, create: true, force: args["force"] as? Bool ?? false)
             if let folder = args["folder"] as? String, !folder.isEmpty, project.path != folder {
                 project.path = folder
                 try store.save(project)
@@ -595,14 +610,6 @@ public struct MCPServer: Sendable {
         case "project_set":
             var project = try resolveProject(try string("project", args), in: snap, create: false)
             var said: [String] = []
-            if let description = (args["set_description"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !description.isEmpty {
-                project.description = description
-                said.append("description is updated")
-            }
-            if let instructions = (args["instructions"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) {
-                project.instructions = instructions
-                said.append(instructions.isEmpty ? "instructions are cleared" : "instructions are updated")
-            }
             if let folder = args["folder"] as? String {
                 project.path = folder.isEmpty ? nil : folder
                 said.append(folder.isEmpty ? "has no folder now" : "runs in \(folder)")
@@ -611,7 +618,7 @@ public struct MCPServer: Sendable {
                 project.onHold = onHold
                 said.append(onHold ? "is on hold: nothing is handed out from its backlog" : "is off hold")
             }
-            guard !said.isEmpty else { throw ToolError(message: "Say what to change: set_description, instructions, folder or on_hold.") }
+            guard !said.isEmpty else { throw ToolError(message: "Say what to change: folder or on_hold.") }
             try store.save(project)
             return "\(project.name) \(said.joined(separator: ", "))."
 
@@ -619,7 +626,7 @@ public struct MCPServer: Sendable {
             var project = try resolveProject(try string("project", args), in: snap, create: false)
             let open = snap.tasks.filter { $0.projectID == project.id && [.backlog, .inProgress, .blocked].contains($0.state) }
             guard open.isEmpty else {
-                throw ToolError(message: "\(project.name) still has \(open.count) task\(open.count == 1 ? "" : "s") in the backlog, in progress or blocked. Move them (task_move) or remove them (task_remove) first.")
+                throw ToolError(message: "\(project.name) still has \(open.count) task\(open.count == 1 ? "" : "s") in the backlog, in progress or blocked. Remove them (task_remove) first.")
             }
             project.removed = now()
             try store.save(project)
@@ -669,7 +676,6 @@ public struct MCPServer: Sendable {
 
         case "task_add":
             let project = try resolveProject(try string("project", args), in: snap, create: false)
-            try requireProjectRead(project, args: args, in: snap)
             let position = (args["position"] as? String).flatMap(Backlog.Position.init(rawValue:)) ?? .bottom
             let every = (try? store.loadEveryTask()) ?? snap.tasks
             var number = Backlog.nextNumber(in: every)
@@ -694,7 +700,6 @@ public struct MCPServer: Sendable {
 
         case "task_set":
             var task = try task(args, in: snap)
-            try requireProjectRead(for: task, args: args, in: snap)
             var said: [String] = []
             if let title = (args["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
                 task.title = title
@@ -728,14 +733,10 @@ public struct MCPServer: Sendable {
                 if let moved = changed.first(where: { $0.id == task.id }) { task = moved }
                 said.append("now sits above \(other.title)")
             }
-            if let ref = args["project"] as? String, !ref.isEmpty {
-                let project = try resolveProject(ref, in: snap, create: false)
-                try requireProjectRead(project, args: args, in: snap)
-                guard project.id != task.projectID else { throw ToolError(message: "\(task.title) is already on \(project.name).") }
-                task = Backlog.move(task, to: project, from: snap.projects.first { $0.id == task.projectID }, in: snap.tasks, at: now())
-                said.append("is on \(project.name)'s backlog")
+            if args["project"] != nil {
+                throw ToolError(message: "A task stays on the project it was filed on.")
             }
-            guard !said.isEmpty else { throw ToolError(message: "Say what to change: title, number, work, project, above_task_id or assign_to.") }
+            guard !said.isEmpty else { throw ToolError(message: "Say what to change: title, number, work, above_task_id or assign_to.") }
             task.updated = now()
             try store.save(task)
             return "\(task.title) \(said.joined(separator: ", "))."
@@ -750,7 +751,6 @@ public struct MCPServer: Sendable {
             var claimed: [FactoryTask] = []
             for ref in refs {
                 guard let task = taskRef(ref, in: snap) else { throw ToolError(message: "No task \(ref).") }
-                try requireProjectRead(for: task, agent: agent, in: snap)
                 try store.save(Backlog.set(task, to: .inProgress, agentID: agent.id, at: now()))
                 claimed.append(task)
             }
@@ -765,7 +765,6 @@ public struct MCPServer: Sendable {
 
         case "task_status":
             var task = try task(args, in: snap)
-            try requireProjectRead(for: task, args: args, in: snap)
             guard let state = FactoryTask.State(rawValue: try string("state", args)) else {
                 throw ToolError(message: "state must be backlog, inProgress, done or parked")
             }
@@ -792,7 +791,6 @@ public struct MCPServer: Sendable {
 
         case "task_note":
             let task = try task(args, in: snap)
-            try requireProjectRead(for: task, args: args, in: snap)
             let who = try agent(args, in: snap).label
             let noted = Backlog.comment(on: task, try string("text", args), by: who, at: now())
             try store.save(noted)
@@ -800,7 +798,6 @@ public struct MCPServer: Sendable {
 
         case "task_block":
             let task = try task(args, in: snap)
-            try requireProjectRead(for: task, args: args, in: snap)
             guard let kind = FactoryTask.Blocker.Kind(rawValue: try string("on", args)) else {
                 throw ToolError(message: "on must be decision, task, person or other")
             }
@@ -821,7 +818,6 @@ public struct MCPServer: Sendable {
 
         case "task_unblock":
             let task = try task(args, in: snap)
-            try requireProjectRead(for: task, args: args, in: snap)
             guard task.state == .blocked else { throw ToolError(message: "\(task.title) is not blocked.") }
             do {
                 let cleared = try Backlog.unblock(task, matching: try string("which", args), at: now())
@@ -846,13 +842,42 @@ public struct MCPServer: Sendable {
                                   detail: o["detail"] as? String ?? "", recommended: i == recommended)
             }
             var agent: Agent?
-            if args["agent_id"] != nil { agent = try self.agent(args, in: snap) }
+            if args["session_id"] != nil { agent = try self.agent(args, in: snap) }
             var task: FactoryTask?
             if let ref = args["task_id"] as? String, !ref.isEmpty { task = try self.task(args, in: snap) }
-            if let task { try requireProjectRead(for: task, args: args, in: snap) }
+            let link: String
+            do {
+                link = try Escalation.validatedLink(args["link"] as? String)
+            } catch {
+                throw ToolError(message: "link must be an http or https URL")
+            }
+            var artifactID: UUID?
+            if let ref = args["artifact_id"] as? String, !ref.isEmpty {
+                let artifact = try self.artifact(["artifact_id": ref], in: snap)
+                guard artifact.projectID == project.id else {
+                    throw ToolError(message: "That document is not on \(project.name).")
+                }
+                artifactID = artifact.id
+            } else if !link.isEmpty {
+                // A link on a question is filed as an artifact so it lives on the
+                // project. At the cap the question still goes through; the URL stays
+                // on the card.
+                do {
+                    let result = try Artifacts.add(
+                        projectID: project.id, title: "", body: "", link: link,
+                        taskID: task?.id, agentID: agent?.id, addedBy: agent?.label ?? "agent",
+                        in: snap.artifacts, at: now())
+                    if result.created { try store.save(result.artifact) }
+                    artifactID = result.artifact.id
+                } catch Artifacts.AddError.atCap {
+                    artifactID = nil
+                } catch {
+                    throw ToolError(message: "Could not file the link as an artifact.")
+                }
+            }
             let escalation = Escalation(
                 projectID: project.id, question: try string("question", args),
-                context: args["context"] as? String ?? "", options: options,
+                context: args["context"] as? String ?? "", link: link, artifactID: artifactID, options: options,
                 agentID: agent?.id, taskID: task?.id, raisedBy: agent?.label ?? "agent", raised: now())
             try store.save(escalation)
             if let task {
@@ -888,8 +913,96 @@ public struct MCPServer: Sendable {
                 let project = snap.projects.first { $0.id == e.projectID }?.name ?? e.projectID
                 let opts = e.options.map { "\($0.title)\($0.recommended ? " (recommended)" : "")" }.joined(separator: " | ")
                 let stops = e.taskID.flatMap { id in snap.tasks.first { $0.id == id } }.map { "  stops: \($0.title)" } ?? ""
-                return "\(e.id.uuidString)  [\(project)] \(e.question)  \(opts)\(stops)"
+                let link = e.link.isEmpty ? "" : "  link: \(e.link)"
+                let artifact = e.artifactID.map { "  artifact_id: \($0.uuidString)" } ?? ""
+                return "\(e.id.uuidString)  [\(project)] \(e.question)  \(opts)\(stops)\(link)\(artifact)"
             }.joined(separator: "\n")
+
+        case "artifact_add":
+            let project = try resolveProject(try string("project", args), in: snap, create: false)
+            let agent = try? self.agent(args, in: snap)
+            var task: FactoryTask?
+            if let ref = args["task_id"] as? String, !ref.isEmpty { task = try self.task(args, in: snap) }
+            let result: (artifact: Artifact, created: Bool)
+            do {
+                result = try Artifacts.add(
+                    projectID: project.id, title: try string("title", args),
+                    body: args["body"] as? String ?? "", link: args["link"] as? String ?? "",
+                    taskID: task?.id, agentID: agent?.id, addedBy: agent?.label ?? "agent",
+                    in: snap.artifacts, at: now())
+            } catch Artifacts.AddError.emptyTitle {
+                throw ToolError(message: "title is required")
+            } catch Artifacts.AddError.bodyTooLong {
+                throw ToolError(message: "body is too long; keep it under \(Artifacts.maxBody) characters")
+            } catch Artifacts.AddError.atCap {
+                throw ToolError(message: Artifacts.fullMessage)
+            } catch Artifacts.AddError.badLink {
+                throw ToolError(message: "link must be an http or https URL")
+            }
+            if result.created { try store.save(result.artifact) }
+            let verb = result.created ? "Added" : "Already there"
+            return "\(verb). artifact_id: \(result.artifact.id.uuidString). \(result.artifact.title)"
+
+        case "artifact_list":
+            let project = try resolveProject(try string("project", args), in: snap, create: false)
+            let listed = Artifacts.live(for: project.id, in: snap.artifacts)
+            if listed.isEmpty { return "No artifacts on \(project.name)." }
+            return listed.map { a in
+                let task = a.taskID.flatMap { id in snap.tasks.first { $0.id == id } }
+                    .map { "  task: \($0.label ?? $0.title)" } ?? ""
+                let link = a.link.isEmpty ? "" : "  link: \(a.link)"
+                return "\(a.id.uuidString)  \(a.title)  \(a.addedBy)\(task)\(link)"
+            }.joined(separator: "\n")
+
+        case "artifact_read":
+            let artifact = try self.artifact(args, in: snap)
+            let project = snap.projects.first { $0.id == artifact.projectID }?.name ?? artifact.projectID
+            var lines = [
+                "artifact_id: \(artifact.id.uuidString)",
+                "title: \(artifact.title)",
+                "project: \(project)",
+                "added by \(artifact.addedBy)",
+            ]
+            if let task = artifact.taskID.flatMap({ id in snap.tasks.first { $0.id == id } }) {
+                lines.append("task: \(task.label.map { "\($0) " } ?? "")\(task.title)")
+            }
+            if !artifact.link.isEmpty { lines.append("link: \(artifact.link)") }
+            lines.append("body:")
+            lines.append(artifact.body.isEmpty ? "(empty)" : artifact.body)
+            return lines.joined(separator: "\n")
+
+        case "artifact_set":
+            let artifact = try self.artifact(args, in: snap)
+            let hasTitle = args["title"] != nil
+            let hasBody = args["body"] != nil
+            let hasLink = args["link"] != nil
+            guard hasTitle || hasBody || hasLink else {
+                throw ToolError(message: "Say what to change: title, body or link.")
+            }
+            let updated: Artifact
+            do {
+                updated = try Artifacts.set(
+                    artifact,
+                    title: hasTitle ? (args["title"] as? String ?? "") : nil,
+                    body: hasBody ? (args["body"] as? String ?? "") : nil,
+                    link: hasLink ? (args["link"] as? String ?? "") : nil,
+                    in: snap.artifacts, at: now())
+            } catch Artifacts.SetError.emptyTitle {
+                throw ToolError(message: "title is required")
+            } catch Artifacts.SetError.bodyTooLong {
+                throw ToolError(message: "body is too long; keep it under \(Artifacts.maxBody) characters")
+            } catch Artifacts.SetError.badLink {
+                throw ToolError(message: "link must be an http or https URL")
+            } catch Artifacts.SetError.titleTaken {
+                throw ToolError(message: "Another document on the project already has that title.")
+            }
+            try store.save(updated)
+            return "Updated \(updated.title)."
+
+        case "artifact_remove":
+            let artifact = try self.artifact(args, in: snap)
+            try store.save(Artifacts.remove(artifact, why: args["reason"] as? String ?? "", at: now()))
+            return "Removed: \(artifact.title). The record is kept, out of the lists."
 
         case "resource_list":
             if snap.resources.isEmpty { return "No resources defined. resource_add makes one." }
@@ -1006,10 +1119,10 @@ public struct MCPServer: Sendable {
     func taskWork(_ args: [String: Any], defaulting: Bool = true) throws -> FactoryTask.Work {
         guard let raw = args["work"] as? String, !raw.isEmpty else {
             if defaulting { return .implement }
-            throw ToolError(message: "work must be design, plan, implement, fix, review, investigate or ship.")
+            throw ToolError(message: "work must be design, plan, code, implement, fix, review, investigate or ship.")
         }
-        guard let work = FactoryTask.Work(rawValue: raw) else {
-            throw ToolError(message: "work must be design, plan, implement, fix, review, investigate or ship.")
+        guard let work = FactoryTask.Work.parse(raw) else {
+            throw ToolError(message: "work must be design, plan, code, implement, fix, review, investigate or ship.")
         }
         return work
     }
@@ -1017,8 +1130,8 @@ public struct MCPServer: Sendable {
     /// Resolves the caller. Reading only: the heartbeat is stamped once per call, at
     /// the top of `call`.
     func agent(_ args: [String: Any], in snap: Snapshot) throws -> Agent {
-        guard let agent = agentRef(try string("agent_id", args), in: snap)
-        else { throw ToolError(message: "Unknown agent_id. Call agent_register first.") }
+        guard let agent = agentRef(try string("session_id", args), in: snap)
+        else { throw ToolError(message: "Unknown session_id. It is the UUID the factory started you with, in the words you began with. Call agent_register with it first.") }
         return agent
     }
 
@@ -1032,67 +1145,21 @@ public struct MCPServer: Sendable {
 
     static func nextAgentNumber(in agents: [Agent]) -> Int { Agents.nextNumber(in: agents) }
 
-    /// The agent a registration is for, when it asked for one by name.
-    ///
-    /// It gets the record if the name is its own: an agent the app wrote down before it
-    /// started, or one coming back after its connection dropped. It is refused while
-    /// another session is live on that name, and refused a number that has been given
-    /// out before, because a number means one agent for the life of the factory. A
-    /// number nobody has had yet is its own for the asking.
-    func registering(as ref: String, boundTo bound: String?, in snap: Snapshot, now: Date) throws -> Agent? {
-        if let existing = agentRef(ref, in: snap) {
-            // Its own name, on a connection already registered as it: this is the same
-            // agent calling again to change what it says about itself.
-            let itsOwn = bound.flatMap { agentRef($0, in: snap) }?.id == existing.id
-            // A name is taken while a session is live on it. A session that died hard
-            // never says goodbye, so ten minutes of silence gives the name back.
-            guard itsOwn || !existing.hasLiveSession(now: now) else {
-                throw ToolError(message: "\(existing.label) is taken: a session is working as it. Register with no agent_id and the factory will give you a name of your own.")
-            }
-            var agent = existing
-            // A record written before the counter existed spends its number now.
-            if let number = agent.number {
-                try store.agentNumbers().claim(number)
-            } else {
-                agent.number = try store.takeAgentNumber()
-            }
-            return agent
-        }
-        // Anything that is not a name at all is nothing to go on: the factory names it.
-        guard ref.first == "A", let number = Int(ref.dropFirst()), number > 0 else { return nil }
-        // Free only if nobody has ever had it: a deleted agent does not give its name back.
-        guard try store.agentNumbers().claim(number) else {
-            throw ToolError(message: "A\(number) has been given out before, and a number belongs to one agent for good. Register with no agent_id and the factory will give you the next one.")
-        }
-        return Agent(number: number, projectID: nil, registered: now)
-    }
+    // Agents used to claim a name, and the factory had to arbitrate: a name a live
+    // session was working as was refused, a number given out before was refused, and a
+    // name nobody had taken was granted. None of it is needed now. The factory makes the
+    // session and the name before it launches the agent, so neither was ever the agent's
+    // to ask for. (T-session, 13 Sep 2026, and it settles T156 with it.)
 
     func setConnection(connected: Bool, for agentID: String) throws {
         let snap = try store.load()
         guard var agent = agentRef(agentID, in: snap) else {
-            throw ToolError(message: "Unknown agent_id. Call agent_register first.")
+            throw ToolError(message: "Unknown session_id. Call agent_register first.")
         }
         let timestamp = now()
         agent.isConnected = connected
         agent.lastSeen = timestamp
         try store.save(agent)
-    }
-
-    static func isAgentRegistration(_ request: [String: Any]) -> Bool {
-        let params = request["params"] as? [String: Any]
-        return request["method"] as? String == "tools/call" && params?["name"] as? String == "agent_register"
-    }
-
-    static func registeredAgentLabel(in response: [String: Any]) -> String? {
-        guard let result = response["result"] as? [String: Any],
-              result["isError"] as? Bool == false,
-              let content = result["content"] as? [[String: Any]],
-              let text = content.first?["text"] as? String,
-              let label = text.split(whereSeparator: \.isWhitespace).first(where: {
-                  $0.first == "A" && Int($0.dropFirst()) != nil
-              })
-        else { return nil }
-        return String(label)
     }
 
     /// A task by its id, or by its number as "T509" or "509".
@@ -1109,12 +1176,19 @@ public struct MCPServer: Sendable {
         return Backlog.task(numbered: ref, in: snap.tasks)
     }
 
+    func artifact(_ args: [String: Any], in snap: Snapshot) throws -> Artifact {
+        let ref = try string("artifact_id", args)
+        guard let id = UUID(uuidString: ref), let artifact = snap.artifacts.first(where: { $0.id == id }) else {
+            throw ToolError(message: "Unknown artifact_id: \(ref).")
+        }
+        return artifact
+    }
+
     /// A project by name (case does not matter) or id. An old caller may still send a
     /// folder path: that means the folder's name, and matches a project registered under
     /// that path before names stood alone. An unknown name becomes a project when
     /// `create` is set, so an agent can file against its project without a step first.
-    func resolveProject(_ ref: String, in snap: Snapshot, create: Bool, force: Bool = false,
-                        description: String = "", instructions: String = "") throws -> Project {
+    func resolveProject(_ ref: String, in snap: Snapshot, create: Bool, force: Bool = false) throws -> Project {
         let ref = ref.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = ref.hasPrefix("/") ? Project.name(fromPath: ref) : ref
         if let p = snap.projects.first(where: { $0.id == ref }) { return p }
@@ -1126,40 +1200,9 @@ public struct MCPServer: Sendable {
         if !force, let near = Projects.nearMiss(name, in: snap.projects) {
             throw ToolError(message: "No project called \(name), but there is \(near.name): use that name. If \(name) really is a different project, project_add it with force.")
         }
-        let p = Project(name: name, description: description, instructions: instructions, added: now())
+        let p = Project(name: name, added: now())
         try store.save(p)
         return p
-    }
-
-    /// Registered agents must explicitly read the project's current instructions before
-    /// a task-changing command. Calls without a registered agent preserve the CLI's
-    /// local administrative use.
-    func requireProjectRead(_ project: Project, args: [String: Any], in snap: Snapshot) throws {
-        guard let ref = args["agent_id"] as? String,
-              let agent = agentRef(ref, in: snap),
-              agent.isRegistered
-        else { return }
-        try requireProjectRead(project, agent: agent, in: snap)
-    }
-
-    func requireProjectRead(for task: FactoryTask, args: [String: Any], in snap: Snapshot) throws {
-        guard let project = snap.projects.first(where: { $0.id == task.projectID }) else {
-            throw ToolError(message: "The project for \(task.title) no longer exists.")
-        }
-        try requireProjectRead(project, args: args, in: snap)
-    }
-
-    func requireProjectRead(for task: FactoryTask, agent: Agent, in snap: Snapshot) throws {
-        guard let project = snap.projects.first(where: { $0.id == task.projectID }) else {
-            throw ToolError(message: "The project for \(task.title) no longer exists.")
-        }
-        try requireProjectRead(project, agent: agent, in: snap)
-    }
-
-    func requireProjectRead(_ project: Project, agent: Agent, in _: Snapshot) throws {
-        guard agent.seenInstructions[project.id] == project.instructions else {
-            throw ToolError(message: "You must first call project_get for \(project.name) and read its instructions before creating or modifying a task.")
-        }
     }
 
     static func holdWarning(_ project: Project?) -> String {

@@ -49,6 +49,12 @@ struct EscalationCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            if let artifact = escalation.artifactID.flatMap({ id in model.snapshot.artifacts.first { $0.id == id } }) {
+                ArtifactCard(artifact: artifact)
+            } else if !escalation.link.isEmpty {
+                ReviewLink(link: escalation.link)
+            }
+
             GlassEffectContainer(spacing: 8) {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(escalation.options) { option in
