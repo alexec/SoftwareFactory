@@ -424,6 +424,9 @@ struct AgentView: View {
                 Text(project.name)
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                // Where its work lives, one click away: an agent's page is where you
+                // are when you want to look at what it has been writing. (T300.)
+                OpenFolderButton(project: project)
             }
             // The line the agent set with its terminal title is what it is doing right
             // now, so it belongs on the top row beside the project rather than at the

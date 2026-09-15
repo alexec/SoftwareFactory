@@ -123,6 +123,12 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     slot frees), renew, release, heldBy, stale.
   - `CloudRecords`: each record as one CloudKit record (`json`, `updated`); diff for
     pushes; `decisionsToAdopt` for decisions made on another device.
+  - `Projects.folder`: a project's path as something that can be opened, the other half
+    of `shortPath`. The tilde the person was shown comes off again, against the real home
+    rather than `NSHomeDirectory`, which in the sandbox is our own container. Anything
+    that is not absolute is no folder at all: `URL(filePath:)` reads it against the
+    working directory, which is wherever the app was launched from, and would open a
+    folder nobody meant. (T300.)
   - `Projects`: `exact` (letters and digits only, case folded) and `nearMiss` (one name
     contains the other, a couple of characters apart, or a shared word of five letters:
     "NightSleeper" is a slip for "Sleeper Train"). `resolveProject` refuses a near miss
@@ -299,7 +305,10 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     be on the floor at once; add a resource, see who holds it, Take back. The throttle sliders that held new work on swap or memory are
     out for the moment, to be refined),
     `Notifier` (one banner per new question, options as actions; `Presence.isAtTheMac`),
-    `EscalationCard`, `ProjectView` (backlog
+    `EscalationCard`, `OpenFolder` and
+    `OpenFolderButton` (the project's folder in the Finder, from its own header where the
+    path itself opens it and Change sets it, and from the agent page beside the project
+    name, T300), `ProjectView` (backlog
     with add, drag reorder, state menu, notes under rows, the artifacts the agents filed
     as cards in a grid (`ArtifactTile`, opening `ArtifactSheet`: they were disclosure rows
     down the middle of the backlog, which made a plan and a one-line note the same size

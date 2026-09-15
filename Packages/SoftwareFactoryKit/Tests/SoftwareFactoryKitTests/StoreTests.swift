@@ -387,3 +387,35 @@ func wholeSecond() -> Date {
         #expect(atExpiry.decided.isEmpty)
     }
 }
+
+@Suite struct ProjectFolderTests {
+    @Test func aProjectWithNoFolderHasNothingToOpen() {
+        #expect(Projects.folder(nil, home: "/Users/alex") == nil)
+        #expect(Projects.folder("", home: "/Users/alex") == nil)
+        #expect(Projects.folder("   ", home: "/Users/alex") == nil)
+    }
+
+    @Test func aPlainPathIsItself() {
+        #expect(Projects.folder("/Work/Thing", home: "/Users/alex")?.path == "/Work/Thing")
+    }
+
+    @Test func theTildeThePersonWasShownComesOffAgain() {
+        #expect(Projects.folder("~/Work/Thing", home: "/Users/alex")?.path == "/Users/alex/Work/Thing")
+        #expect(Projects.folder("~", home: "/Users/alex")?.path == "/Users/alex")
+        // It round trips with what they were shown.
+        let path = "/Users/alex/Work/Thing"
+        #expect(Projects.folder(Projects.shortPath(path, home: "/Users/alex"), home: "/Users/alex")?.path == path)
+    }
+
+    @Test func aTildeInAFolderNameIsNotAHome() {
+        #expect(Projects.folder("/Work/~odd", home: "/Users/alex")?.path == "/Work/~odd")
+    }
+
+    @Test func aPathThatIsNotAbsoluteIsNoFolderAtAll() {
+        // It would otherwise be read against the working directory, which is wherever
+        // the app was launched from, and open a folder nobody meant.
+        #expect(Projects.folder("Work/Thing", home: "/Users/alex") == nil)
+        #expect(Projects.folder("~odd/Work", home: "/Users/alex") == nil)
+        #expect(Projects.folder("~/Work", home: "") == nil)
+    }
+}

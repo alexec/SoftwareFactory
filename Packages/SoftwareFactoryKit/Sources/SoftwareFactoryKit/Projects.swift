@@ -63,6 +63,32 @@ public enum Projects {
         return "~" + path.dropFirst(home.count)
     }
 
+    /// The folder a project's work lives in, as something that can be opened, or nothing
+    /// when the project has no folder set.
+    ///
+    /// The other half of `shortPath`: the person is shown "~/Work" and may type it back,
+    /// through `project_set` or by hand, so the tilde has to come off again here. It is
+    /// expanded against the real home rather than `NSHomeDirectory`, which inside the
+    /// sandbox is the app's own container and matches nothing a person means. Whether the
+    /// folder is there is not asked: a path to a folder on a disk that is not plugged in
+    /// is still where the project lives. (T300, Alex, 15 Sep 2026.)
+    public static func folder(_ path: String?, home: String = FileStore.realHomeDirectory().path) -> URL? {
+        guard let path else { return nil }
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if trimmed == "~" { return home.isEmpty ? nil : URL(filePath: home, directoryHint: .isDirectory) }
+        if trimmed.hasPrefix("~/") {
+            guard !home.isEmpty else { return nil }
+            return URL(filePath: home + trimmed.dropFirst(1), directoryHint: .isDirectory)
+        }
+        // Absolute or nothing. `URL(filePath:)` reads anything else against the working
+        // directory, which for this app is wherever it happened to be launched from, so
+        // a path typed as "Work/Thing" would open a folder nobody meant. A project's
+        // folder is a place on the disk, not a place relative to us.
+        guard trimmed.hasPrefix("/") else { return nil }
+        return URL(filePath: trimmed, directoryHint: .isDirectory)
+    }
+
     static func distance(_ a: String, _ b: String) -> Int {
         let a = Array(a), b = Array(b)
         if a.isEmpty { return b.count }

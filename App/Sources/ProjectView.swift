@@ -218,9 +218,21 @@ struct ProjectView: View {
             }
             // Where it lives. Who is on it, and starting another, are the cards below.
             HStack(spacing: 10) {
-                Button(pathDisplay) { chooseFolder() }
-                    .buttonStyle(.borderless)
-                    .help(project.path == nil ? "Set the folder an agent should run in" : "Change the folder an agent should run in")
+                // The path opens the folder, because that is what clicking a path means
+                // anywhere else; changing it is the rarer thing and says so. A project
+                // with no folder yet has the one button, which sets it. (T300.)
+                if let url = OpenFolder.url(for: project) {
+                    Button(pathDisplay) { OpenFolder.open(url) }
+                        .buttonStyle(.borderless)
+                        .help("Show \(pathDisplay) in the Finder")
+                    Button("Change…") { chooseFolder() }
+                        .buttonStyle(.borderless)
+                        .help("Choose a different folder for an agent to run in")
+                } else {
+                    Button(pathDisplay) { chooseFolder() }
+                        .buttonStyle(.borderless)
+                        .help("Set the folder an agent should run in")
+                }
                 Spacer()
             }
             .font(.caption)
