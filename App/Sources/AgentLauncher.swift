@@ -139,7 +139,7 @@ enum StartAgent {
     /// The old tmux session is killed first. It is still there, holding a dead pane, and
     /// `new-session -A` would attach to that and run nothing. (T262.)
     @discardableResult
-    static func resume(agent: Agent, model: AppModel, terminals: TerminalSessions) -> String? {
+    static func resume(agent: Agent, model: AppModel, terminals: TerminalSessions) async -> String? {
         guard Agents.mayResume(agent) else { return "\(agent.label) is not stopped." }
         let kind = LaunchAgent.remembered(agent.launchedWith)
         let command = kind.resumeCommand(session: agent.id)
@@ -151,7 +151,7 @@ enum StartAgent {
             }
             return nil
         }
-        terminals.end(agent.id.uuidString)
+        await terminals.end(agent.id.uuidString)
         do {
             switch model.launchStyle {
             case .embedded:
@@ -167,18 +167,11 @@ enum StartAgent {
                 try AgentLauncher.launch(project, command: command)
             }
             model.findTheProcess(for: agent)
-            // Resuming brings the conversation back, and nothing else: the CLI opens on
-            // what was said and waits, so the agent sits there looking exactly as stopped
-            // as it did before. It has to be told to carry on, which is what a nudge is.
-            // The words cannot ride on the command line, because `claude --resume <id>
-            // "words"` answers once and exits rather than staying up, so they are typed
-            // in a few seconds later, once the CLI has drawn its prompt.
-            // (Alex, 14 Sep 2026: it looked like Start did nothing.)
-            _Concurrency.Task { [weak model] in
-                try? await _Concurrency.Task.sleep(for: .seconds(5))
-                guard let model, let again = model.snapshot.agents.first(where: { $0.id == agent.id }) else { return }
-                model.nudge(again)
-            }
+            // Nothing is typed in. Starting an agent back up puts the conversation back
+            // on screen and stops there: what it does next is the person's to say, in
+            // the terminal or with Nudge, and a factory that puts words in an agent's
+            // mouth the moment it wakes is one you cannot start without committing to.
+            // (Alex, 14 Sep 2026: when starting an agent, do not send it any message.)
             return nil
         } catch {
             return error.localizedDescription

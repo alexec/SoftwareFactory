@@ -265,7 +265,7 @@ struct AgentCard: View {
                 .padding(10)
             } else if status.canResume {
                 Button("Start") {
-                    _ = StartAgent.resume(agent: status.agent, model: model, terminals: terminals)
+                    Task { _ = await StartAgent.resume(agent: status.agent, model: model, terminals: terminals) }
                 }
                 .buttonStyle(.glass)
                 .controlSize(.small)
@@ -277,7 +277,7 @@ struct AgentCard: View {
         .contextMenu {
             if status.canResume {
                 Button("Start \(status.agent.label)") {
-                    _ = StartAgent.resume(agent: status.agent, model: model, terminals: terminals)
+                    Task { _ = await StartAgent.resume(agent: status.agent, model: model, terminals: terminals) }
                 }
             }
             if status.canStop {
@@ -330,9 +330,12 @@ struct AgentView: View {
                     // its view over once and SwiftUI keeps it. Going from one agent to
                     // the next in the sidebar reuses this position, so without an
                     // identity of its own the pane went on showing the agent you came
-                    // from. (Alex, 14 Sep 2026.)
+                    // from. (Alex, 14 Sep 2026.) The identity is the run rather than the
+                    // session, because starting a stopped agent back up makes a new
+                    // terminal under the same session id and the page has to follow it.
+                    // (Alex, 14 Sep 2026.)
                     TerminalPanel(terminal: session.terminal)
-                        .id(session.id)
+                        .id(session.run)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     if showsDetails {
                         Divider()
@@ -423,7 +426,9 @@ struct AgentView: View {
             // A stopped agent is picked back up where it left off, in the same session,
             // so it comes back knowing who it is and what it was doing. (T262.)
             if status.canResume {
-                Button("Start") { resumeError = StartAgent.resume(agent: agent, model: model, terminals: terminals) }
+                Button("Start") {
+                    Task { resumeError = await StartAgent.resume(agent: agent, model: model, terminals: terminals) }
+                }
                     .buttonStyle(.glassProminent)
                     .controlSize(.small)
                     .help("Start it back up in the conversation it was having")

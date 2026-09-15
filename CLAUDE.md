@@ -149,8 +149,15 @@ before you mark the task done. Build the phone too when the change is in it.
     and what it was doing. Only for one the factory launched and then watched stop: an
     agent that never reported a pid is never called stopped, so it is never offered a
     start. The old tmux session is killed first, because `new-session -A` would attach to
-    its dead pane and run nothing. Start sits beside Stop on the agent's page and in both
+    its dead pane and run nothing, and that kill runs off the main thread like every
+    other question put to tmux. Start sits beside Stop on the agent's page and in both
     of its menus. (T262)
+    Starting one types nothing into it. The conversation comes back on screen and stops
+    there: what it does next is the person's to say, in the terminal or with Nudge.
+    `TerminalSessions.Session.run` is a fresh id for each terminal actually started in a
+    session, and the page keys its pane on that rather than on the session id, which does
+    not change across a start: SwiftUI kept the view it had and went on drawing the dead
+    terminal while the new one ran unseen. (Alex, 14 Sep 2026.)
   - `Sweep.stoppedAgents`: an agent whose process has gone gives back what it held. This
     replaced an hour of silence, which was a guess: an agent thinking is silent too.
   - `Sweep.unblocked`: a task blocked on a decision now made, or a task now done, goes

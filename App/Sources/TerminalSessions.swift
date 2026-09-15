@@ -13,6 +13,13 @@ final class TerminalSessions {
     /// A running session: the name the agent reports back, and the live terminal.
     struct Session: Identifiable {
         var id: String
+        /// A fresh identity every time a terminal is actually started in this session.
+        /// The session id is the agent's, and it is the same one before and after the
+        /// agent is started back up, so it cannot be what the page keys its pane on: on
+        /// a resume SwiftUI saw the same id, kept the view it already had, and went on
+        /// showing the dead terminal while the new one ran unseen.
+        /// (Alex, 14 Sep 2026: make sure that the terminal is updated in the UI.)
+        var run = UUID()
         /// The project it was started for. Nil for an agent that works no project.
         var projectID: String?
         var started: Date
@@ -254,11 +261,18 @@ final class TerminalSessions {
     }
 
     /// Ends the session and forgets it. The agent stops where it stands, in tmux too.
-    func end(_ id: String) {
-        Tmux.kill(id)
+    ///
+    /// The pane this app holds goes first, so no page is left drawing a terminal that is
+    /// about to die under it. Killing the tmux session runs tmux, which waits, so that
+    /// half happens off the main thread and is waited for: the caller is usually about
+    /// to start a new session under the same name, and `new-session -A` would attach to
+    /// the old dead pane and run nothing.
+    func end(_ id: String) async {
         sessions[id]?.terminal.terminate()
         sessions[id] = nil
         watchers[id] = nil
+        await Task.detached(priority: .userInitiated) { Tmux.kill(id) }.value
+        held.remove(id)
     }
 }
 

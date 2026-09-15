@@ -201,7 +201,7 @@ struct RootView: View {
             // (T261.)
             if status.canResume {
                 Button("Start \(status.agent.label)") {
-                    _ = StartAgent.resume(agent: status.agent, model: model, terminals: terminals)
+                    Task { _ = await StartAgent.resume(agent: status.agent, model: model, terminals: terminals) }
                 }
             }
             if status.canStop {
