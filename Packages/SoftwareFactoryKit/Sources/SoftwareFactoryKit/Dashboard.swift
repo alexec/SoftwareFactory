@@ -112,6 +112,13 @@ public struct Dashboard: Sendable, Equatable {
 
     public var workingCount: Int { projects.filter { $0.activity == .working }.count }
 
+    /// The agents on one project. The sidebar hangs them under the project they work
+    /// rather than gathering them in a group of their own: where an agent is matters
+    /// more than that it exists. (Alex, 14 Sep 2026.)
+    public func agents(on projectID: String) -> [AgentStatus] {
+        agents.filter { $0.project?.id == projectID }
+    }
+
     /// Agents on no project: the sidebar's No project row. (T176, 13 Sep 2026.)
     public var unassignedAgents: [AgentStatus] { agents.filter { $0.project == nil } }
 

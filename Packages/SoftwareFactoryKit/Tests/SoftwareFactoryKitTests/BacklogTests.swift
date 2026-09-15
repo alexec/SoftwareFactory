@@ -336,6 +336,22 @@ import Testing
         #expect(!d.unassignedIsEmpty)
     }
 
+    /// Every agent hangs off the project it works, and one on no project hangs off
+    /// nothing. The sidebar reads them this way. (Alex, 14 Sep 2026.)
+    @Test func agentsHangOffTheProjectTheyWork() {
+        let one = Project(name: "Walkist", id: "/w")
+        let two = Project(name: "Sleeper", id: "/s")
+        let a1 = Agent(number: 1, projectID: "/w", registered: now.addingTimeInterval(-300))
+        let a2 = Agent(number: 2, projectID: "/s", registered: now.addingTimeInterval(-200))
+        let a3 = Agent(number: 3, projectID: "/w", registered: now.addingTimeInterval(-100))
+        let a4 = Agent(number: 4, projectID: nil, registered: now)
+        let d = Dashboard.make(snapshot: Snapshot(projects: [one, two], agents: [a1, a2, a3, a4]), now: now)
+        #expect(d.agents(on: "/w").map(\.agent.label) == ["A1", "A3"])
+        #expect(d.agents(on: "/s").map(\.agent.label) == ["A2"])
+        #expect(d.agents(on: "/nothing").isEmpty)
+        #expect(d.unassignedAgents.map(\.agent.label) == ["A4"])
+    }
+
     /// A project reads the way its agents do: green working, orange waiting or blocked,
     /// grey for anything else.
     @Test func aProjectReadsTheWayItsAgentsDo() {

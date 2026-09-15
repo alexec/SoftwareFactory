@@ -51,45 +51,7 @@ struct RootView: View {
                     }
                 }
                 .tag(Destination.noProject)
-
-                // The floor in the sidebar: an agent is one click from wherever you
-                // are, not only from the Agents page. Its dot says how it is, and it
-                // rings here too. (T222.)
-                if !model.dashboard.agents.isEmpty {
-                    Section("Agents (\(model.dashboard.agents.count))") {
-                        ForEach(model.dashboard.agents) { status in
-                            HStack(spacing: 6) {
-                                AgentActivityDot(activity: status.activity)
-                                Text(status.agent.label)
-                                    .foregroundStyle(status.activity == .stopped ? .secondary : .primary)
-                                // The line the agent set with an OSC title, which is what
-                                // it is doing right now; its project when it has not set
-                                // one. Truncated in the middle, because a title says what
-                                // it is doing at the front and how long for at the end.
-                                // (T225.)
-                                Text(sidebarLine(status))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .help(sidebarLine(status))
-                                Spacer()
-                                if status.agent.bel { AgentBellMark() }
-                                if status.waitingOnYou {
-                                    Image(systemName: "questionmark.circle.fill")
-                                        .foregroundStyle(.orange)
-                                        .help("It asked you something")
-                                }
-                            }
-                            .tag(Destination.agent(status.id))
-                            .contextMenu {
-                                Button("Delete \(status.agent.label)", role: .destructive) {
-                                    model.delete(status.agent)
-                                }
-                            }
-                        }
-                    }
-                }
+                ForEach(model.dashboard.unassignedAgents) { agentRow($0) }
 
                 // Alex, 12 Sep 2026: the count in the heading.
                 Section("Projects (\(model.dashboard.projects.count))") {
@@ -113,6 +75,11 @@ struct RootView: View {
                             Button("Remove project…", role: .destructive) { removing = status.project }
                                 .disabled(!model.openTasks(in: status.project).isEmpty)
                         }
+                        // The floor, under the project it is working. An agent is one
+                        // click from wherever you are, and where it is says more than
+                        // that it exists. (T222, and Alex, 14 Sep 2026: under its
+                        // project, not in a group of its own.)
+                        ForEach(model.dashboard.agents(on: status.id)) { agentRow($0) }
                     }
                 }
             }
@@ -174,6 +141,37 @@ struct RootView: View {
         }
         .sheet(isPresented: Binding(get: { !model.hasSeenIntro }, set: { model.hasSeenIntro = !$0 })) {
             IntroSheet()
+        }
+    }
+
+    /// One agent, indented under the project it works. Its dot says how it is, the line
+    /// it set with an OSC title says what it is doing, it rings here when it rang, and
+    /// clicking it opens its page. (T222, T225.)
+    private func agentRow(_ status: Dashboard.AgentStatus) -> some View {
+        HStack(spacing: 6) {
+            AgentActivityDot(activity: status.activity)
+            Text(status.agent.label)
+                .foregroundStyle(status.activity == .stopped ? .secondary : .primary)
+            Text(sidebarLine(status))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(sidebarLine(status))
+            Spacer()
+            if status.agent.bel { AgentBellMark() }
+            if status.waitingOnYou {
+                Image(systemName: "questionmark.circle.fill")
+                    .foregroundStyle(.orange)
+                    .help("It asked you something")
+            }
+        }
+        .padding(.leading, 14)
+        .tag(Destination.agent(status.id))
+        .contextMenu {
+            Button("Delete \(status.agent.label)", role: .destructive) {
+                model.delete(status.agent)
+            }
         }
     }
 
