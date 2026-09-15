@@ -39,6 +39,26 @@ public enum ProcessCheck {
         #endif
     }
 
+    /// Stops the process recorded for an agent, and answers whether it had one to stop.
+    ///
+    /// The pair is checked first and the whole point of checking it is here rather than
+    /// in the reading: a pid on its own is recycled, and signalling one on its own is how
+    /// you kill somebody else's work. Nothing is sent unless the process running under
+    /// that pid is the one that started when the agent's record says it started.
+    ///
+    /// SIGTERM, so the agent gets to put its own things down. An agent that ignores it is
+    /// still there afterwards, and `isRunning` will say so: stopping harder is the
+    /// caller's next move, not a decision to make inside one call. (T261.)
+    @discardableResult
+    public static func stop(pid: Int32?, startedAt: Date?, signal code: Int32 = SIGTERM) -> Bool {
+        #if canImport(Darwin)
+        guard let pid, isRunning(pid: pid, startedAt: startedAt) else { return false }
+        return kill(pid, code) == 0
+        #else
+        return false
+        #endif
+    }
+
     /// Whether the process recorded for an agent is the one still running. Both halves
     /// are needed: the pid says where to look and the start time says it is still the
     /// same process. A second's tolerance, because the two clocks are not the same one.

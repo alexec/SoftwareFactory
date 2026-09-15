@@ -233,9 +233,39 @@ final class AppModel {
             .sorted { $0.updated > $1.updated }
     }
 
+    /// Stops an agent where it stands. The floor could start one from the day it was
+    /// built and had no way of ending one: Delete took the card away and left the agent
+    /// working, which is the worst of both, and the only other way out was to find the
+    /// window yourself.
+    ///
+    /// Its process gets SIGTERM, so it can put down what it is holding. The pane stays,
+    /// because `remain-on-exit` keeps it: what the agent last said is usually why you
+    /// stopped it. The record stays too, and reads as stopped on the next refresh, which
+    /// is what hands back its leases and puts its task back on the backlog. Nothing here
+    /// has to be written down: the kernel is the record. (T261.)
+    func stop(_ agent: Agent) {
+        guard Agents.mayStop(agent) else { return }
+        let pid = agent.pid
+        let started = agent.pidStartedAt
+        ProcessCheck.stop(pid: pid, startedAt: started)
+        // SIGTERM is a request. An agent still there a few seconds later gets the signal
+        // it cannot ignore: a Stop that leaves the agent working is worse than no Stop.
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            ProcessCheck.stop(pid: pid, startedAt: started, signal: SIGKILL)
+            self?.refresh()
+        }
+        refresh()
+    }
+
     /// Takes an agent out of the factory for good. Whatever it was holding is freed, so a
     /// deleted agent never sits on a slot. The tasks it worked keep its name.
+    ///
+    /// It is stopped first when there is a process to stop. A deleted agent that kept
+    /// working was an agent nobody could see and nobody could reach: no card, no
+    /// terminal, and still making calls. (T261.)
     func delete(_ agent: Agent) {
+        stop(agent)
         persist { store in
             for lease in snapshot.leases where lease.agentID == agent.id && lease.released == nil {
                 var ended = lease

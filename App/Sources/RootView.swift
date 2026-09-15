@@ -197,6 +197,13 @@ struct RootView: View {
                     sendNudge(to: status.agent, model: model, terminals: terminals)
                 }
             }
+            // Stop ends its process where it stands; Delete takes the record away too.
+            // (T261.)
+            if status.canStop {
+                Button("Stop \(status.agent.label)", role: .destructive) {
+                    model.stop(status.agent)
+                }
+            }
             Button("Delete \(status.agent.label)", role: .destructive) {
                 model.delete(status.agent)
             }

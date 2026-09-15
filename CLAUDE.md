@@ -131,6 +131,17 @@ before you mark the task done. Build the phone too when the change is in it.
     quiet. Do not use `session` for this. It lives on the launch wrapper, so an agent
     that has been resumed has lost it while still working. An agent that never reported
     a pid is never called stopped: not seen is not dead.
+    `ProcessCheck.stop` is how an agent is stopped, and it checks the pair before it
+    signals anything: a pid on its own is recycled, so signalling one on its own is how
+    you kill a stranger's work. SIGTERM first, then SIGKILL five seconds later for an
+    agent that ignored it, because a Stop that leaves the agent working is worse than no
+    Stop. `Agents.mayStop` and `Dashboard.AgentStatus.canStop` say who may be stopped:
+    any agent whose process the factory knows and which has not already gone. An external
+    agent never told us a process, so there is nothing here to stop. Stopping leaves the
+    pane, so what the agent last said is still readable, and writes nothing down: the
+    record reads as stopped on the next refresh, which is what hands back its leases and
+    puts its task back. Delete stops it first. A deleted agent used to keep working with
+    no card, no terminal and no way to reach it. (T261.)
   - `Sweep.stoppedAgents`: an agent whose process has gone gives back what it held. This
     replaced an hour of silence, which was a guess: an agent thinking is silent too.
   - `Sweep.unblocked`: a task blocked on a decision now made, or a task now done, goes
@@ -186,7 +197,9 @@ before you mark the task done. Build the phone too when the change is in it.
     the floor in a group of their own, then the projects. An agent is two lines: its dot
     and the project it is on, then the line it set with an OSC title, with its bell in
     front when it rang. The row opens that agent's page from anywhere, and opening the
-    page clears the bell however you got there; right click to Nudge or Delete it.
+    page clears the bell however you got there; right click to Nudge, Stop or Delete it.
+    Stop is on the agent's page too, beside Nudge, and asks first there: one click on a
+    wide target ends an agent mid-thought, and that cannot be taken back. (T261.)
     T222, T225, and Alex, 14 Sep 2026), `DashboardView` (stat tiles, Needs you as a horizontal strip,
     the agents on the floor as cards; `AgentCard` is one of them and `AgentView` is the
     page behind it; an agent that is not stopped has Nudge, its messages and terminal),

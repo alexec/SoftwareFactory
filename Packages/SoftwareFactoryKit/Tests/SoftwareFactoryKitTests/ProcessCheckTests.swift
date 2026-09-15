@@ -93,6 +93,32 @@ import Testing
         #expect(Dashboard.activity(of: unknown, task: nil, hasOpenQuestion: false, now: now) == .waiting)
     }
 
+    /// Stopping an agent stops its process, and stops nothing else. A pid whose start
+    /// time does not match is somebody else wearing a recycled number, and signalling it
+    /// would kill a stranger's work. (T261.)
+    @Test func stoppingSignalsOnlyTheProcessTheRecordNames() throws {
+        let sleeper = Process()
+        sleeper.executableURL = URL(filePath: "/bin/sleep")
+        sleeper.arguments = ["60"]
+        try sleeper.run()
+        let pid = sleeper.processIdentifier
+        let started = try #require(ProcessCheck.startTime(of: pid))
+        #expect(ProcessCheck.isRunning(pid: pid, startedAt: started))
+
+        // A start time that does not match: not this process, so nothing is sent.
+        #expect(!ProcessCheck.stop(pid: pid, startedAt: started.addingTimeInterval(-3600)))
+        #expect(ProcessCheck.isRunning(pid: pid, startedAt: started))
+        // Nothing recorded at all: nothing to stop.
+        #expect(!ProcessCheck.stop(pid: nil, startedAt: started))
+
+        // The pair matches, so it goes.
+        #expect(ProcessCheck.stop(pid: pid, startedAt: started))
+        sleeper.waitUntilExit()
+        #expect(!ProcessCheck.isRunning(pid: pid, startedAt: started))
+        // And stopping one that has already gone is not an error, it is simply nothing.
+        #expect(!ProcessCheck.stop(pid: pid, startedAt: started))
+    }
+
     /// Stop is offered for a process the factory knows and can still reach. An agent
     /// that registered from somewhere else never told us one, and one whose process has
     /// already gone has nothing left to stop. (T261.)

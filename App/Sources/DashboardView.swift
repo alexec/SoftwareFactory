@@ -267,6 +267,9 @@ struct AgentCard: View {
         }
         .help("Show \(status.agent.label)")
         .contextMenu {
+            if status.canStop {
+                Button("Stop \(status.agent.label)", role: .destructive) { model.stop(status.agent) }
+            }
             Button("Delete \(status.agent.label)", role: .destructive) { model.delete(status.agent) }
         }
     }
@@ -279,6 +282,9 @@ struct AgentView: View {
     /// Back to the page this was opened from. Nil when there is nowhere to go.
     var back: (() -> Void)?
     @State private var showsDetails = true
+    /// Stopping an agent cannot be taken back, and the header button is one click on a
+    /// wide target, so it asks first. (T261.)
+    @State private var confirmingStop = false
 
     private struct ResourceLease: Identifiable {
         var resource: Resource
@@ -328,6 +334,11 @@ struct AgentView: View {
         // Opening the page is the look it rang for, however you got here: from its card,
         // or from its row in the sidebar. (T225.)
         .onAppear { model.clearBell(agent) }
+        .confirmationDialog("Stop \(agent.label)?", isPresented: $confirmingStop) {
+            Button("Stop \(agent.label)", role: .destructive) { model.stop(agent) }
+        } message: {
+            Text("It stops in the middle of whatever it is doing. What it has already said stays here, and anything it was holding goes back.")
+        }
         .toolbar {
             if let back {
                 ToolbarItem(placement: .navigation) {
@@ -383,6 +394,12 @@ struct AgentView: View {
                 .buttonStyle(.glass)
                 .controlSize(.small)
                 .help("Tell it to pick up the next task")
+            }
+            if status.canStop {
+                Button("Stop") { confirmingStop = true }
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+                    .help("End this agent's process. What it has said stays on the page.")
             }
             Text(agent.lastSeen, format: .relative(presentation: .named))
                 .font(.callout)
