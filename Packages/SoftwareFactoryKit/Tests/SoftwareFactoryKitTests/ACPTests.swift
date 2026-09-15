@@ -164,3 +164,49 @@ struct ACPTests {
         #expect(ACP.StopReason("something new").note == nil)
     }
 }
+
+/// What the help page is built from. The launch popover shows none of this any more:
+/// it is a working screen, and a paragraph you read and dismiss every time you start an
+/// agent is a paragraph in the way. (Alex, 16 Sep 2026.)
+struct LaunchAgentHelpTests {
+    @Test func everyOneSaysWhatItIs() {
+        for agent in LaunchAgent.allCases {
+            #expect(!agent.explanation.isEmpty, "\(agent.title) says nothing about itself.")
+            #expect(!agent.title.isEmpty)
+        }
+    }
+
+    @Test func aShellNeedsNothingSettingUp() {
+        #expect(LaunchAgent.terminal.setUp.isEmpty)
+        #expect(LaunchAgent.terminal.installURL == nil)
+        #expect(LaunchAgent.terminal.isCodingAgent == false)
+    }
+
+    @Test func anACPAgentIsHandedTheFactoryRatherThanRegisteringWithIt() {
+        // No plugin install for one that speaks ACP: `session/new` carries the MCP
+        // server, so the marketplace dance is somebody else's problem now.
+        for agent in LaunchAgent.allCases where agent.speaksACP {
+            #expect(agent.setUp.contains { $0.what.contains("Register") } == false)
+        }
+        // Claude Code speaks it through an adapter you install; Copilot has it built in
+        // and so has nothing to set up beyond Copilot itself.
+        #expect(LaunchAgent.claudeCode.setUp.map(\.what) == ["The part that speaks ACP"])
+        #expect(LaunchAgent.copilot.setUp.isEmpty)
+    }
+
+    @Test func oneThatDoesNotSpeakItStillRegistersTheOldWay() {
+        for agent in LaunchAgent.allCases where !agent.speaksACP && agent.isCodingAgent {
+            #expect(agent.setUp.contains { $0.what.contains("Register") })
+            #expect(agent.installURL != nil)
+        }
+    }
+
+    @Test func everyStepHasSomethingToRun() {
+        for agent in LaunchAgent.allCases {
+            for step in agent.setUp {
+                #expect(!step.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                        "\(agent.title): \(step.what) has nothing to run.")
+            }
+        }
+    }
+}

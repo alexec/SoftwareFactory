@@ -1,5 +1,18 @@
 import SwiftUI
 
+/// The Help menu. Its own type so it can read `openWindow` out of the environment, which
+/// a closure inside `.commands` cannot.
+struct HelpCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandGroup(replacing: .help) {
+            Button(AgentSetupHelp.title) { openWindow(id: AgentSetupHelp.windowID) }
+                .keyboardShortcut("?", modifiers: .command)
+        }
+    }
+}
+
 @main
 struct SoftwareFactoryApp: App {
     @State private var model: AppModel
@@ -25,6 +38,14 @@ struct SoftwareFactoryApp: App {
                 .environment(floor)
         }
         .defaultSize(width: 980, height: 680)
+        // Help goes in the Help menu, which is where a Mac keeps it. The launch popover
+        // links here rather than carrying the instructions itself. (Alex, 16 Sep 2026.)
+        .commands { HelpCommands() }
+
+        Window(AgentSetupHelp.title, id: AgentSetupHelp.windowID) {
+            AgentSetupHelp()
+        }
+        .defaultSize(width: 560, height: 620)
 
         Settings {
             SettingsView()

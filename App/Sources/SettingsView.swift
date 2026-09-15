@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(TerminalSessions.self) private var terminals
     @Environment(Floor.self) private var floor
+    @Environment(\.openWindow) private var openWindow
     @State private var showingIntro = false
     @State private var copiedInstall = false
     @State private var installError: String?
@@ -14,6 +15,7 @@ struct SettingsView: View {
         Form {
             Section {
                 Button("How it works") { showingIntro = true }
+                Button(AgentSetupHelp.title) { openWindow(id: AgentSetupHelp.windowID) }
             }
 
             Section("Notifications") {

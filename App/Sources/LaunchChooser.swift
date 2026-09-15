@@ -4,79 +4,6 @@ import SoftwareFactoryKit
 
 let lastLaunchAgentKey = "lastLaunchAgent"
 
-/// The help for one coding agent: how to install it, and the command that registers
-/// this factory with it. Shown when launching, not as a setting.
-struct AgentHelp: View {
-    var agent: LaunchAgent
-    @State private var copied = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if agent.speaksACP {
-                // An ACP agent is handed the factory at `session/new`, so there is no
-                // plugin to install and nothing to register. Its page is its work rather
-                // than a terminal, and a daemon holds it, so it keeps working while this
-                // app is rebuilt. (T373.)
-                acp
-            } else if let installURL = agent.installURL, let setup = agent.setupCommand {
-                LabeledContent("How to install \(agent.title)") {
-                    Link(installURL.absoluteString, destination: installURL)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                LabeledContent("Register the factory with it") {
-                    Button(copied ? "Copied" : "Copy") {
-                        AgentLauncher.copyCommand(setup)
-                        copied = true
-                    }
-                }
-                Text(setup)
-                    .font(.callout.monospaced())
-                    .textSelection(.enabled)
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.quaternary, in: .rect(cornerRadius: Style.panel))
-            } else {
-                // A terminal has nothing to install and nothing to register.
-                Text("A shell in the project's folder, on the floor like any other, so you can run something by hand and watch it from the same page as the rest. Nothing is started in it.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .onChange(of: agent) { _, _ in copied = false }
-    }
-
-    @ViewBuilder
-    private var acp: some View {
-        Text("\(agent.title) speaks ACP, so the factory hands it the tools as it starts and its page shows what it is doing rather than a terminal. It runs in a daemon of its own and keeps working while this app is rebuilt.")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        if let installURL = agent.installURL {
-            LabeledContent("How to install \(agent.title)") {
-                Link(installURL.absoluteString, destination: installURL)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-        }
-        if let install = agent.acpInstall {
-            LabeledContent("And the part that speaks ACP") {
-                Button(copied ? "Copied" : "Copy") {
-                    AgentLauncher.copyCommand(install)
-                    copied = true
-                }
-            }
-            Text(install)
-                .font(.callout.monospaced())
-                .textSelection(.enabled)
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.quaternary, in: .rect(cornerRadius: Style.panel))
-        }
-    }
-}
-
 /// The words the agent will start with, there to be read and changed before it goes.
 /// They arrive as what the factory would have said, so launching without touching them
 /// is exactly what launching used to do. The line naming the agent and its session is
@@ -111,8 +38,14 @@ struct LaunchWords: View {
     }
 }
 
-/// Pick which coding agent to start. A segmented slider of the ones this factory
-/// can launch, help for the one in view, then Launch <name>.
+/// Pick which coding agent to start: a dropdown of the ones this factory can launch, the
+/// words it will go with, then Launch <name>.
+///
+/// It was a segmented slider with a block of setup instructions under it, and both were
+/// wrong for a screen you use all day. The slider spent the width on five names when one
+/// is showing and four are a click away, and the instructions were read and dismissed on
+/// every single launch although setting an agent up happens once. The instructions are in
+/// the Help menu now and this links to them. (Alex, 16 Sep 2026.)
 struct LaunchChooser<Extra: View>: View {
     var canLaunch: Bool
     var onLaunch: (LaunchAgent) -> Void
@@ -134,16 +67,26 @@ struct LaunchChooser<Extra: View>: View {
         _agent = State(initialValue: LaunchAgent.remembered(UserDefaults.standard.string(forKey: lastLaunchAgentKey)))
     }
 
+    @Environment(\.openWindow) private var openWindow
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker("Agent", selection: $agent) {
-                ForEach(LaunchAgent.allCases) { Text($0.title).tag($0) }
+            HStack(spacing: 8) {
+                Picker("Agent", selection: $agent) {
+                    ForEach(LaunchAgent.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .accessibilityLabel("Agent")
+                Spacer(minLength: 4)
+                Button("Setting up agents", systemImage: "questionmark.circle") {
+                    openWindow(id: AgentSetupHelp.windowID)
+                }
+                .buttonStyle(.plain)
+                .labelStyle(.iconOnly)
+                .foregroundStyle(.secondary)
+                .help("How to install each agent and what to run once")
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .accessibilityLabel("Agent")
-
-            AgentHelp(agent: agent)
 
             // Last thing before the button, because it is the last thing you decide and
             // it changes with the agent above it: pick what to start, see what it needs,

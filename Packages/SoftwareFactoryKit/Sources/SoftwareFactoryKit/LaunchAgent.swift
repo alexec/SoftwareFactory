@@ -127,6 +127,33 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
         }
     }
 
+    /// What this one is, in a sentence or two, for the help page. Not shown on the launch
+    /// popover: picking an agent is a working screen, and a paragraph you read and
+    /// dismiss on every launch is a paragraph in the way. (Alex, 16 Sep 2026.)
+    public var explanation: String {
+        switch self {
+        case .claudeCode:
+            "Anthropic's CLI. It speaks ACP, so the factory hands it the tools as it starts and its page shows the work it is doing rather than a terminal."
+        case .copilot:
+            "GitHub's CLI. It speaks ACP, so the factory hands it the tools as it starts and its page shows the work it is doing rather than a terminal."
+        case .grok:
+            "xAI's CLI. It runs in a terminal on its page, and the factory registers itself with it once through a plugin."
+        case .cursor:
+            "Cursor's CLI. It runs in a terminal on its page, and makes its own chat id, so the factory's session reaches it in the words it starts with."
+        case .terminal:
+            "Not an agent. A shell in the project's folder that shows up on the floor like anything else, so you can run something by hand and watch it from the same page as the rest. Nothing is started in it and nothing is said to it."
+        }
+    }
+
+    /// What has to be run once before this one can be launched, and what it is for. Empty
+    /// for a plain shell, which needs nothing.
+    public var setUp: [(what: String, command: String)] {
+        var steps: [(String, String)] = []
+        if let install = acpInstall { steps.append(("The part that speaks ACP", install)) }
+        if let setup = setupCommand, !speaksACP { steps.append(("Register the factory with it", setup)) }
+        return steps
+    }
+
     // MARK: Speaking ACP
 
     /// What to run to get this agent as an ACP server on a pipe, or nil for one that
