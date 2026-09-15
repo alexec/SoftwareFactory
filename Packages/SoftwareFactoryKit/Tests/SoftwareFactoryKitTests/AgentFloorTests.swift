@@ -21,15 +21,24 @@ struct AgentFloorTests {
     /// `mode` is an argument to the stub rather than an environment variable, because
     /// these tests run in parallel and setenv is process-global: one test's mode was
     /// being read by another's agent.
-    static func floor(_ store: FileStore, mode: String = "plain") -> AgentFloor {
+    static func floor(_ store: FileStore, mode: String = "plain", release: URL? = nil) -> AgentFloor {
         AgentFloor(store: store, searchPaths: ["/usr/bin", "/bin"], launch: { _ in
-            LaunchAgent.ACPLaunch(command: stub, arguments: [mode])
+            LaunchAgent.ACPLaunch(command: stub, arguments: [mode] + (release.map { [$0.path] } ?? []))
         })
     }
 
     static func start(_ floor: AgentFloor, agent: UUID, cwd: URL, words: String = "hello there") async -> AgentDaemon.Reply {
         await floor.handle(AgentDaemon.Request(op: .start, agent: agent, kind: "copilot",
                                                cwd: cwd.path, text: words))
+    }
+
+    /// Everything the factory has actually said to this agent, in order.
+    static func asked(_ agent: UUID, in store: FileStore) -> [String] {
+        ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store))
+            .entries.compactMap { entry in
+                if case .asked(let text) = entry.kind { return text }
+                return nil
+            }
     }
 
     /// Waits for something to become true rather than sleeping a fixed amount: a test
@@ -272,28 +281,29 @@ struct AgentFloorTests {
 
     @Test func nothingIsSaidToAnAgentInTheMiddleOfATurn() async throws {
         let (store, root) = try Self.scratch()
-        let floor = Self.floor(store, mode: "slow")
+        // The stub holds its turn open until this file appears, so the test decides when
+        // the agent stops being busy. Sleeping for a guessed interval instead made this
+        // race: the turn ended between the two things being said and the check.
+        let release = root.appending(path: "let-it-finish")
+        let floor = Self.floor(store, mode: "hold", release: release)
         let agent = UUID()
         #expect(await Self.start(floor, agent: agent, cwd: root, words: "first").ok)
-        await Self.until("the turn to be in flight") { floor.everything().first?.isPrompting == true }
+        // The log is written on a queue of its own, so wait for the first to land rather
+        // than assuming it has. (This raced before, and the race was in the test.)
+        await Self.until("the first to be written down") { Self.asked(agent, in: store) == ["first"] }
+        #expect(floor.everything().first?.isPrompting == true)
 
-        // Two things to say while it is working. Both are taken and neither is said yet.
+        // Two things to say while it is working. Both are taken and neither is said yet,
+        // and the stub cannot finish until the gate file appears, so this cannot race.
         #expect(await floor.handle(AgentDaemon.Request(op: .say, agent: agent, text: "second")).ok)
         #expect(await floor.handle(AgentDaemon.Request(op: .say, agent: agent, text: "third")).ok)
         #expect(floor.everything().first?.queued == 2)
-        let now = ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store))
-        #expect(now.entries.compactMap { entry -> String? in
-            if case .asked(let text) = entry.kind { return text }
-            return nil
-        } == ["first"], "Only the turn in flight has been said.")
+        #expect(Self.asked(agent, in: store) == ["first"], "Only the turn in flight has been said.")
 
-        // The stub sleeps thirty seconds, so they go out one at a time as it frees up.
-        await Self.until("both to be said", 90) {
-            ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store))
-                .entries.compactMap { entry -> String? in
-                    if case .asked(let text) = entry.kind { return text }
-                    return nil
-                } == ["first", "second", "third"]
+        // Let it finish, and they go out one at a time as it frees up.
+        FileManager.default.createFile(atPath: release.path, contents: nil)
+        await Self.until("both to be said", 30) {
+            Self.asked(agent, in: store) == ["first", "second", "third"]
         }
         #expect(floor.everything().first?.queued == 0)
         _ = await floor.handle(AgentDaemon.Request(op: .stop, agent: agent))
@@ -301,7 +311,7 @@ struct AgentFloorTests {
 
     @Test func aStoppedAgentForgetsWhatWasWaitingForIt() async throws {
         let (store, root) = try Self.scratch()
-        let floor = Self.floor(store, mode: "slow")
+        let floor = Self.floor(store, mode: "hold", release: root.appending(path: "never"))
         let agent = UUID()
         #expect(await Self.start(floor, agent: agent, cwd: root, words: "first").ok)
         await Self.until("the turn to be in flight") { floor.everything().first?.isPrompting == true }

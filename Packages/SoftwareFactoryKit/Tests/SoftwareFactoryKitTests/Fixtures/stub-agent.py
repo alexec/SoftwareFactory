@@ -7,6 +7,8 @@ behaviour:
   plain       say it back and finish
   permission  ask before the tool call
   slow        take a moment, so a turn is in flight long enough to say something into
+  hold        do not finish the turn until the file named by the second argument exists,
+              so a test decides exactly when an agent stops being busy
   crash       exit as soon as a session is made
 """
 import json, sys, time
@@ -69,6 +71,12 @@ while True:
             # Long enough for a test to see a turn in flight and say something into it,
             # short enough that the suite stays under a second per turn.
             time.sleep(0.8)
+        if mode == "hold":
+            # No sleeping and no guessing: the turn ends when the test says so.
+            import os.path
+            gate = sys.argv[2]
+            while not os.path.exists(gate):
+                time.sleep(0.02)
         # A fresh id each turn, as a real agent gives: the same id twice is the same call
         # being updated, and the transcript is right to fold it into one row.
         turns += 1
