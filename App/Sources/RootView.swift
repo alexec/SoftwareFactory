@@ -62,13 +62,17 @@ struct RootView: View {
                                 AgentActivityDot(activity: status.activity)
                                 Text(status.agent.label)
                                     .foregroundStyle(status.activity == .stopped ? .secondary : .primary)
-                                if let project = status.project {
-                                    Text(project.name)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                        .truncationMode(.tail)
-                                }
+                                // The line the agent set with an OSC title, which is what
+                                // it is doing right now; its project when it has not set
+                                // one. Truncated in the middle, because a title says what
+                                // it is doing at the front and how long for at the end.
+                                // (T225.)
+                                Text(sidebarLine(status))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .help(sidebarLine(status))
                                 Spacer()
                                 if status.agent.bel { AgentBellMark() }
                                 if status.waitingOnYou {
@@ -171,6 +175,13 @@ struct RootView: View {
         .sheet(isPresented: Binding(get: { !model.hasSeenIntro }, set: { model.hasSeenIntro = !$0 })) {
             IntroSheet()
         }
+    }
+
+    /// What an agent's row says after its name.
+    private func sidebarLine(_ status: Dashboard.AgentStatus) -> String {
+        let title = status.agent.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !title.isEmpty { return title }
+        return status.project?.name ?? "No project"
     }
 
     private var title: String {

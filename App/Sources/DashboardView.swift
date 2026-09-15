@@ -319,6 +319,9 @@ struct AgentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task(id: agent.id) { await reattach() }
+        // Opening the page is the look it rang for, however you got here: from its card,
+        // or from its row in the sidebar. (T225.)
+        .onAppear { model.clearBell(agent) }
         .toolbar {
             if let back {
                 ToolbarItem(placement: .navigation) {
