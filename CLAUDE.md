@@ -23,6 +23,9 @@ xcodebuild -project SoftwareFactory.xcodeproj -scheme SoftwareFactoryPhone -conf
 # The store build of the Mac app: the same sources, sandboxed. Swap Debug for
 # Release-AppStore anywhere you would build the Mac app for the store.
 cd Packages/SoftwareFactoryKit && swift test
+# `swift build` here also makes `software-factory`, which is the agent daemon the app
+# spawns for anything speaking ACP. A Debug app finds it in this checkout's build output;
+# without it, Settings says so and no ACP agent can start. (T373.)
 # Restarting. `software-factory quit` ends the running app the way its own Quit menu
 # item does, and says so; it waits for the process to go. Do not use
 # `osascript -e 'tell application "Software Factory" to quit'`: from an agent's terminal
@@ -185,6 +188,62 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     starts with, which is where every tool call reads it from anyway. Resume is
     `--continue`, the newest chat in that folder, which is that agent's because a
     terminal holds one agent. (T206)
+  - `ACP` and `ACPTranscript`: the Agent Client Protocol, from the client's side. JSON-RPC
+    2.0 over a pipe, the same wire `MCPServer` speaks pointed the other way: there we
+    answer an agent, here we drive one. We declare no filesystem and no terminal
+    capability, because these agents are local CLIs standing in the project's folder with
+    their own file tools and their own shell, and that drops a third of the protocol.
+    The shapes are taken off the wire rather than out of the documentation, which is wrong
+    where it matters: a permission outcome is `selected` and not `Approved`, a turn ends
+    `end_turn` and not `Completed`, and `headers` must be present and empty on an http MCP
+    server or the agent answers "Invalid params" without saying which field it meant. Both
+    test fixtures are real recordings, one of `copilot --acp` and one of
+    `claude-agent-acp`, because the two do not send the same shapes: a tool call's
+    `content` is a list and a message chunk's is an object.
+    `ACPTranscript` is the fold, and the fold is the point: an agent says one sentence as
+    eighteen one-word chunks, and a page that draws eighteen rows is not showing you a
+    sentence. It lands a `tool_call_update` on the call that started it without wiping its
+    title, and answers what the OSC title used to guess at: what it is doing now, what it
+    last said, which files it has actually changed, how full its context is. `ACPHeadline`
+    answers the one-line version and never grows, which is what the daemon keeps for
+    sixteen agents rather than sixteen whole conversations. (T373.)
+  - `AgentDaemon`, `AgentFloor`, `ACPConnection`, `AgentSocket`, and
+    `software-factory agentd`: the process holder. **An ACP agent is a subprocess of its
+    client and dies with it**, and this app is rebuilt a dozen times a day, so the app is
+    not the client. The daemon is. It is a far smaller thing than tmux and that is the
+    argument for owning it: tmux is a terminal multiplexer, with ptys, ANSI, scrollback
+    and resize, and under ACP there is a pipe with JSON going along it.
+    **The stream is not on the socket.** Every line goes to `transcripts/<agent>.jsonl`
+    under the store, beside `agents/` and `tasks/`, and the app folds that file the way it
+    reads every other record; the socket carries commands and state, one request per
+    connection, no subscription. The durable thing was a file either way, and a socket
+    that also streams is a second copy of the truth that can disagree with the first.
+    Stderr goes to `<agent>.err`, which is the only thing that says why an agent would not
+    start. A unix socket under `~/.local/state/software-factory`, not under the store: the
+    path is capped at 104 characters and a group container spends most of that.
+    `ACPConnection` is deliberately not an actor. Lines are written down in the order they
+    arrive, and actor hops are not ordered, so the reading, the buffering and the
+    appending all happen on the pipe's own serial queue, through one file handle: two
+    handles on one file each keep their own offset, and that is how every prompt went
+    missing from the log once. (T373.)
+  - `Agent.runtime` is `terminal`, `acp` or `external`, and both ways of running an agent
+    work at once. Checked against the real binaries on 16 Sep 2026, which is the only way
+    to know, because the ACP registry lists all four of ours and a registry is not a
+    release note: Claude Code speaks it through
+    `npm i -g @agentclientprotocol/claude-agent-acp` and reports `loadSession` and
+    `resume`; Copilot speaks it, `copilot --acp`; Grok emits ACP updates in headless mode
+    but has no server mode; Cursor has neither. So those two keep their terminals, and a
+    plain Terminal always will. `Agent.acpSession` is the id the agent minted for itself:
+    `Agent.id` is still the record's key and still what the agent signs its factory calls
+    with, which is two ids rather than one, the compromise Cursor already forced in T206.
+  - Three things keep the rest of the floor from having to know ACP from tmux. The
+    daemon's `Running.line` goes into `Agent.title`, which every card, sidebar row and
+    status board already reads, so the OSC title retired without a view changing. The
+    daemon reports the agent's pid and the app writes it down as it always did, so
+    `hasExited`, `Agents.mayStop`, `mayResume` and `Sweep.stoppedAgents` go on asking the
+    kernel. And `AgentMessage.promptLine`, which was `terminalLine`, is the one line the
+    factory gives an agent whatever holds it: typed into a pty for one, `session/prompt`
+    for the other. The name stopped being true the day half the floor had no terminal.
   - `Backlog.reminder`: an agent asking for a backlog is one moment from claiming
     something, so if it already has work in its name the list says so on the line above
     it. Otherwise it reads the list, likes the look of something, claims that too, and
@@ -440,6 +499,27 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     and `taskWork` are what that field starts as, and the line naming the agent and its
     session goes in front of whatever it says, T260), `IntroSheet`, `SettingsView`
     (How it works on top, in-app vs Terminal, iCloud, the store, Developer in DEBUG).
+  - `Floor` and `App/Sources/AgentTranscriptView.swift`: the app's side of the daemon, and
+    what an ACP agent's page is instead of a terminal. `Floor` starts the daemon when
+    nothing is answering, asks what it is holding on a clock of its own, and folds
+    transcripts off disk for the pages that are open and no others. Every call to it goes
+    off the main thread, for the reason tmux taught us.
+    The page is turns, tool calls with a state each, diffs drawn as diffs with their
+    counts, and the plan as a row of chips that tick themselves off. Thinking is folded
+    away behind a button, because it is nine tenths of the words and a tenth of the
+    interest. The field at the bottom is `session/prompt` and goes straight to the agent
+    rather than through the mailbox: this is a person typing on the agent's own page,
+    which is what the terminal was, and the terminal never queued. The mailbox and its cap
+    of three are for messages from other agents. (T373.)
+  - A permission request becomes an `Escalation`, and `AppModel.syncPermissions` is one
+    funnel in both directions rather than a route per way of answering: the agent's page,
+    the Needs you strip, a banner, the phone and the Lock Screen all land in the store,
+    and this makes the store and the blocked agent agree. What makes these different from
+    every other question is what an unanswered one costs: a question in a list is an agent
+    carrying on with something else, and this is an agent doing nothing at all. So
+    `AgentDaemon.answerWithin` is ten minutes, after which the daemon takes the
+    recommendation, and the recommendation is always allow once and never allow always: a
+    standing decision is not one to make for somebody because they were away from the Mac.
   - `TerminalSessions` and `Tmux`: an agent the app launches runs in a terminal the app
     owns (SwiftTerm), so its page shows it working and you can type to it. tmux holds the
     session on a server of its own, so the agent outlives the app: quit, rebuild, come
@@ -541,6 +621,11 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
   all take one task or several through `MCPServer.tasks(_:in:)`; two of them advertised
   `task_ids`, read only `task_id`, and refused the call without saying which half was
   wrong (T318).
+- An agent is held by the daemon or by tmux, and `Agent.runtime` is the question every
+  Stop, Start, Nudge and message asks before it picks a path. Add a third way of holding
+  one and it is a case there, not a flag somewhere else.
+- Nothing in the app asks the daemon from the main thread, for the same reason nothing
+  asks tmux from it: the answer takes as long as spawning a child takes.
 - Every string a person reads follows `alex-writing-voice`; no em dashes.
 - Measurements come from `App/Sources/Style.swift`: `card` 18, `panel` 12, `page` 24,
   `cardPadding` 16, `sheetPadding` 20, and a chip is a capsule. They were written where

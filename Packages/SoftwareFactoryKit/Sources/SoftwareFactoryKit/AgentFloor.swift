@@ -98,6 +98,14 @@ public final class AgentFloor: @unchecked Sendable {
             return .no("\(agent.uuidString) is already running.")
         }
 
+        // Checked before anything is spawned. A daemon that cannot write here still
+        // starts the agent and still talks to it, and every page is empty for ever: the
+        // transcript is the record, and a silent failure to keep it is the worst one
+        // available. It happens for real, because the store is a group container and a
+        // process started outside the app may not be allowed in. (T373.)
+        guard AgentDaemon.canKeepTranscripts(in: store) else {
+            return .no("The daemon cannot write to \(store.root.path)/transcripts, so it could not keep a record of what this agent does. Start it from the app rather than by hand.")
+        }
         let transcript = AgentDaemon.transcriptFile(for: agent, in: store)
         // A resume keeps the log: that is the conversation being picked back up. A fresh
         // start writes over it, because a new conversation under an old log reads as one

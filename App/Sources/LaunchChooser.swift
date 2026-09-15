@@ -12,7 +12,13 @@ struct AgentHelp: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let installURL = agent.installURL, let setup = agent.setupCommand {
+            if agent.speaksACP {
+                // An ACP agent is handed the factory at `session/new`, so there is no
+                // plugin to install and nothing to register. Its page is its work rather
+                // than a terminal, and a daemon holds it, so it keeps working while this
+                // app is rebuilt. (T373.)
+                acp
+            } else if let installURL = agent.installURL, let setup = agent.setupCommand {
                 LabeledContent("How to install \(agent.title)") {
                     Link(installURL.absoluteString, destination: installURL)
                         .lineLimit(1)
@@ -39,6 +45,35 @@ struct AgentHelp: View {
             }
         }
         .onChange(of: agent) { _, _ in copied = false }
+    }
+
+    @ViewBuilder
+    private var acp: some View {
+        Text("\(agent.title) speaks ACP, so the factory hands it the tools as it starts and its page shows what it is doing rather than a terminal. It runs in a daemon of its own and keeps working while this app is rebuilt.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        if let installURL = agent.installURL {
+            LabeledContent("How to install \(agent.title)") {
+                Link(installURL.absoluteString, destination: installURL)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        if let install = agent.acpInstall {
+            LabeledContent("And the part that speaks ACP") {
+                Button(copied ? "Copied" : "Copy") {
+                    AgentLauncher.copyCommand(install)
+                    copied = true
+                }
+            }
+            Text(install)
+                .font(.callout.monospaced())
+                .textSelection(.enabled)
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.quaternary, in: .rect(cornerRadius: Style.panel))
+        }
     }
 }
 

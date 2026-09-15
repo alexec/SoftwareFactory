@@ -5,6 +5,7 @@ import SoftwareFactoryKit
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(TerminalSessions.self) private var terminals
+    @Environment(Floor.self) private var floor
     @State private var showingIntro = false
     @State private var copiedInstall = false
     @State private var installError: String?
@@ -60,8 +61,38 @@ struct SettingsView: View {
                 }
             }
 
+            // The daemon that holds the ACP agents. It is the reason an agent survives a
+            // rebuild, so what it is holding is worth being able to see. (T373.)
+            Section("Agents that speak ACP") {
+                LabeledContent("Daemon", value: floor.isUp
+                               ? "Running, pid \(floor.daemonPID.map(String.init) ?? "?")"
+                               : "Not running")
+                if floor.isUp {
+                    LabeledContent("Holding", value: floor.held.isEmpty
+                                   ? "Nothing"
+                                   : floor.held.values.map { one in
+                                       (model.snapshot.agents.first { $0.id == one.agent }?.label
+                                        ?? String(one.agent.uuidString.prefix(8)))
+                                       + " (\(one.state.rawValue))"
+                                   }.sorted().joined(separator: ", "))
+                }
+                Text(floor.isUp
+                     ? "Claude Code and GitHub Copilot run as ACP agents, held by a daemon of their own so they keep working when this app is rebuilt. Their pages show what they are doing rather than a terminal."
+                     : "It starts itself the first time you launch an agent that speaks ACP. Grok, Cursor and a plain Terminal do not, and keep their terminals.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let trouble = floor.trouble {
+                    Text(trouble).foregroundStyle(.red)
+                }
+                if Floor.binary == nil {
+                    Text("software-factory is not on this Mac, so nothing can hold an ACP agent. Build it with: swift build --package-path Packages/SoftwareFactoryKit")
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             // Sessions that outlive the app, when tmux is here to hold them.
-            Section("Sessions") {
+            Section("Sessions for agents in a terminal") {
                 if Tmux.isInstalled {
                     Toggle("Keep sessions after quitting", isOn: Binding(
                         get: { model.usesTmux }, set: { model.usesTmux = $0 }))
@@ -124,6 +155,7 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 720, height: 640)
         .task { await terminals.lookForHeldSessions() }
+        .task { await floor.look() }
         .sheet(isPresented: $showingIntro) { IntroSheet() }
     }
 

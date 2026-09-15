@@ -181,3 +181,46 @@ agents run.
 
 Steps 1 and 2 are worth doing whatever happens to the rest. Step 3 is where this stops
 being reversible, and is the point to decide again.
+
+
+## What was actually built, and where it differs from the plan above
+
+Done, 16 Sep 2026, T373. Three commits. The plan survived contact in its shape and
+changed in two places worth writing down.
+
+**The socket does not stream.** The plan had the daemon speaking a subscription to the
+app. It does not: every line an agent sends is appended to `transcripts/<agent>.jsonl`
+under the store, beside `agents/` and `tasks/`, and the app folds that file the way it
+reads every other record. The socket carries commands and state, one request per
+connection. The durable thing was going to be a file either way, and a socket that also
+streams is a second copy of the truth that can disagree with the first. It also meant the
+app needed no new refresh machinery: it already polls.
+
+**Two of the four speak ACP, not four.** Step one was to check the binaries rather than
+the registry, and it paid for itself. Claude Code does, through
+`@agentclientprotocol/claude-agent-acp`, and it reports `loadSession` and `resume`, so
+Start is the protocol's own. Copilot does, `copilot --acp`. Grok emits ACP updates as a
+headless output format but has no server mode. Cursor has neither. So `Agent.runtime` is
+not a crossover measure to be removed later: it is the shape of the thing.
+
+Three bugs, all found by running it rather than by reading it, and all three the kind that
+a test written from the documentation would have missed:
+
+- Two file handles on one transcript, each keeping its own offset. The daemon opened a
+  second one to write down what the factory said; the connection's next line landed at
+  its own older offset and wiped it. Every prompt was missing from the log.
+- `FileManager.createFile` truncates. A resume opens the log of the conversation it is
+  picking back up, so making the file threw away the half the person came to read.
+- `headers` must be present and empty on an http MCP server, or the agent answers
+  "Invalid params" and does not say which field it meant.
+
+And two places the published schema disagrees with the wire: a permission outcome is
+`selected` and not `Approved`, and a turn ends `end_turn` and not `Completed`. Both
+fixtures are real recordings for that reason.
+
+**Still to do.** The launch from the app's own buttons is wired and compiles but has not
+been clicked: everything below it is proven live, including start, prompt, permission,
+stop and a resume that came back knowing a number it was told before it was stopped.
+Grok and Cursor keep their terminals until they ship a server mode. The permission
+setting in stage 5 is not built: the daemon takes the recommended option after ten
+minutes and every agent still launches allowed, which is today's behaviour.

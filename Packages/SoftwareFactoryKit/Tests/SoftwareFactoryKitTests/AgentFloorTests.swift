@@ -241,6 +241,20 @@ struct AgentFloorTests {
         _ = await floor.handle(AgentDaemon.Request(op: .stop, agent: agent))
     }
 
+    @Test func aDaemonThatCannotKeepARecordSaysSoRatherThanStartingAnyway() async throws {
+        let (store, root) = try Self.scratch()
+        #expect(AgentDaemon.canKeepTranscripts(in: store))
+        // What a daemon started outside the app looks like against a group container it
+        // is not allowed into.
+        let folder = AgentDaemon.transcriptFolder(in: store)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) }
+        #expect(AgentDaemon.canKeepTranscripts(in: store) == false)
+        let reply = await Self.start(Self.floor(store), agent: UUID(), cwd: root)
+        #expect(reply.ok == false)
+        #expect(reply.error?.contains("could not keep a record") == true)
+    }
+
     @Test func aPingAnswersBeforeAnythingIsTouched() async throws {
         let (store, _) = try Self.scratch()
         let reply = await Self.floor(store).handle(AgentDaemon.Request(op: .ping))

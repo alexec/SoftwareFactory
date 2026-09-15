@@ -53,6 +53,17 @@ public enum AgentDaemon {
         transcriptFolder(in: store).appending(path: "\(agent.uuidString).err")
     }
 
+    /// Whether the transcript folder is really there and really writable. The store is a
+    /// group container, and a daemon started outside the app may not be allowed into it,
+    /// in which case every log would be silently empty.
+    public static func canKeepTranscripts(in store: FileStore) -> Bool {
+        let folder = transcriptFolder(in: store)
+        var isFolder: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isFolder),
+              isFolder.boolValue else { return false }
+        return FileManager.default.isWritableFile(atPath: folder.path)
+    }
+
     /// The lines an agent has sent, for folding into a page. A missing file is an agent
     /// that has not started rather than an error.
     public static func transcriptLines(for agent: UUID, in store: FileStore) -> [String] {
