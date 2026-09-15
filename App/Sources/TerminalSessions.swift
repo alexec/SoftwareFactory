@@ -222,9 +222,25 @@ final class TerminalSessions {
         terminal.send(source: terminal, data: ArraySlice(Array(text.utf8)))
     }
 
-    /// A line, with the return that submits it.
+    /// A line, and the return that submits it, sent as two writes with a gap between
+    /// them.
+    ///
+    /// One write carrying the words and the return together arrives at the agent as a
+    /// paste: every one of these CLIs reads its input in chunks, and a return inside a
+    /// chunk is a newline in the box, not the key that sends it. The nudge sat there
+    /// typed out and unsent. So the words go first, and the return follows on its own
+    /// once the input has settled. Any newline inside the words is flattened for the
+    /// same reason: this sends one line, and the only return is the one at the end.
+    /// (Alex, 14 Sep 2026: the nudge does not send the right newline.)
     func sendLine(_ text: String, to id: String) {
-        send(text + "\r", to: id)
+        let line = text.replacingOccurrences(of: "\r\n", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+        send(line, to: id)
+        _Concurrency.Task { [weak self] in
+            try? await _Concurrency.Task.sleep(for: .milliseconds(150))
+            self?.send("\r", to: id)
+        }
     }
 
     /// Control-C, for a session that has run away.
