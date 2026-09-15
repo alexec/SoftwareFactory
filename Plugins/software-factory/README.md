@@ -1,7 +1,7 @@
 # Taktu: Software Factory plugin
 
-Connect Claude Code, GitHub Copilot CLI or Grok to the Taktu: Software Factory app running on this
-Mac. The plugin supplies the local MCP connection and the `work-the-factory` skill.
+Connect Claude Code, GitHub Copilot CLI, Grok or Cursor to the Taktu: Software Factory app running
+on this Mac. The plugin supplies the local MCP connection and the `work-the-factory` skill.
 
 ## Before you begin
 
@@ -44,6 +44,20 @@ After publishing this repository:
 grok plugin install alexec/SoftwareFactory#Plugins/software-factory --trust
 ```
 
+## Cursor
+
+To try the plugin from this checkout:
+
+```bash
+cursor-agent --plugin-dir ./Plugins/software-factory
+```
+
+After publishing this repository, add the marketplace once:
+
+```bash
+cursor-agent plugin marketplace add https://github.com/alexec/SoftwareFactory
+```
+
 ## Start work
 
 In a new agent session, send:
@@ -57,5 +71,5 @@ says to wait. Follow the factory's lease, escalation, and completion rules.
 
 ## Coming soon
 
-Codex and Cursor support will be added when their plugin packaging formats can load this
-local MCP connection and shared skill.
+Codex support will be added when its plugin packaging format can load this local MCP
+connection and shared skill.

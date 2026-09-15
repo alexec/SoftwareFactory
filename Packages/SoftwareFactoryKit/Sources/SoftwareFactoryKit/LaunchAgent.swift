@@ -1,12 +1,13 @@
 import Foundation
 
-/// A coding agent the person can start from the factory: Claude Code, GitHub Copilot
-/// or Grok. Chosen at launch, not as a setting, so a session can pick a different one
-/// each time.
+/// A coding agent the person can start from the factory: Claude Code, GitHub Copilot,
+/// Grok or Cursor. Chosen at launch, not as a setting, so a session can pick a different
+/// one each time.
 public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable {
     case claudeCode
     case copilot
     case grok
+    case cursor
 
     public var id: String { rawValue }
 
@@ -21,6 +22,7 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
         case .claudeCode: "Claude Code"
         case .copilot: "GitHub Copilot"
         case .grok: "Grok"
+        case .cursor: "Cursor"
         }
     }
 
@@ -29,6 +31,7 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
         case .claudeCode: URL(string: "https://code.claude.com/docs/en/quickstart")!
         case .copilot: URL(string: "https://docs.github.com/en/copilot/get-started/cli-quickstart")!
         case .grok: URL(string: "https://docs.x.ai/build/overview")!
+        case .cursor: URL(string: "https://cursor.com/docs/cli/installation")!
         }
     }
 
@@ -44,6 +47,8 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
             "copilot plugin install alexec/SoftwareFactory:Plugins/software-factory"
         case .grok:
             "grok plugin install alexec/SoftwareFactory#Plugins/software-factory --trust"
+        case .cursor:
+            "cursor-agent plugin marketplace add https://github.com/alexec/SoftwareFactory"
         }
     }
 
@@ -61,13 +66,21 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
     ///
     /// The session is named on the command line as well as in the prompt, so the agent's
     /// own conversation carries the factory's id. That is what makes an agent resumable:
-    /// `--resume <session>` picks up exactly the one the factory has a record for. All
-    /// three CLIs take a UUID here and refuse anything else, which is why the session is
-    /// a UUID at all. (Alex, 13 Sep 2026.)
+    /// `--resume <session>` picks up exactly the one the factory has a record for. Claude
+    /// Code, Copilot and Grok all take a UUID here and refuse anything else, which is why
+    /// the session is a UUID at all. (Alex, 13 Sep 2026.)
+    ///
+    /// Cursor is the one that cannot: `cursor-agent` makes its own chat id and will only
+    /// resume one it made, so the factory's session reaches it in the words it starts
+    /// with and nowhere else. That is enough, because the prompt is what every tool call
+    /// is signed with. What it costs is the exact resume: `--continue` picks up the newest
+    /// chat in that folder, which is that agent's, because a terminal holds one agent.
     ///
     /// Grok's `--trust` is folder trust for the current working directory, which is
     /// already the project's folder: project hooks, skills, MCP and instructions load
-    /// without a prompt. The flag takes no path. (T180)
+    /// without a prompt. The flag takes no path. (T180) Cursor wants three: `--force` to
+    /// run commands without asking, `--trust` for the folder, and `--approve-mcps` so the
+    /// factory's own MCP connection loads without a prompt. (T206)
     public func command(for prompt: String, session: UUID) -> String {
         let quoted = Self.quoted(prompt)
         let id = session.uuidString
@@ -75,17 +88,20 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
         case .claudeCode: return "claude --session-id \(id) --permission-mode=auto \(quoted)"
         case .copilot: return "copilot --session-id \(id) --allow-all --interactive \(quoted)"
         case .grok: return "grok --session-id \(id) --always-approve --trust \(quoted)"
+        case .cursor: return "cursor-agent --force --trust --approve-mcps \(quoted)"
         }
     }
 
     /// Picking an agent back up where it left off, in the session the factory knows it
     /// by. Only an agent the factory started can be resumed: the id has to have been
     /// given at launch, because none of these CLIs will tell you one after the fact.
+    /// Cursor is the exception, and resumes the newest chat in the folder instead.
     public func resumeCommand(session: UUID) -> String {
         switch self {
         case .claudeCode: return "claude --resume \(session.uuidString) --permission-mode=auto"
         case .copilot: return "copilot --resume=\(session.uuidString) --allow-all --interactive"
         case .grok: return "grok --resume \(session.uuidString) --always-approve --trust"
+        case .cursor: return "cursor-agent --continue --force --trust --approve-mcps"
         }
     }
 

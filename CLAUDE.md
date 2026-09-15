@@ -94,10 +94,15 @@ before you mark the task done. Build the phone too when the change is in it.
   - `LaunchPrompt`: the words an agent starts with, in one place: `project` (work the
     backlog), `task` (one task, already in its name, to claim), `free` (no project,
     the person says what for).
-  - `LaunchAgent`: Claude Code, GitHub Copilot or Grok, chosen at launch. Grok's
+  - `LaunchAgent`: Claude Code, GitHub Copilot, Grok or Cursor, chosen at launch. Grok's
     shell line is `grok --session-id <id> --always-approve --trust`: `--trust` grants
     folder trust for the launch directory (the project's folder), so project hooks,
-    skills and MCP load without a prompt. The flag takes no path. (T180)
+    skills and MCP load without a prompt. The flag takes no path. (T180) Cursor is
+    `cursor-agent --force --trust --approve-mcps` and takes no session id at all: it
+    makes its own chat id, so the factory's session reaches it only in the words it
+    starts with, which is where every tool call reads it from anyway. Resume is
+    `--continue`, the newest chat in that folder, which is that agent's because a
+    terminal holds one agent. (T206)
   - `Escalations.visible`: open questions in full, the newest three answered ones.
   - `Artifacts`: live (not removed) documents on a project, newest first; `produced(by:)`
     those one agent filed. Twenty is the cap; adding the same title or the same link
@@ -178,7 +183,7 @@ before you mark the task done. Build the phone too when the change is in it.
     and Start an agent on this,
     on a backlog row: it reserves an agent, puts the task in its name and starts it on
     that one task), `AgentLauncher` and `StartAgent` (reserve, assign, launch: one path
-    for every launch, including agents `agent_create` asked for), `LaunchChooser` (pick Claude Code, GitHub Copilot or Grok
+    for every launch, including agents `agent_create` asked for), `LaunchChooser` (pick Claude Code, GitHub Copilot, Grok or Cursor
     at launch, with that agent's install link and plugin command, then Launch
     <name>; remembers the last pick, no preferred-agent setting), `IntroSheet`, `SettingsView`
     (How it works on top, in-app vs Terminal, iCloud, the store, Developer in DEBUG).

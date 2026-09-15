@@ -100,8 +100,8 @@ text, `tools` lists the tools, `mcp` is the same server over stdio for scripts.
 ## The agent plugin
 
 `Plugins/software-factory` packages the local MCP connection and a skill that teaches an
-agent to work the factory's backlog. It supports Claude Code, GitHub Copilot CLI and Grok
-now; Codex and Cursor are coming soon. See [its instructions](Plugins/software-factory/README.md)
+agent to work the factory's backlog. It supports Claude Code, GitHub Copilot CLI, Grok
+and Cursor now; Codex is coming soon. See [its instructions](Plugins/software-factory/README.md)
 to install it and start a session with the factory. Launching an agent from the app
 picks which of those to start, and shows the install link and the plugin command for it.
 

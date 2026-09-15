@@ -84,7 +84,7 @@ struct LaunchChooser<Extra: View>: View {
             }
         }
         .padding(16)
-        .frame(width: 420)
+        .frame(width: 460)
     }
 
     private var launchTitle: String {
