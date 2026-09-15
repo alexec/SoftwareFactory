@@ -4,6 +4,7 @@ import SoftwareFactoryKit
 enum Destination: Hashable {
     case dashboard
     case agents
+    case statusReports
     case factory
     case noProject
     case project(String)
@@ -30,6 +31,12 @@ struct RootView: View {
                 Label("Agents", systemImage: "person.2")
                     .badge(model.dashboard.agents.count)
                     .tag(Destination.agents)
+                // The badge counts the agents that have not said anything recently, not
+                // the reports: a row that only ever says how many agents there are is one
+                // nobody opens. (T288.)
+                Label("Status reports", systemImage: "text.document")
+                    .badge(StatusReportBoard.quiet(in: model.snapshot, now: .now))
+                    .tag(Destination.statusReports)
                 HStack {
                     Label("Capacity", systemImage: "building.2")
                     Spacer()
@@ -107,6 +114,8 @@ struct RootView: View {
             switch selection {
             case .agents:
                 AgentsView { showAgent($0) }
+            case .statusReports:
+                StatusReportsView { showAgent($0) }
             case .factory:
                 FactoryView()
             case .noProject:
@@ -241,6 +250,7 @@ struct RootView: View {
     private var title: String {
         if case .project(let id) = selection, let p = model.project(for: id) { return p.name }
         if case .agents = selection { return "Agents" }
+        if case .statusReports = selection { return "Status reports" }
         if case .factory = selection { return "Capacity" }
         if case .noProject = selection { return "No project" }
         if case .agent(let id) = selection,

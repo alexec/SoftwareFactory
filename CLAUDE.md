@@ -89,7 +89,9 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     called, always written over rather than added to, and outside the twenty, because
     there is only ever one per agent and a busy floor's reports would otherwise crowd out
     the project's own documents. `Artifacts.add` answers `created`, `replaced` or
-    `alreadyThere`. The factory asks an agent for one when an hour has gone by without
+    `alreadyThere`. A body is a kilobyte, `Artifacts.maxBody`: an artifact is read on a
+    card while deciding what to do, not somewhere to put a transcript, and the refusal
+    says to put the long one in the repo and file a link (T274). The factory asks an agent for one when an hour has gone by without
     it: `Sweep.statusReportsWanted` writes the message, `Agent.statusAskedAt` is how it
     knows not to ask twice, and a message still waiting in the mailbox stops it too,
     because asking again for something nobody has read is noise. T262, Alex, 15 Sep 2026),
@@ -192,7 +194,14 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     whether the work is going well or the agent is lost. So once an hour the factory asks
     the ones that have not said, with a message like any other. Nothing is asked of an
     agent in its first hour, one that filed or was asked within the hour, or one with mail
-    still waiting. (T262.)
+    still waiting. (T262.) The ask names what the report should say, because "how is it
+    going" gets an essay from one agent and a shrug from the next: what is finished, what
+    was decided, what it is waiting on Alex for, and where its questions stand. (T274.)
+  - `StatusReportBoard`: every agent's report on one page, latest news first, with the
+    agents that have said nothing at the bottom. Those rows are the point: an agent with
+    no report is the one you most want to see, and leaving it out would make the page
+    quietest exactly where something is wrong. `quiet(in:now:)` is the number on the
+    sidebar badge. (T288.)
   - `Records.version` on every record; a decoder reads an older shape without it.
   - `Capacity`: `MachineReading` (`sample()` on macOS reads memory, swap, load, compiles,
     simulators through sysctl and Mach), `Throttle` (one file, `throttle.json`), the
@@ -240,7 +249,7 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     through `persist`; starts `FactoryServer` on port 4747.
   - `FactoryServer`: `NWListener` on the port, one queue per connection (a request can
     block for minutes), Bonjour `_softwarefactory._tcp`.
-  - `RootView` (split view: Dashboard, Agents, Capacity, No project, then the agents on
+  - `RootView` (split view: Dashboard, Agents, Status reports, Capacity, No project, then the agents on
     the floor in a group of their own, then the projects. An agent is two lines: its dot
     and the project it is on, then the line it set with an OSC title, with its bell in
     front when it rang. The row opens that agent's page from anywhere, and opening the
@@ -251,7 +260,9 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     the agents on the floor as cards; `AgentCard` is one of them and `AgentView` is the
     page behind it; an agent that is not stopped has Nudge, its messages and terminal),
     `AgentsView` (every agent registered, and the button that starts a
-    new one), `FactoryView` (the Capacity page: verdict and what each kind of work would
+    new one), `StatusReportsView` (what everybody is doing on one page, off
+    `StatusReportBoard`; an agent that has filed nothing says so rather than being left
+    out, and a report past its hour has its age in orange. T288), `FactoryView` (the Capacity page: verdict and what each kind of work would
     be told, then one grid of cards for the Mac's own readings and every leasable
     resource alike, each a name and a colored utilization line; leasable cards show
     slots in use of the total, same shape as compiles; the
