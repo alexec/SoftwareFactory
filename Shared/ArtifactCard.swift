@@ -9,10 +9,9 @@ struct ArtifactCard: View {
         DisclosureGroup {
             VStack(alignment: .leading, spacing: 8) {
                 if !artifact.body.isEmpty {
-                    bodyText
+                    MarkdownText(text: artifact.body)
                         .font(.callout)
                         .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if !artifact.link.isEmpty {
                     ReviewLink(link: artifact.link)
@@ -28,14 +27,6 @@ struct ArtifactCard: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-        }
-    }
-
-    private var bodyText: Text {
-        if let attributed = try? AttributedString(markdown: artifact.body) {
-            Text(attributed)
-        } else {
-            Text(artifact.body)
         }
     }
 }

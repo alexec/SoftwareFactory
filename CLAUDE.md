@@ -157,6 +157,11 @@ before you mark the task done. Build the phone too when the change is in it.
     title; anything after it is the note. No model involved any more — Apple
     Intelligence's title extraction was unreliable enough to be worse than the words
     themselves.
+  - `Shared/MarkdownText.swift`: a document as a person reads it. `Markdown.blocks` in
+    the kit splits headings, paragraphs, lists, quotes, fenced code and rules; the view
+    draws them and leaves what is inside a line to `AttributedString`. Artifacts used one
+    `AttributedString(markdown:)` call, which reads inline marks and drops every line
+    break, so a whole plan arrived as one paragraph. (T208)
   - `Shared/WorkField.swift`: the add and edit field. The first word is the work
     (Design, Plan, Code, Fix, Review, Investigate, Ship); a matching word is offered
     while you type it. There is no picker. (T181)
