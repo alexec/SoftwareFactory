@@ -127,6 +127,50 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
         }
     }
 
+    // MARK: Speaking ACP
+
+    /// What to run to get this agent as an ACP server on a pipe, or nil for one that
+    /// does not speak it and has to keep its terminal.
+    ///
+    /// Checked against the real binaries on 16 Sep 2026, which is the only way to know:
+    /// the ACP registry lists all four of ours and the registry is not a release note.
+    /// Claude Code and Copilot answer; Grok has the update format but no server mode,
+    /// and Cursor has neither. Those two keep the terminal, which is why `Agent.runtime`
+    /// exists rather than a flag day. (T373.)
+    public var acp: ACPLaunch? {
+        switch self {
+        // Zed's adapter on the Claude Agent SDK, `npm i -g @agentclientprotocol/claude-agent-acp`.
+        // It reports loadSession and resume, so Start is the protocol's own rather than
+        // `--resume` and a guess.
+        case .claudeCode: ACPLaunch(command: "claude-agent-acp", arguments: [])
+        // First-party, and the one every shape in `ACP` was read off.
+        case .copilot: ACPLaunch(command: "copilot", arguments: ["--acp"])
+        case .grok, .cursor, .terminal: nil
+        }
+    }
+
+    public var speaksACP: Bool { acp != nil }
+
+    /// How to get the ACP half of this agent, for the agent that has not got it.
+    public var acpInstall: String? {
+        switch self {
+        case .claudeCode: "npm install -g @agentclientprotocol/claude-agent-acp"
+        case .copilot: nil
+        case .grok, .cursor, .terminal: nil
+        }
+    }
+
+    public struct ACPLaunch: Sendable, Equatable {
+        /// The binary's name. The daemon looks it up on the path itself, because it is
+        /// started by the app and inherits none of a login shell.
+        public var command: String
+        public var arguments: [String]
+        public init(command: String, arguments: [String]) {
+            self.command = command
+            self.arguments = arguments
+        }
+    }
+
     /// Anything a shell has to take literally.
     public static func quoted(_ words: String) -> String {
         "'" + words.replacingOccurrences(of: "'", with: "'\\''") + "'"

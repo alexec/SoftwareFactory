@@ -123,3 +123,64 @@ struct ACPTranscriptTests {
         #expect(live.entries.first?.text == "[image]")
     }
 }
+
+/// The same fold against a second agent, `claude-agent-acp`, recorded the same way. Two
+/// agents rather than one because they do not send the same shapes: a tool call's
+/// `content` is a list and a message chunk's is an object, and a client that quietly
+/// assumed one of them would lose half a conversation. (T373.)
+struct ACPClaudeTranscriptTests {
+    static let recording: [String] = {
+        guard let url = Bundle.module.url(forResource: "claude-session", withExtension: "jsonl",
+                                          subdirectory: "Fixtures"),
+              let text = try? String(contentsOf: url, encoding: .utf8)
+        else { return [] }
+        return text.split(separator: "\n").map(String.init)
+    }()
+
+    var transcript: ACPTranscript { ACPTranscript.folding(Self.recording) }
+
+    @Test func everyLineIsPlaced() {
+        let lost = Self.recording.filter {
+            if case .unrecognised = ACP.read(line: $0) { return true }
+            return false
+        }
+        #expect(lost.isEmpty, "Unplaced: \(lost.prefix(1))")
+    }
+
+    @Test func itReadsAsAConversationWithBothSidesInIt() throws {
+        let page = transcript
+        // What we said, what it did, what it said, twice over.
+        let shape = page.entries.map { entry -> String in
+            switch entry.kind {
+            case .asked: "asked"
+            case .said: "said"
+            case .thought: "thought"
+            case .tool: "tool"
+            }
+        }
+        #expect(shape == ["asked", "tool", "said", "asked", "said"])
+    }
+
+    @Test func theWordsTheFactorySaidAreInTheLog() throws {
+        let asked = transcript.entries.compactMap { entry -> String? in
+            if case .asked(let text) = entry.kind { return text }
+            return nil
+        }
+        #expect(asked.count == 2)
+        #expect(asked[0].hasPrefix("Read README.md"))
+        #expect(asked[1] == "Now reply with just the word ACKNOWLEDGED.")
+    }
+
+    @Test func aToolCallsContentIsAListAndAChunksIsNot() throws {
+        let tool = try #require(transcript.entries.compactMap(\.tool).first)
+        #expect(tool.kind == .read)
+        #expect(tool.status == .completed)
+        #expect(tool.title == "Read README.md", "The update renames the call, and that has to land.")
+    }
+
+    @Test func chunksSplitAcrossAWordStillMakeTheWord() {
+        // "ACKNOWLE" and "DGED" arrived as two chunks.
+        #expect(transcript.lastSaid == "ACKNOWLEDGED")
+        #expect(transcript.line == "ACKNOWLEDGED")
+    }
+}

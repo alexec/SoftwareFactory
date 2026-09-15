@@ -5,6 +5,8 @@
 //   software-factory tools                     the tool names and what they do
 //   software-factory decide <escalation-id-prefix> <option-number>
 //   software-factory quit                      quit the running Mac app, properly (T271)
+//   software-factory agentd                    hold the floor's ACP agents (the app starts this)
+//   software-factory floor                     what the daemon is holding, as text
 //
 // The store is $SOFTWARE_FACTORY_STORE or the app group container; `software-factory status` prints where.
 
@@ -76,6 +78,36 @@ case "quit":
     }
     print("Quit. \(app.pid) has gone.")
 
+// The daemon. It holds every ACP agent's process so the agents outlive the app, which
+// is rebuilt a dozen times a day. Blocks until something goes wrong. (T373.)
+case "agentd":
+    let floor = AgentFloor(store: store)
+    FileHandle.standardError.write(Data("software-factory agentd: store \(store.root.path), socket \(AgentDaemon.socketPath)\n".utf8))
+    // Ours to answer, so a person at a shell can stop it with Control-C and the agents
+    // go with it rather than being orphaned.
+    signal(SIGPIPE, SIG_IGN)
+    do {
+        try AgentSocket.serve(floor)
+    } catch {
+        fail(error.localizedDescription)
+    }
+
+case "floor":
+    let held = AgentSocket.ask(AgentDaemon.Request(op: .list))
+    guard held.ok else { fail(held.error ?? "The daemon said no.") }
+    print("Daemon: pid \(held.pid.map(String.init) ?? "?")   socket \(AgentDaemon.socketPath)")
+    let agents = held.agents ?? []
+    if agents.isEmpty { print("  Holding nothing.") }
+    for one in agents {
+        let word = one.state.rawValue.padding(toLength: 9, withPad: " ", startingAt: 0)
+        let waiting = one.waiting.map { "  waiting: \($0.title)" } ?? ""
+        let turn = one.isPrompting ? "  (in a turn)" : ""
+        print("  \(word) \(one.agent.uuidString)  pid \(one.pid.map(String.init) ?? "-")\(turn)\(waiting)")
+        let lines = AgentDaemon.transcriptLines(for: one.agent, in: store)
+        let page = ACPTranscript.folding(lines)
+        if let line = page.line { print("            \(line)") }
+    }
+
 case "tools":
     for t in MCPServer.Tool.all { print("\(t.name.padding(toLength: 20, withPad: " ", startingAt: 0)) \(t.description)") }
 
@@ -92,5 +124,5 @@ case "decide":
     print("\(e.question) → \(e.options[n - 1].title)")
 
 default:
-    fail("software-factory mcp|status|tools|decide")
+    fail("software-factory mcp|status|tools|decide|quit|agentd|floor")
 }

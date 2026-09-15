@@ -110,6 +110,16 @@ struct ACPTests {
         #expect(call.status == .pending)
     }
 
+    @Test func aNotificationIsNotTheSameThingAsALineWeCouldNotRead() {
+        // `_auth/status_update` wants no answer. Calling it unreadable would have the
+        // client worrying about a line that is simply not addressed to it.
+        guard case .notification(let method) = ACP.read(line: #"{"jsonrpc":"2.0","method":"_auth/status_update","params":{}}"#) else {
+            Issue.record("A method with no id is a notification.")
+            return
+        }
+        #expect(method == "_auth/status_update")
+    }
+
     @Test func anUpdateWeDoNotDrawIsKeptRatherThanDropped() {
         let kinds = Self.recording.compactMap { line -> String? in
             guard case .update(_, .other(let kind)) = ACP.read(line: line) else { return nil }
@@ -134,6 +144,9 @@ struct ACPTests {
         let server = ACP.factoryServer()
         #expect(server["type"] as? String == "http")
         #expect(server["url"] as? String == "http://127.0.0.1:4747/mcp")
+        // Empty, but there. A missing headers field is "Invalid params" and no clue
+        // which field was meant.
+        #expect(server["headers"] as? [Any] != nil)
     }
 
     @Test func ourAnswerIsTheShapeTheWireWants() throws {

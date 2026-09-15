@@ -47,8 +47,11 @@ public enum ACP {
     /// Our MCP server as the agent should reach it: over HTTP on the loopback, because
     /// the app is already serving there and a second stdio copy would be a second store
     /// reader for no reason.
+    /// `headers` is an empty array and not an omitted field: the agent validates the
+    /// whole shape and answers "Invalid params" for a missing one, which says nothing
+    /// about which field it meant. (T373.)
     public static func factoryServer(port: Int = 4747) -> [String: Any] {
-        ["type": "http", "name": MCPServer.name, "url": "http://127.0.0.1:\(port)/mcp"]
+        ["type": "http", "name": MCPServer.name, "url": "http://127.0.0.1:\(port)/mcp", "headers": []]
     }
 
     /// Words for the agent. Everything the factory says to one goes through here: the
@@ -85,6 +88,10 @@ public enum ACP {
         /// Something else addressed to us that expects an answer. We answer it empty
         /// rather than leaving the agent waiting on a method we have not written yet.
         case request(id: Int, method: String)
+        /// Something the agent is telling us that wants no answer, like
+        /// `_auth/status_update`. Nothing to do, and not the same thing as a line we
+        /// could not read: answering it would be wrong and worrying about it is noise.
+        case notification(method: String)
         /// A line we could not place. Kept so the raw log is still the whole truth.
         case unrecognised(String)
     }
@@ -126,7 +133,7 @@ public enum ACP {
                 else { return .unrecognised(line) }
                 return .permission(id: id, decoded)
             default:
-                guard let id else { return .unrecognised(line) }
+                guard let id else { return .notification(method: method) }
                 return .request(id: id, method: method)
             }
         }

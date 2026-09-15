@@ -1,0 +1,273 @@
+#if os(macOS)
+import Foundation
+
+/// The daemon. It holds every ACP agent's process and answers the app's questions about
+/// them, and it is the whole reason this floor can run on ACP at all: an ACP agent dies
+/// with its client, the app is rebuilt a dozen times a day, so the app is not the client.
+///
+/// What it deliberately is not: a terminal multiplexer. No pty, no ANSI, no scrollback,
+/// no resize. It spawns a process, keeps a pipe, appends what comes out of it to a file,
+/// and hands on the two questions an agent asks of a person. (T373.)
+public final class AgentFloor: @unchecked Sendable {
+    private let store: FileStore
+    private let guarded = DispatchQueue(label: "software-factory.floor.state")
+    private var held: [UUID: Held] = [:]
+    /// Where the binaries are. The daemon is started by the app, which inherits no login
+    /// shell, so the path it would get is the bare one.
+    private let searchPaths: [String]
+
+    /// What to run for a given kind. The default is the kind's own answer; a test hands
+    /// in a stub that speaks ACP and nothing else, which is how everything below the
+    /// socket is tested without a model in the loop.
+    private let launch: @Sendable (LaunchAgent) -> LaunchAgent.ACPLaunch?
+
+    public init(store: FileStore, searchPaths: [String] = AgentFloor.defaultSearchPaths,
+                launch: @escaping @Sendable (LaunchAgent) -> LaunchAgent.ACPLaunch? = { $0.acp }) {
+        self.store = store
+        self.searchPaths = searchPaths
+        self.launch = launch
+    }
+
+    public static let defaultSearchPaths = [
+        "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin",
+        "\(NSHomeDirectory())/.local/bin", "\(NSHomeDirectory())/.bun/bin",
+    ]
+
+    private final class Held {
+        let connection: ACPConnection
+        var state: AgentDaemon.Running
+        var kind: LaunchAgent
+        var cwd: String
+        init(connection: ACPConnection, state: AgentDaemon.Running, kind: LaunchAgent, cwd: String) {
+            self.connection = connection
+            self.state = state
+            self.kind = kind
+            self.cwd = cwd
+        }
+    }
+
+    // MARK: What the app asks
+
+    public func handle(_ request: AgentDaemon.Request) async -> AgentDaemon.Reply {
+        switch request.op {
+        case .ping:
+            return AgentDaemon.Reply(ok: true, pid: ProcessInfo.processInfo.processIdentifier)
+        case .list:
+            answerLateQuestions()
+            return AgentDaemon.Reply(ok: true, agents: everything(), pid: ProcessInfo.processInfo.processIdentifier)
+        case .start, .resume:
+            return await start(request, resuming: request.op == .resume)
+        case .say:
+            return say(request)
+        case .cancel:
+            guard let agent = request.agent, let one = look(agent) else { return .no("Nobody here by that name.") }
+            guard let session = one.state.session else { return .no("It has no session to stop.") }
+            one.connection.tell("session/cancel", ACP.cancel(session: session))
+            return .yes
+        case .stop:
+            guard let agent = request.agent, let one = look(agent) else { return .no("Nobody here by that name.") }
+            one.connection.stop()
+            return .yes
+        case .permission:
+            return answer(request)
+        case .shutdown:
+            for one in everythingHeld() { one.connection.stop() }
+            return .yes
+        }
+    }
+
+    // MARK: Starting
+
+    private func start(_ request: AgentDaemon.Request, resuming: Bool) async -> AgentDaemon.Reply {
+        guard let agent = request.agent else { return .no("A start has to say which agent.") }
+        guard let cwd = request.cwd, !cwd.isEmpty else { return .no("An agent has to stand somewhere.") }
+        guard FileManager.default.fileExists(atPath: cwd) else { return .no("There is no folder at \(cwd).") }
+        let kind = LaunchAgent.remembered(request.kind)
+        guard let launch = launch(kind) else { return .no("\(kind.title) does not speak ACP.") }
+        guard let binary = find(launch.command) else {
+            let install = kind.acpInstall.map { " Install it with: \($0)" } ?? ""
+            return .no("\(launch.command) is not on this Mac.\(install)")
+        }
+
+        // One agent, one process. Starting one that is already here would leave the old
+        // one running with nothing pointing at it.
+        if let existing = look(agent), existing.connection.isRunning {
+            return .no("\(agent.uuidString) is already running.")
+        }
+
+        let transcript = AgentDaemon.transcriptFile(for: agent, in: store)
+        // A resume keeps the log: that is the conversation being picked back up. A fresh
+        // start writes over it, because a new conversation under an old log reads as one
+        // conversation that has lost its middle.
+        if !resuming { try? FileManager.default.removeItem(at: transcript) }
+
+        let connection = ACPConnection(
+            agent: agent, command: binary, arguments: launch.arguments, cwd: cwd,
+            environment: environment(for: cwd), transcript: transcript,
+            complaints: AgentDaemon.complaintsFile(for: agent, in: store))
+
+        let held = Held(connection: connection,
+                        state: AgentDaemon.Running(agent: agent, state: .starting),
+                        kind: kind, cwd: cwd)
+        connection.onExit = { [weak self] status in
+            self?.change(agent) {
+                $0.state = $0.session == nil ? .failed : .stopped
+                $0.exit = status
+                $0.pid = nil
+                $0.waiting = nil
+                $0.isPrompting = false
+            }
+        }
+        connection.onPermission = { [weak self] id, ask in
+            self?.change(agent) {
+                $0.waiting = AgentDaemon.Pending(
+                    requestID: id, title: ask.toolCall.heading,
+                    kind: ask.toolCall.kind?.rawValue, options: ask.options)
+            }
+        }
+        put(agent, held)
+
+        do {
+            try connection.start()
+            _ = try await connection.ask("initialize", ACP.initialize())
+            let servers = [ACP.factoryServer()]
+            let session: String
+            if resuming, let known = knownSession(for: agent) {
+                _ = try await connection.ask("session/load", ACP.loadSession(known, cwd: cwd, mcpServers: servers),
+                                             patience: 120)
+                session = known
+            } else {
+                let answer = try await connection.ask("session/new", ACP.newSession(cwd: cwd, mcpServers: servers),
+                                                      patience: 120)
+                guard let data = answer,
+                      let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let made = body["sessionId"] as? String
+                else { throw ACPConnection.Failure.notStarted("it made no session") }
+                session = made
+            }
+            change(agent) {
+                $0.state = .running
+                $0.session = session
+                $0.pid = connection.pid
+            }
+            if let words = request.text, !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                prompt(agent, words)
+            }
+            return AgentDaemon.Reply(ok: true, session: session)
+        } catch {
+            connection.stop()
+            change(agent) { $0.state = .failed }
+            return .no(error.localizedDescription)
+        }
+    }
+
+    /// The session an agent had, read back off its own transcript. The daemon keeps no
+    /// second record: the log is the record, and a daemon restart must not lose the
+    /// conversation the app is about to ask it to pick back up.
+    private func knownSession(for agent: UUID) -> String? {
+        for line in AgentDaemon.transcriptLines(for: agent, in: store).reversed() {
+            if case .update(let session, _) = ACP.read(line: line) { return session }
+        }
+        return nil
+    }
+
+    // MARK: Saying things to it
+
+    private func say(_ request: AgentDaemon.Request) -> AgentDaemon.Reply {
+        guard let agent = request.agent, let one = look(agent) else { return .no("Nobody here by that name.") }
+        guard one.state.state == .running else { return .no("It is not running.") }
+        guard let words = request.text, !words.isEmpty else { return .no("Nothing to say.") }
+        prompt(agent, words)
+        return .yes
+    }
+
+    /// A turn, started and not waited for. Everything the factory says to an agent comes
+    /// through here: the words it starts with, a nudge, a message from another agent, the
+    /// status report ask. One path, the same as the typed line was.
+    private func prompt(_ agent: UUID, _ words: String) {
+        guard let one = look(agent), let session = one.state.session else { return }
+        // Written into the log ourselves, because the agent does not echo what it was
+        // told except on a replay, and a page showing only the answers is a page of an
+        // agent talking to itself.
+        one.connection.writeDown(["jsonrpc": "2.0", "method": "session/update", "params": [
+            "sessionId": session,
+            "update": ["sessionUpdate": "user_message_chunk", "content": ["type": "text", "text": words]],
+        ]])
+        change(agent) { $0.isPrompting = true }
+        Task { [weak self] in
+            defer { self?.change(agent) { $0.isPrompting = false } }
+            // No patience: a turn takes as long as it takes, and the way to stop waiting
+            // on one is to cancel it.
+            _ = try? await one.connection.ask("session/prompt", ACP.prompt(words, session: session), patience: nil)
+        }
+    }
+
+    // MARK: Permission
+
+    private func answer(_ request: AgentDaemon.Request) -> AgentDaemon.Reply {
+        guard let agent = request.agent, let one = look(agent) else { return .no("Nobody here by that name.") }
+        guard let waiting = one.state.waiting else { return .no("It is not waiting on anything.") }
+        guard request.requestID == nil || request.requestID == waiting.requestID else {
+            return .no("It has moved on from that question.")
+        }
+        let option = request.optionID ?? waiting.fallback?.optionID
+        guard let option else { return .no("That question has no options, which should not happen.") }
+        one.connection.answerPermission(id: waiting.requestID, with: ACP.permissionAnswer(optionID: option))
+        change(agent) { $0.waiting = nil }
+        return .yes
+    }
+
+    /// A permission request nobody has answered inside the hour gets the recommended
+    /// option and a line in the transcript saying the factory took it.
+    ///
+    /// There has to be something here. This is not a question sitting in a list: the
+    /// agent is blocked on it, so one raised at half past five and not seen is an agent
+    /// that did nothing all evening. (T373.)
+    private func answerLateQuestions(now: Date = .now) {
+        for one in everythingHeld() {
+            guard let waiting = one.state.waiting,
+                  now.timeIntervalSince(waiting.asked) > AgentDaemon.answerWithin,
+                  let option = waiting.fallback
+            else { continue }
+            one.connection.answerPermission(id: waiting.requestID,
+                                            with: ACP.permissionAnswer(optionID: option.optionID))
+            change(one.state.agent) { $0.waiting = nil }
+        }
+    }
+
+    // MARK: Odds and ends
+
+    /// The agent's own environment, which is the whole point of the daemon not being
+    /// sandboxed: ~/.claude, the keychain, git, node and Xcode are all here.
+    private func environment(for cwd: String) -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        let path = environment["PATH"] ?? "/usr/bin:/bin"
+        let missing = searchPaths.filter { !path.split(separator: ":").contains(Substring($0)) }
+        if !missing.isEmpty { environment["PATH"] = (missing + [path]).joined(separator: ":") }
+        environment["PWD"] = cwd
+        return environment
+    }
+
+    private func find(_ command: String) -> String? {
+        if command.hasPrefix("/") {
+            return FileManager.default.isExecutableFile(atPath: command) ? command : nil
+        }
+        return searchPaths.lazy.map { "\($0)/\(command)" }
+            .first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    private func look(_ agent: UUID) -> Held? { guarded.sync { held[agent] } }
+    private func put(_ agent: UUID, _ one: Held) { guarded.sync { held[agent] = one } }
+    private func everythingHeld() -> [Held] { guarded.sync { Array(held.values) } }
+    public func everything() -> [AgentDaemon.Running] {
+        guarded.sync { held.values.map(\.state) }.sorted { $0.startedAt < $1.startedAt }
+    }
+
+    private func change(_ agent: UUID, _ edit: @escaping (inout AgentDaemon.Running) -> Void) {
+        guarded.sync {
+            guard let one = held[agent] else { return }
+            edit(&one.state)
+        }
+    }
+}
+#endif
