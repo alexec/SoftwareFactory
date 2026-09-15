@@ -167,6 +167,18 @@ enum StartAgent {
                 try AgentLauncher.launch(project, command: command)
             }
             model.findTheProcess(for: agent)
+            // Resuming brings the conversation back, and nothing else: the CLI opens on
+            // what was said and waits, so the agent sits there looking exactly as stopped
+            // as it did before. It has to be told to carry on, which is what a nudge is.
+            // The words cannot ride on the command line, because `claude --resume <id>
+            // "words"` answers once and exits rather than staying up, so they are typed
+            // in a few seconds later, once the CLI has drawn its prompt.
+            // (Alex, 14 Sep 2026: it looked like Start did nothing.)
+            _Concurrency.Task { [weak model] in
+                try? await _Concurrency.Task.sleep(for: .seconds(5))
+                guard let model, let again = model.snapshot.agents.first(where: { $0.id == agent.id }) else { return }
+                model.nudge(again)
+            }
             return nil
         } catch {
             return error.localizedDescription

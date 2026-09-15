@@ -263,6 +263,14 @@ struct AgentCard: View {
                 .controlSize(.small)
                 .help("Tell it to pick up the next task")
                 .padding(10)
+            } else if status.canResume {
+                Button("Start") {
+                    _ = StartAgent.resume(agent: status.agent, model: model, terminals: terminals)
+                }
+                .buttonStyle(.glass)
+                .controlSize(.small)
+                .help("Start it back up in the conversation it was having")
+                .padding(10)
             }
         }
         .help("Show \(status.agent.label)")
@@ -700,11 +708,23 @@ struct AgentBellMark: View {
 struct AgentActivityDot: View {
     var activity: Dashboard.AgentActivity
 
+    /// A stopped agent is drawn as a ring with nothing in it. It used to be red, which
+    /// said something has gone wrong and wants you now; a stopped agent is inert, and it
+    /// was shouting louder than a blocked one, which is the one that actually needs you.
+    /// The quiet end of the palette was already taken, grey for waiting and ink for idle,
+    /// so stopped is the absence of a fill rather than another shade: no process, no ink.
+    /// It also survives colour blindness in a way grey against grey does not.
+    /// (Alex, 14 Sep 2026.)
     var body: some View {
-        Circle()
-            .fill(Self.color(activity))
-            .frame(width: 8, height: 8)
-            .help(Self.help(activity))
+        Group {
+            if activity == .stopped {
+                Circle().strokeBorder(.tertiary, lineWidth: 1.5)
+            } else {
+                Circle().fill(Self.color(activity))
+            }
+        }
+        .frame(width: 8, height: 8)
+        .help(Self.help(activity))
     }
 
     static func color(_ activity: Dashboard.AgentActivity) -> Color {
@@ -713,7 +733,7 @@ struct AgentActivityDot: View {
         case .blocked: .orange
         case .waiting: .gray
         case .idle: .primary
-        case .stopped: .red
+        case .stopped: .secondary
         }
     }
 
