@@ -84,7 +84,13 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     `AgentMessage` (recipient, from, subject, contents, sent, and `delivered` for records
     written before delivery existed; there is no inbox to read, `terminalLine` is
     what gets typed, and a nudge is simply a message whose contents are
-    `LaunchPrompt.nudge`, so one path carries both. Once the app has typed one into the
+    `LaunchPrompt.nudge`, so one path carries both. A nudge says "The user has nudged you
+    to continue your work" and nothing about how to do the job: it used to name the
+    backlog and the next task nobody is on, which is the factory instructing an agent that
+    already has its own instructions and may be mid-something the backlog says nothing
+    about (T370). `LaunchPrompt.pokes` are the lines the factory types in itself, the
+    nudge and `carryOn`; `AgentMessage.isPoke` is what puts them in bare, because they
+    already say a person asked. Everything else is attributed. Once the app has typed one into the
     recipient's terminal it deletes the record: arrived is arrived, and a copy of what has
     landed is a pile rather than an inbox. `Mailbox` caps what is still waiting at three,
     and `message_send` and `agent_nudge` answer "Mailbox full" for the fourth; the
@@ -231,8 +237,12 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     its dead pane and run nothing, and that kill runs off the main thread like every
     other question put to tmux. Start sits beside Stop on the agent's page and in both
     of its menus. (T262)
-    Starting one types nothing into it. The conversation comes back on screen and stops
-    there: what it does next is the person's to say, in the terminal or with Nudge.
+    Starting one types `LaunchPrompt.carryOn` into it, as a message like any other so it
+    lands when the new terminal appears. It used to type nothing, on the argument that a
+    factory putting words in an agent's mouth the moment it wakes is one you cannot start
+    without committing to; what that gave instead was an agent sitting at a prompt doing
+    nothing until somebody noticed and nudged it, which is the same commitment made twice
+    (T364, and Alex 14 Sep 2026 the other way).
     `TerminalSessions.Session.run` is a fresh id for each terminal actually started in a
     session, and the page keys its pane on that rather than on the session id, which does
     not change across a start: SwiftUI kept the view it had and went on drawing the dead

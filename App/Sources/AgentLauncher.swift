@@ -168,11 +168,16 @@ enum StartAgent {
                 try AgentLauncher.launch(project, command: command)
             }
             model.findTheProcess(for: agent)
-            // Nothing is typed in. Starting an agent back up puts the conversation back
-            // on screen and stops there: what it does next is the person's to say, in
-            // the terminal or with Nudge, and a factory that puts words in an agent's
-            // mouth the moment it wakes is one you cannot start without committing to.
-            // (Alex, 14 Sep 2026: when starting an agent, do not send it any message.)
+            // And it is told to carry on. It goes in as a message like any other, so it
+            // is typed in when the new terminal appears rather than at whatever moment
+            // this returns.
+            //
+            // Starting one used to type nothing in, on the argument that a factory
+            // putting words in an agent's mouth the moment it wakes is one you cannot
+            // start without committing to. What that gave instead was an agent sitting at
+            // a prompt doing nothing until somebody noticed and nudged it, which is the
+            // same commitment made twice. (T364; Alex, 14 Sep 2026, the other way.)
+            model.sendMessage(to: agent.id, subject: "Started", contents: LaunchPrompt.carryOn)
             return nil
         } catch {
             return error.localizedDescription

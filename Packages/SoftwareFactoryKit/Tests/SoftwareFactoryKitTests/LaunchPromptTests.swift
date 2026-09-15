@@ -61,7 +61,39 @@ import Testing
     }
 
     @Test func aNudgeTellsItToTakeTheNextTask() {
-        #expect(LaunchPrompt.nudge.contains("next task"))
-        #expect(LaunchPrompt.nudge.contains("backlog"))
+        // It says a person asked, and nothing about how to do the job: the agent has its
+        // own instructions and may be mid-something the backlog says nothing about.
+        #expect(LaunchPrompt.nudge.contains("nudged"))
+        #expect(!LaunchPrompt.nudge.contains("backlog"))
+    }
+}
+
+@Suite struct PokeTests {
+    @Test func aStartedAgentIsToldToCarryOn() {
+        #expect(LaunchPrompt.carryOn.contains("started you back up"))
+        #expect(LaunchPrompt.carryOn.contains("Carry on"))
+    }
+
+    @Test func theFactorysOwnPokesGoInBare() {
+        for poke in [LaunchPrompt.nudge, LaunchPrompt.carryOn] {
+            let message = AgentMessage(recipientID: UUID(), from: "Alex",
+                                       subject: "Started", contents: poke)
+            #expect(message.isPoke)
+            #expect(message.terminalLine == poke)
+        }
+    }
+
+    @Test func anythingElseSaysWhoItIsFrom() {
+        let message = AgentMessage(recipientID: UUID(), from: "A2",
+                                   subject: "The build", contents: "It is red again.")
+        #expect(!message.isPoke)
+        #expect(message.terminalLine == "Message from A2, The build: It is red again.")
+    }
+
+    @Test func onlyANudgeIsANudge() {
+        let started = AgentMessage(recipientID: UUID(), from: "Alex",
+                                   subject: "Started", contents: LaunchPrompt.carryOn)
+        #expect(!started.isNudge)
+        #expect(started.isPoke)
     }
 }

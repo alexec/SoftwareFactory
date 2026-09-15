@@ -53,8 +53,28 @@ public enum LaunchPrompt {
 
     /// A poke for an agent that has finished and is sitting waiting. The words are written
     /// down as a message and typed into its terminal. (T171, 13 Sep 2026.)
-    public static let nudge =
-        "There is work waiting. Look at the backlog and take the next task nobody is on."
+    ///
+    /// It used to name the backlog and the next task nobody is on, which is the factory
+    /// telling an agent how to do its job. The agent already knows: it has the tools, it
+    /// has its instructions, and it may be mid-something the backlog says nothing about.
+    /// What it does not know is that a person just asked it to carry on. (T370, Alex,
+    /// 16 Sep 2026.)
+    public static let nudge = "The user has nudged you to continue your work."
+
+    /// What an agent is told when the person starts it back up. Its conversation is on
+    /// screen again and the CLI is sitting at a prompt waiting, which from the outside
+    /// looks exactly like an agent that has stopped working.
+    ///
+    /// Starting one used to type nothing in, on the argument that a factory putting words
+    /// in an agent's mouth the moment it wakes is one you cannot start without committing
+    /// to. What that gave instead was an agent sitting there doing nothing until somebody
+    /// noticed and nudged it, which is the same commitment made twice. (T364, and Alex,
+    /// 14 Sep 2026, the other way.)
+    public static let carryOn = "The user has started you back up. Carry on with your work."
+
+    /// The lines the factory types in itself. They say who they are from in their own
+    /// words, so they go into the terminal bare rather than wrapped in an attribution.
+    public static let pokes: Set<String> = [nudge, carryOn]
 
     /// What the factory asks an agent that has not said how its work is going for an
     /// hour. It goes in as a message like any other, so it is typed into the terminal

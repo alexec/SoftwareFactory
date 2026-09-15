@@ -617,12 +617,16 @@ public struct AgentMessage: Codable, Identifiable, Hashable, Sendable {
     /// both and there is no second mechanism to keep in step.
     public var isNudge: Bool { contents == LaunchPrompt.nudge }
 
-    /// What the app types in. A nudge goes in bare, because that is the line agents have
-    /// always read and it works. Anything else says who it is from first: an agent cannot
-    /// tell a typed line from the person at the keyboard, so an unattributed message reads
-    /// as Alex asking for something.
+    /// One of the factory's own pokes: a nudge, or the line an agent gets when it is
+    /// started back up. They say who they are from in their own words.
+    public var isPoke: Bool { LaunchPrompt.pokes.contains(contents) }
+
+    /// What the app types in. A poke goes in bare, because it already says the person
+    /// asked for it. Anything else says who it is from first: an agent cannot tell a
+    /// typed line from the person at the keyboard, so an unattributed message reads as
+    /// Alex asking for something.
     public var terminalLine: String {
-        if isNudge { return contents }
+        if isPoke { return contents }
         let subject = subject.trimmingCharacters(in: .whitespacesAndNewlines)
         let head = subject.isEmpty ? "Message from \(from)" : "Message from \(from), \(subject)"
         return "\(head): \(contents)"
