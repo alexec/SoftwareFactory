@@ -6,7 +6,7 @@ one tool call, and optionally asks permission first. The first argument picks th
 behaviour:
   plain       say it back and finish
   permission  ask before the tool call
-  slow        take a while, so cancel has something to cancel
+  slow        take a moment, so a turn is in flight long enough to say something into
   crash       exit as soon as a session is made
 """
 import json, sys, time
@@ -66,7 +66,9 @@ while True:
             picked = json.loads(answer)["result"]["outcome"].get("optionId")
             update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "picked:" + str(picked)}})
         if mode == "slow":
-            time.sleep(30)
+            # Long enough for a test to see a turn in flight and say something into it,
+            # short enough that the suite stays under a second per turn.
+            time.sleep(0.8)
         # A fresh id each turn, as a real agent gives: the same id twice is the same call
         # being updated, and the transcript is right to fold it into one row.
         turns += 1

@@ -41,6 +41,8 @@ public final class AgentFloor: @unchecked Sendable {
         /// What it is doing, folded as the lines go past. Bounded on purpose: the whole
         /// transcript belongs on the page reading it, not in the daemon watching sixteen.
         var headline = ACPHeadline()
+        /// Words waiting for the turn in flight to finish. See `prompt(_:_:)`.
+        var pending: [String] = []
         init(connection: ACPConnection, state: AgentDaemon.Running, kind: LaunchAgent, cwd: String) {
             self.connection = connection
             self.state = state
@@ -127,7 +129,9 @@ public final class AgentFloor: @unchecked Sendable {
                 $0.pid = nil
                 $0.waiting = nil
                 $0.isPrompting = false
+                $0.queued = 0
             }
+            self?.guarded.sync { self?.held[agent]?.pending = [] }
         }
         connection.onLine = { [weak self] line in
             self?.guarded.sync {
@@ -202,7 +206,40 @@ public final class AgentFloor: @unchecked Sendable {
     /// A turn, started and not waited for. Everything the factory says to an agent comes
     /// through here: the words it starts with, a nudge, a message from another agent, the
     /// status report ask. One path, the same as the typed line was.
+    ///
+    /// **Nothing is said to an agent in the middle of a turn.** The four do three
+    /// different things with a prompt that arrives while they are working, and two of them
+    /// lose something: Claude Code queues it and answers both, Copilot drops it without a
+    /// word, and Cursor cancels the turn in flight to take the new one. Measured, not read
+    /// (T373). So the daemon queues instead, and every agent behaves the way the best of
+    /// them does. It is also what the terminal did: a message was delivered only when
+    /// something took it.
     private func prompt(_ agent: UUID, _ words: String) {
+        let queued: Bool = guarded.sync {
+            guard let held = held[agent] else { return true }
+            guard held.state.isPrompting else { return false }
+            held.pending.append(words)
+            held.state.queued = held.pending.count
+            return true
+        }
+        if queued { return }
+        say(agent, words)
+    }
+
+    /// The next thing waiting, once a turn has finished. One at a time: they are separate
+    /// things to say and each gets its own turn.
+    private func sayNext(_ agent: UUID) {
+        let next: String? = guarded.sync {
+            guard let held = held[agent], !held.pending.isEmpty else { return nil }
+            let words = held.pending.removeFirst()
+            held.state.queued = held.pending.count
+            return words
+        }
+        guard let next else { return }
+        say(agent, next)
+    }
+
+    private func say(_ agent: UUID, _ words: String) {
         guard let one = look(agent), let session = one.state.session else { return }
         // Written into the log ourselves, because the agent does not echo what it was
         // told except on a replay, and a page showing only the answers is a page of an
@@ -218,10 +255,12 @@ public final class AgentFloor: @unchecked Sendable {
         }
         change(agent) { $0.isPrompting = true }
         Task { [weak self] in
-            defer { self?.change(agent) { $0.isPrompting = false } }
             // No patience: a turn takes as long as it takes, and the way to stop waiting
             // on one is to cancel it.
             _ = try? await one.connection.ask("session/prompt", ACP.prompt(words, session: session), patience: nil)
+            self?.change(agent) { $0.isPrompting = false }
+            // And whatever came in while it was working goes now.
+            self?.sayNext(agent)
         }
     }
 

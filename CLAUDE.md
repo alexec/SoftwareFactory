@@ -240,6 +240,24 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     for the sandboxed build, which is a separate feature from how an agent runs. `Agent.acpSession` is the id the agent minted for itself:
     `Agent.id` is still the record's key and still what the agent signs its factory calls
     with, which is two ids rather than one, the compromise Cursor already forced in T206.
+  - **Nothing is said to an agent in the middle of a turn.** Measured on all four rather
+    than read: Claude Code queues a prompt that arrives mid-turn and answers both, Copilot
+    drops it without a word, and Cursor cancels the turn in flight to take the new one. Our
+    code called all three a success and deleted the message from the mailbox, so a nudge to
+    a busy Copilot agent vanished and a nudge to a busy Cursor agent would have thrown away
+    its work. `AgentFloor` queues instead, sends one at a time as the agent frees up, and
+    `Running.queued` says how many are waiting. A stopped agent gives up its queue: there
+    is nobody to say it to, and it must not be said to whatever starts next under that
+    name. (T373.)
+  - What each agent can actually do, measured through the daemon on 16 Sep 2026. All four
+    handshake, make a session, take a prompt and are handed the factory's MCP server over
+    http, which is the plugin install gone: the underlying CLI is launched with
+    `--mcp-config {"mcpServers":{"software-factory":{"type":"http","url":"http://127.0.0.1:4747/mcp"}}}`.
+    Claude Code is the only one proven all the way through a piece of work: read and edit
+    tool calls, a diff, a permission request answered, and a stop and start that came back
+    knowing what it had made. Cursor declares `loadSession` and then answers `session/load`
+    with "Invalid params", so Start on a stopped Cursor agent does not work yet. Grok and
+    Cursor were both out of credit, so only their protocol layer is proven.
   - Three things keep the rest of the floor from having to know ACP from tmux. The
     daemon's `Running.line` goes into `Agent.title`, which every card, sidebar row and
     status board already reads, so the OSC title retired without a view changing. The

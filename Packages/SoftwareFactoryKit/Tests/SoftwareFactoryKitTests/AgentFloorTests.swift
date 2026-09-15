@@ -256,6 +256,64 @@ struct AgentFloorTests {
         #expect(reply.error?.contains("could not keep a record") == true)
     }
 
+    @Test func aTurnInFlightSaysSo() async throws {
+        let (store, root) = try Self.scratch()
+        let floor = Self.floor(store, mode: "slow")
+        let agent = UUID()
+        #expect(await Self.start(floor, agent: agent, cwd: root, words: "take your time").ok)
+        // The stub sleeps thirty seconds before it answers, so anything the page draws
+        // about an agent being busy has to be true for that whole time.
+        await Self.until("the turn to be reported as in flight") {
+            floor.everything().first?.isPrompting == true
+        }
+        #expect(floor.everything().first?.isPrompting == true)
+        _ = await floor.handle(AgentDaemon.Request(op: .stop, agent: agent))
+    }
+
+    @Test func nothingIsSaidToAnAgentInTheMiddleOfATurn() async throws {
+        let (store, root) = try Self.scratch()
+        let floor = Self.floor(store, mode: "slow")
+        let agent = UUID()
+        #expect(await Self.start(floor, agent: agent, cwd: root, words: "first").ok)
+        await Self.until("the turn to be in flight") { floor.everything().first?.isPrompting == true }
+
+        // Two things to say while it is working. Both are taken and neither is said yet.
+        #expect(await floor.handle(AgentDaemon.Request(op: .say, agent: agent, text: "second")).ok)
+        #expect(await floor.handle(AgentDaemon.Request(op: .say, agent: agent, text: "third")).ok)
+        #expect(floor.everything().first?.queued == 2)
+        let now = ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store))
+        #expect(now.entries.compactMap { entry -> String? in
+            if case .asked(let text) = entry.kind { return text }
+            return nil
+        } == ["first"], "Only the turn in flight has been said.")
+
+        // The stub sleeps thirty seconds, so they go out one at a time as it frees up.
+        await Self.until("both to be said", 90) {
+            ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store))
+                .entries.compactMap { entry -> String? in
+                    if case .asked(let text) = entry.kind { return text }
+                    return nil
+                } == ["first", "second", "third"]
+        }
+        #expect(floor.everything().first?.queued == 0)
+        _ = await floor.handle(AgentDaemon.Request(op: .stop, agent: agent))
+    }
+
+    @Test func aStoppedAgentForgetsWhatWasWaitingForIt() async throws {
+        let (store, root) = try Self.scratch()
+        let floor = Self.floor(store, mode: "slow")
+        let agent = UUID()
+        #expect(await Self.start(floor, agent: agent, cwd: root, words: "first").ok)
+        await Self.until("the turn to be in flight") { floor.everything().first?.isPrompting == true }
+        #expect(await floor.handle(AgentDaemon.Request(op: .say, agent: agent, text: "second")).ok)
+        #expect(floor.everything().first?.queued == 1)
+        _ = await floor.handle(AgentDaemon.Request(op: .stop, agent: agent))
+        // There is nobody left to say it to, and it must not be said to whatever starts
+        // next under the same name.
+        await Self.until("the queue to be given up") { floor.everything().first?.queued == 0 }
+        #expect(floor.everything().first?.isPrompting == false)
+    }
+
     @Test func aPingAnswersBeforeAnythingIsTouched() async throws {
         let (store, _) = try Self.scratch()
         let reply = await Self.floor(store).handle(AgentDaemon.Request(op: .ping))

@@ -167,12 +167,17 @@ public enum AgentDaemon {
         /// writes it onto the record, so every card, row and board reads it the same way
         /// as before. (T373.)
         public var line: String?
+        /// How many things are waiting to be said once the turn in flight ends. Nothing
+        /// is ever said to an agent mid-turn: of the four, one queues, one drops it
+        /// silently and one cancels what it was doing, so the daemon queues for all of
+        /// them. (T373.)
+        public var queued: Int = 0
 
         public var id: UUID { agent }
 
         public init(agent: UUID, state: State, pid: Int32? = nil, session: String? = nil,
                     startedAt: Date = .now, exit: Int32? = nil, waiting: Pending? = nil,
-                    isPrompting: Bool = false, line: String? = nil) {
+                    isPrompting: Bool = false, line: String? = nil, queued: Int = 0) {
             self.agent = agent
             self.state = state
             self.pid = pid
@@ -182,6 +187,7 @@ public enum AgentDaemon {
             self.waiting = waiting
             self.isPrompting = isPrompting
             self.line = line
+            self.queued = queued
         }
 
         public enum State: String, Codable, Sendable {

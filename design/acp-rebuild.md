@@ -233,4 +233,26 @@ after ten minutes and every agent still launches allowed, which is today's behav
 Grok and Cursor are wired and were driven through the daemon, and both got as far as
 answering: Grok said "Grok Build usage balance exhausted" and Cursor said "Upgrade your
 plan to continue". That is an account, not an integration, but it does mean neither has
-done a piece of work here yet.
+done a piece of work here yet. Cursor also declares `loadSession` and then answers
+`session/load` with "Invalid params", so Start on a stopped Cursor agent does not work.
+
+## What the agents actually do, measured
+
+Driving all four through the daemon found one thing worth the whole exercise. A prompt
+that arrives while a turn is in flight is handled three different ways:
+
+- **Claude Code** queues it and answers both. It advertises `promptQueueing`.
+- **Copilot** drops it. The first turn finishes, the second never happens, no error.
+- **Cursor** cancels the turn in flight and takes the new one, `stopReason: cancelled`.
+
+The factory called all three a success, marked the message delivered and deleted it. So a
+nudge to a busy Copilot agent vanished, and a nudge to a busy Cursor agent would have
+thrown away what it was doing. Neither would have left a trace.
+
+The daemon queues now, and says one thing at a time as the agent frees up, so every agent
+behaves the way the best of them does. It is also what the terminal did: a message was
+only ever delivered when something took it.
+
+This is the argument for testing a protocol against the things that speak it rather than
+against its specification. Every one of these four is conformant. They simply disagree
+about what conformance means here, and the specification does not say.
