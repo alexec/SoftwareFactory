@@ -13,6 +13,9 @@ struct ProjectView: View {
     @State private var newParkedTitle = ""
     @State private var launchError: String?
     @State private var showingAllDone = false
+    /// The document being read, if one is. A sheet rather than a page: it is reading,
+    /// not a place to be. (T297.)
+    @State private var reading: Artifact?
 
     private var tasks: [FactoryTask] {
         Backlog.visible(for: project.id, in: model.snapshot.tasks, recentDone: showingAllDone ? Int.max : 3)
@@ -58,11 +61,10 @@ struct ProjectView: View {
             // person could not, so the section only ever grew. (T266.)
             if !artifacts.isEmpty {
                 Section("Artifacts") {
-                    ForEach(artifacts) { artifact in
-                        ArtifactCard(artifact: artifact) { model.delete(artifact) }
-                            .listRowSeparator(.hidden)
-                            .padding(.vertical, 4)
-                    }
+                    artifactCards
+                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 8, trailing: 0))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                 }
             }
 
@@ -101,6 +103,9 @@ struct ProjectView: View {
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
+        .sheet(item: $reading) { artifact in
+            ArtifactSheet(artifact: artifact, onDelete: { model.delete(artifact) }) { reading = nil }
+        }
     }
 
     @ViewBuilder
@@ -178,6 +183,21 @@ struct ProjectView: View {
     // The top row: the dot, the name, the hold toggle, nothing else — no summary
     // numbers. (Alex, 12 Sep 2026.) Editing happens in a popover, so the backlog
     // underneath never jumps.
+    /// The same grid the rest of the floor uses, so a plan and a one-line note are told
+    /// apart by what they say rather than by opening both. (T297.)
+    private var artifactCards: some View {
+        GlassEffectContainer(spacing: 14) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 14)], spacing: 14) {
+                ForEach(artifacts) { artifact in
+                    ArtifactTile(artifact: artifact) { reading = artifact }
+                        .contextMenu {
+                            Button("Delete document", role: .destructive) { model.delete(artifact) }
+                        }
+                }
+            }
+        }
+    }
+
     private var header: some View {
         let status = model.status(for: project.id)
         return VStack(alignment: .leading, spacing: 10) {

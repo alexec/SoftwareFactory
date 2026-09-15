@@ -125,6 +125,58 @@ public enum Markdown {
     }
 
     /// The raw line, because how far a bullet is indented is the only thing that says
+    /// A document in a sentence or two, for the front of a card: enough to tell one
+    /// document from another without opening it.
+    ///
+    /// The marks come off, because a card is not the place to read markdown: a preview
+    /// that opens with a hash and a row of asterisks shows how the document was written
+    /// rather than what it says. Code blocks and rules are skipped for the same reason.
+    /// Nothing is cut mid-word. (T297, Alex, 15 Sep 2026.)
+    public static func summary(_ text: String, limit: Int = 240) -> String {
+        var said: [String] = []
+        var length = 0
+        for block in blocks(text) {
+            let piece: String
+            switch block {
+            case .heading(_, let t): piece = t
+            case .paragraph(let t), .quote(let t), .bullet(let t, _), .numbered(_, let t): piece = t
+            case .code, .rule: continue
+            }
+            let plain = withoutMarks(piece)
+            guard !plain.isEmpty else { continue }
+            said.append(plain)
+            length += plain.count + 1
+            if length >= limit { break }
+        }
+        return shortened(said.joined(separator: " "), to: limit)
+    }
+
+    /// Inline marks off: bold, italic, code and the brackets around a link, keeping the
+    /// words the link was written on.
+    static func withoutMarks(_ text: String) -> String {
+        var out = ""
+        var skipping = false
+        for character in text {
+            switch character {
+            case "*", "_", "`": continue
+            case "[", "]": continue
+            // The address after a link's words is not something to read on a card.
+            case "(" where out.hasSuffix(" ") == false && !out.isEmpty: skipping = true
+            case ")" where skipping: skipping = false
+            default: if !skipping { out.append(character) }
+            }
+        }
+        return out.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Cut at a word, not a letter, and say that it was cut.
+    static func shortened(_ text: String, to limit: Int) -> String {
+        guard text.count > limit else { return text }
+        let cut = text.prefix(limit)
+        guard let space = cut.lastIndex(of: " ") else { return String(cut) + "…" }
+        return cut[cut.startIndex..<space].trimmingCharacters(in: .whitespaces) + "…"
+    }
+
     /// whether it is a list inside a list.
     private static func bullet(_ raw: String) -> MarkdownBlock? {
         let spaces = raw.prefix { $0 == " " || $0 == "\t" }.count

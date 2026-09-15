@@ -300,7 +300,10 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     out for the moment, to be refined),
     `Notifier` (one banner per new question, options as actions; `Presence.isAtTheMac`),
     `EscalationCard`, `ProjectView` (backlog
-    with add, drag reorder, state menu, notes under rows, artifacts the agents filed,
+    with add, drag reorder, state menu, notes under rows, the artifacts the agents filed
+    as cards in a grid (`ArtifactTile`, opening `ArtifactSheet`: they were disclosure rows
+    down the middle of the backlog, which made a plan and a one-line note the same size
+    and hid every one behind a triangle, T297),
     and Start an agent on this,
     on a backlog row: it reserves an agent, puts the task in its name and starts it on
     that one task), `AgentLauncher` and `StartAgent` (reserve, assign, launch: one path

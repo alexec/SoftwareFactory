@@ -77,3 +77,43 @@ import Testing
         #expect(Markdown.blocks("\n\n   \n") == [])
     }
 }
+
+@Suite struct MarkdownSummaryTests {
+    @Test func aHeadingAndItsParagraphReadAsOneLine() {
+        let text = """
+        # The plan
+
+        Take the **bell** out of the live path and put it in a `hook`.
+        """
+        #expect(Markdown.summary(text) == "The plan Take the bell out of the live path and put it in a hook.")
+    }
+
+    @Test func codeAndRulesAreNotSaidOnACard() {
+        let text = """
+        ---
+        ```
+        swift test
+        ```
+        What it does.
+        """
+        #expect(Markdown.summary(text) == "What it does.")
+    }
+
+    @Test func aLinkKeepsItsWordsAndLosesItsAddress() {
+        #expect(Markdown.summary("See [the report](https://example.com/r) for the rest.")
+                == "See the report for the rest.")
+    }
+
+    @Test func nothingIsCutMidWord() {
+        let long = String(repeating: "alpha beta ", count: 40)
+        let short = Markdown.summary(long, limit: 20)
+        #expect(short.count <= 21)
+        #expect(short.hasSuffix("…"))
+        #expect(!short.contains("alph…"))
+    }
+
+    @Test func anEmptyDocumentSaysNothing() {
+        #expect(Markdown.summary("").isEmpty)
+        #expect(Markdown.summary("```\nonly code\n```").isEmpty)
+    }
+}
