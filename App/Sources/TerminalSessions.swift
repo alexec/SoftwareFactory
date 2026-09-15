@@ -180,11 +180,19 @@ final class TerminalSessions {
         defer { isLooking = false }
         let reload = !tmuxConfigLoaded
         tmuxConfigLoaded = true
-        let names = await Task.detached(priority: .utility) {
+        let holding = await Task.detached(priority: .utility) {
             if reload { Tmux.reloadConfig() }
-            return Set(Tmux.sessions())
+            return Tmux.holding()
         }.value
+        let names = Set(holding.map(\.session))
         if names != held { held = names }
+        // The titles come back on the same ask, and this is the only place they come
+        // from for an agent nobody is looking at: SwiftTerm hears an OSC title while it
+        // is attached and nowhere else, so a card's line used to say whatever it last
+        // said with its page open. (Alex, 15 Sep 2026.)
+        for line in holding {
+            if let title = line.title { onTitle?(line.session, title) }
+        }
     }
 
     /// Picks a session back up after this app has been restarted: tmux still has it, so

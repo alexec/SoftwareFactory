@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SoftwareFactoryKit
 
 /// tmux holds an agent's session in a server of its own, so the agent outlives this app:
 /// quit, rebuild, come back, and the same session is there to attach to.
@@ -126,10 +127,23 @@ enum Tmux {
 
     /// The sessions this app's server is holding, by name.
     static func sessions() -> [String] {
+        holding().map(\.session)
+    }
+
+    /// The same ask, with the title each session's pane is showing. One ask rather than
+    /// two, because the caller wants both and every one of these waits on tmux.
+    ///
+    /// This is the only route a title has when nobody is attached, which is most of the
+    /// time: the live OSC path needs a client on that session. A title is state, so
+    /// asking for it now is enough and there is nothing to hook, which is the difference
+    /// between this and the bell. Never call it from the main thread.
+    /// (Alex, 15 Sep 2026.)
+    static func holding() -> [PaneTitles.Line] {
         guard let binary, isInstalled else { return [] }
-        guard let out = run(binary, ["-L", server, "list-sessions", "-F", "#{session_name}"]), out.status == 0
+        let format = "#{session_name}\t#{pane_title}"
+        guard let out = run(binary, ["-L", server, "list-sessions", "-F", format]), out.status == 0
         else { return [] }
-        return out.text.split(separator: "\n").map(String.init)
+        return PaneTitles.parse(out.text)
     }
 
     /// Where the bell hook leaves its marks: one empty file per session that rang.
