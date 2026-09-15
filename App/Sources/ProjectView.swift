@@ -533,9 +533,6 @@ struct TaskRow: View {
                 AgentChip(status: agent, waiting: task.state == .backlog, select: selectAgent)
             }
             Spacer()
-            Text(task.state.word)
-                .font(.callout)
-                .foregroundStyle(.secondary)
             // The person's menu: park, unpark, move, delete. Whether a task is in
             // progress or done is the agent's to say, so those are not here.
             Menu {
