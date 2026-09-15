@@ -105,8 +105,8 @@ struct AgentsView: View {
     private func launch(_ agent: LaunchAgent) {
         let words = prompt
         writingPrompt = false
-        if Agents.atCap(model.snapshot.agents) {
-            launchError = Agents.fullMessage
+        if Agents.atCap(model.snapshot.agents, cap: Agents.cap(model.throttle)) {
+            launchError = Agents.fullMessage(cap: Agents.cap(model.throttle))
             return
         }
         guard let reserved = model.reserveAgent(for: nil) else {

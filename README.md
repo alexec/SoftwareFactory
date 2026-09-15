@@ -70,8 +70,8 @@ The tools, and each says whether it reads or writes: queries are `project_list`,
 `project_remove`, `task_add`, `task_claim`, `task_status`, `task_note`, `task_set`,
 `task_block`, `task_unblock`, `task_remove`, `artifact_add`, `artifact_set`, `artifact_remove`,
 `agent_create`, `agent_nudge`, `resource_add`, `resource_lease`,
-`resource_release`. Eight agents on the floor is the cap; `agent_create` asks the factory
-to start another. `agent_nudge` pokes another agent the way the person's Nudge does. A query never writes anything but your heartbeat, and a test holds
+`resource_release`. How many agents may be on the floor is yours to set on the Capacity
+page, eight to begin with; `agent_create` asks the factory to start another. `agent_nudge` pokes another agent the way the person's Nudge does. A query never writes anything but your heartbeat, and a test holds
 that true. Older names (`agent_messages`, `project_get`, the three `project_set_*`,
 `task_number`, `task_rank`, `task_move`, `task_show`, `resource_renew`) still answer for
 sessions that loaded them.

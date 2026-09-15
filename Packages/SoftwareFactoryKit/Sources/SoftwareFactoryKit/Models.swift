@@ -470,17 +470,30 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
 
 /// Who works here. The number is the name: A1, A2, A3.
 public enum Agents {
-    /// How many may be on the floor at once. A hard cap, not a throttle: the ninth is
-    /// refused, from the app and from `agent_create` alike. (T179, 13 Sep 2026.)
-    public static let cap = 8
-    public static let fullMessage = "Eight agents is the cap."
+    /// How many may be on the floor at once when the person has not said otherwise.
+    /// A hard cap, not a throttle: the one over is refused, from the app and from
+    /// `agent_create` alike. (T179, 13 Sep 2026.)
+    public static let defaultCap = 8
+    /// What the person may set it to. One agent is a floor of one; sixteen is more than
+    /// this Mac will thank you for. (T209.)
+    public static let capRange = 1...16
+
+    /// Agents are slots the person hands out, the same as a phone or a simulator: the
+    /// number of them lives in the throttle, and this is how everything reads it. (T209.)
+    public static func cap(_ throttle: Throttle = .default) -> Int {
+        min(max(throttle.agentSlots, capRange.lowerBound), capRange.upperBound)
+    }
+
+    public static func fullMessage(cap: Int = defaultCap) -> String {
+        "The cap is \(cap) \(cap == 1 ? "agent" : "agents") on the floor."
+    }
 
     /// Registered, and not known to have exited. These count toward the cap.
     public static func onTheFloor(_ agents: [Agent]) -> [Agent] {
         agents.filter { $0.isRegistered && !$0.hasExited }
     }
 
-    public static func atCap(_ agents: [Agent]) -> Bool {
+    public static func atCap(_ agents: [Agent], cap: Int = defaultCap) -> Bool {
         onTheFloor(agents).count >= cap
     }
 

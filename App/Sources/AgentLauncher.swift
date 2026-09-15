@@ -93,7 +93,8 @@ enum StartAgent {
         model: AppModel,
         terminals: TerminalSessions
     ) -> String? {
-        if Agents.atCap(model.snapshot.agents) { return Agents.fullMessage }
+        let cap = Agents.cap(model.throttle)
+        if Agents.atCap(model.snapshot.agents, cap: cap) { return Agents.fullMessage(cap: cap) }
         guard let reserved = model.reserveAgent(for: project) else {
             return model.storeError ?? "The agent could not be written down. The store said no."
         }

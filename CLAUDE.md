@@ -54,9 +54,12 @@ before you mark the task done. Build the phone too when the change is in it.
     Its `label` is its name everywhere: "A<n>", or its raw id for one that registered
     before numbers. There is no separate `name` field, and never should be again: it
     was always the label and the two could only ever drift, T158.
-    Eight on the floor is the cap, `Agents.cap`: registered and not known to have
-    exited. `agent_create` asks the factory to start another, which sets `wantsLaunch`;
-    the app starts it. The ninth is refused. `agent_nudge` pokes another agent, sets
+    How many may be on the floor is the person's to set, `Throttle.agentSlots` read
+    through `Agents.cap(_:)`, eight by default and one to sixteen on the Capacity page:
+    agents are slots handed out like any other resource (T209). On the floor means
+    registered and not known to have exited. `agent_create` asks the factory to start
+    another, which sets `wantsLaunch`; the app starts it. The one over the cap is
+    refused. `agent_nudge` pokes another agent, sets
     `wantsNudge`, and the app types the same line as the person's Nudge),
     `AgentMessage` (recipient, from, subject, contents, sent; private to the recipient's
     MCP inbox),
@@ -133,7 +136,8 @@ before you mark the task done. Build the phone too when the change is in it.
     `AgentStatus` per agent on the floor.
   - `MCPServer`: JSON-RPC 2.0, `handle(_:)` is pure per request; `Tool.all` is the
     table; `call(_:_:)` does the work. `escalation_await` polls the store.
-    `agent_create` writes the agent down and sets `wantsLaunch`; eight is the cap.
+    `agent_create` writes the agent down and sets `wantsLaunch`; the person's own cap,
+    read off the throttle, is what refuses the one over it.
     `agent_nudge` puts the same words as the person's Nudge in the inbox and sets
     `wantsNudge` so the app types them into the terminal.
   - `HTTP`: `HTTPRequest.parse`, `HTTPResponse.serialized`, and `HTTPRouter` (`POST /mcp`,
@@ -179,8 +183,9 @@ before you mark the task done. Build the phone too when the change is in it.
     new one), `FactoryView` (the Capacity page: verdict and what each kind of work would
     be told, then one grid of cards for the Mac's own readings and every leasable
     resource alike, each a name and a colored utilization line; leasable cards show
-    slots in use of the total, same shape as compiles; add a resource, see who
-    holds it, Take back. The throttle sliders that held new work on swap or memory are
+    slots in use of the total, same shape as compiles; the
+    Agents card is the same shape again and carries the stepper that sets how many may
+    be on the floor at once; add a resource, see who holds it, Take back. The throttle sliders that held new work on swap or memory are
     out for the moment, to be refined),
     `Notifier` (one banner per new question, options as actions; `Presence.isAtTheMac`),
     `EscalationCard`, `ProjectView` (backlog

@@ -37,6 +37,9 @@ struct FactoryView: View {
     @ViewBuilder
     private func systemCards(_ r: MachineReading) -> some View {
         let t = model.throttle
+        AgentSlotsCard(inUse: Agents.onTheFloor(model.snapshot.agents).count, cap: Agents.cap(t)) { slots in
+            model.setThrottle { $0.agentSlots = slots }
+        }
         ResourceCard(title: "Memory free", value: r.memoryFreeFraction, text: percent(r.memoryFreeFraction),
               tint: r.memoryFreeFraction <= t.memoryFloor ? .red : (r.memoryFreeFraction <= t.memoryFloor * 2 ? .orange : .green))
         ResourceCard(title: "Swap", value: r.swapFraction, text: "\(gigabytes(r.swapUsed)) of \(gigabytes(r.swapTotal))",
@@ -190,6 +193,31 @@ private struct UtilizationBar: View {
             }
         }
         .frame(height: 8)
+    }
+}
+
+/// Agents are slots too. How many are on the floor of how many there are, and the
+/// control that sets how many there are. The one over the cap is refused, in the app and
+/// over `agent_create` alike. (T209.)
+private struct AgentSlotsCard: View {
+    var inUse: Int
+    var cap: Int
+    var setCap: (Int) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Agents").font(.callout).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(inUse) of \(cap)").font(.callout.weight(.medium)).monospacedDigit()
+            }
+            UtilizationBar(value: cap == 0 ? 0 : Double(inUse) / Double(cap), tint: inUse >= cap ? .orange : .green)
+            Stepper("At most \(cap)", value: Binding(get: { cap }, set: setCap), in: Agents.capRange)
+                .font(.callout)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(.regular, in: .rect(cornerRadius: 18))
     }
 }
 

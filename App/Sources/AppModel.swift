@@ -307,8 +307,8 @@ final class AppModel {
     /// what it says on every call it makes. (T-session, 13 Sep 2026.)
     func reserveAgent(for project: Project?) -> Agent? {
         guard let store else { return nil }
-        if Agents.atCap(snapshot.agents) {
-            storeError = Agents.fullMessage
+        if Agents.atCap(snapshot.agents, cap: Agents.cap(throttle)) {
+            storeError = Agents.fullMessage(cap: Agents.cap(throttle))
             return nil
         }
         do {

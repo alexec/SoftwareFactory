@@ -237,14 +237,36 @@ func wholeSecond() -> Date {
         #expect(!a.isWorking(now: now))
     }
 
+    /// The number of agents is slots the person hands out, like any other resource: it
+    /// lives in the throttle, it is clamped to what the Mac can stand, and a throttle
+    /// written before it existed still reads. (T209.)
+    @Test func theCapIsTheNumberOfSlotsThePersonSet() throws {
+        #expect(Agents.cap() == Agents.defaultCap)
+        #expect(Agents.cap(Throttle(agentSlots: 3)) == 3)
+        #expect(Agents.cap(Throttle(agentSlots: 0)) == 1)
+        #expect(Agents.cap(Throttle(agentSlots: 99)) == 16)
+        #expect(Agents.fullMessage(cap: 1) == "The cap is 1 agent on the floor.")
+        #expect(Agents.fullMessage(cap: 4) == "The cap is 4 agents on the floor.")
+
+        let now = Date()
+        let three = (1...3).map { Agent(number: $0, projectID: nil, registered: now) }
+        #expect(Agents.atCap(three, cap: 3))
+        #expect(!Agents.atCap(three, cap: 4))
+
+        let older = Data(#"{"compileSlots":9,"simulatorSlots":2,"swapCeiling":0.8,"memoryFloor":0.2}"#.utf8)
+        let read = try JSONDecoder().decode(Throttle.self, from: older)
+        #expect(read.compileSlots == 9)
+        #expect(read.agentSlots == Agents.defaultCap)
+    }
+
     @Test func eightOnTheFloorIsTheCap() {
         let now = Date()
         let eight = (1...8).map { Agent(number: $0, projectID: nil, registered: now) }
         #expect(Agents.onTheFloor(eight).count == 8)
-        #expect(Agents.atCap(eight))
+        #expect(Agents.atCap(eight, cap: Agents.defaultCap))
         var extra = eight
         extra.append(Agent(number: 9, projectID: nil, registered: now))
-        #expect(Agents.atCap(extra))
+        #expect(Agents.atCap(extra, cap: Agents.defaultCap))
 
         var oneGone = eight
         oneGone[0].deregistered = now

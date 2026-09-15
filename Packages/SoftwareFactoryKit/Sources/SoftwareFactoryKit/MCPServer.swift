@@ -195,7 +195,7 @@ public struct MCPServer: Sendable {
         Work from the \
         backlog. Read the backlog (task_list) and take the work in the order it \
         is in; tasks that belong together sit together, and you may claim several at once when they \
-        are one piece of work. Ask the factory to start another agent (agent_create); eight on the floor is the cap. Nudge another agent (agent_nudge). A task's work says what to produce: design a brief and stop, plan \
+        are one piece of work. Ask the factory to start another agent (agent_create); the person sets how many may be on the floor, and the one over that is refused. Nudge another agent (agent_nudge). A task's work says what to produce: design a brief and stop, plan \
         and stop, implement, fix a cause, review, investigate without changing anything, or ship a \
         build. task_next hands you the top task nobody is on when you would rather be \
         handed one, and never a parked one — parked is set aside on purpose, not yours to start on \
@@ -288,7 +288,7 @@ public struct MCPServer: Sendable {
             // that may have crashed instead. (T-session, 13 Sep 2026.)
             Tool(name: "agent_list", description: "Other agents registered with the factory, with their A<n> ids, projects and terminal titles.",
                  properties: [:], required: [], kind: .query),
-            Tool(name: "agent_create", description: "Ask the factory to start another agent. It is written down, named and started the same way as one you launch from the app. Eight on the floor is the cap.",
+            Tool(name: "agent_create", description: "Ask the factory to start another agent. It is written down, named and started the same way as one you launch from the app. The person sets how many may be on the floor; the one over that is refused.",
                  properties: ["project": str("Project it works; defaults to yours"),
                               "task_id": str("Optional: start it on this task, already in its name")],
                  required: []),
@@ -492,7 +492,8 @@ public struct MCPServer: Sendable {
 
         case "agent_create":
             let caller = try agent(args, in: snap)
-            if Agents.atCap(snap.agents) { throw ToolError(message: Agents.fullMessage) }
+            let cap = Agents.cap(store.throttle())
+            if Agents.atCap(snap.agents, cap: cap) { throw ToolError(message: Agents.fullMessage(cap: cap)) }
             let project: Project
             if let ref = args["project"] as? String, !ref.isEmpty {
                 project = try resolveProject(ref, in: snap, create: false)

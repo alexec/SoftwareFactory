@@ -268,13 +268,29 @@ private final class ResultBox: @unchecked Sendable {
         let s = try server()
         _ = call(s, "project_add", ["name": "Packed", "folder": "/tmp/Packed"])
         var last = ""
-        for _ in 1...Agents.cap {
+        for _ in 1...Agents.defaultCap {
             last = try startAgent(s, project: "Packed").label
         }
         let ninth = call(s, "agent_create", ["agent_id": last])
         #expect(ninth.isError)
-        #expect(ninth.text.contains(Agents.fullMessage))
-        #expect(try s.store.load().agents.filter(\.isRegistered).count == Agents.cap)
+        #expect(ninth.text.contains(Agents.fullMessage(cap: Agents.defaultCap)))
+        #expect(try s.store.load().agents.filter(\.isRegistered).count == Agents.defaultCap)
+    }
+
+    /// The cap is the person's to set, and `agent_create` reads theirs, not the default.
+    /// (T209.)
+    @Test func agentCreateObeysTheCapThePersonSet() throws {
+        let s = try server()
+        try s.store.save(Throttle(agentSlots: 2))
+        _ = call(s, "project_add", ["name": "Small", "folder": "/tmp/Small"])
+        var last = ""
+        for _ in 1...2 {
+            last = try startAgent(s, project: "Small").label
+        }
+        let third = call(s, "agent_create", ["agent_id": last])
+        #expect(third.isError)
+        #expect(third.text.contains("The cap is 2 agents on the floor."))
+        #expect(try s.store.load().agents.filter(\.isRegistered).count == 2)
     }
 
     @Test func agentCreateNeedsAProjectWithAFolder() throws {

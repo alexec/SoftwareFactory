@@ -40,16 +40,33 @@ public struct MachineReading: Codable, Sendable, Equatable {
 public struct Throttle: Codable, Sendable, Equatable {
     public var compileSlots: Int
     public var simulatorSlots: Int
+    /// How many agents may be on the floor at once. Slots, like any other resource the
+    /// factory hands out, and the person sets how many there are. (T209.)
+    public var agentSlots: Int
     /// Swap use above this fraction and nothing new starts.
     public var swapCeiling: Double
     /// Memory free below this fraction and nothing new starts.
     public var memoryFloor: Double
 
-    public init(compileSlots: Int = 5, simulatorSlots: Int = 4, swapCeiling: Double = 0.75, memoryFloor: Double = 0.15) {
+    public init(compileSlots: Int = 5, simulatorSlots: Int = 4, agentSlots: Int = 8,
+                swapCeiling: Double = 0.75, memoryFloor: Double = 0.15) {
         self.compileSlots = compileSlots
         self.simulatorSlots = simulatorSlots
+        self.agentSlots = agentSlots
         self.swapCeiling = swapCeiling
         self.memoryFloor = memoryFloor
+    }
+
+    /// A throttle written before a limit existed keeps everything else it said, and takes
+    /// the default for what it does not mention.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let fallback = Throttle()
+        compileSlots = try c.decodeIfPresent(Int.self, forKey: .compileSlots) ?? fallback.compileSlots
+        simulatorSlots = try c.decodeIfPresent(Int.self, forKey: .simulatorSlots) ?? fallback.simulatorSlots
+        agentSlots = try c.decodeIfPresent(Int.self, forKey: .agentSlots) ?? fallback.agentSlots
+        swapCeiling = try c.decodeIfPresent(Double.self, forKey: .swapCeiling) ?? fallback.swapCeiling
+        memoryFloor = try c.decodeIfPresent(Double.self, forKey: .memoryFloor) ?? fallback.memoryFloor
     }
 
     public static let `default` = Throttle()

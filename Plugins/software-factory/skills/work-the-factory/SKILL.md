@@ -29,8 +29,8 @@ Use the `software-factory` MCP server as the source of truth for the work you do
    done.
 5. Before a heavy build, simulator, or model operation, call `factory_ask`. Lease a
    shared resource before using it, renew it when needed, and release it when done.
-   Ask the factory to start another agent with `agent_create`. Eight on the floor is
-   the cap. Nudge another agent with `agent_nudge`.
+   Ask the factory to start another agent with `agent_create`. The person sets how many
+   may be on the floor at once, and the one over that is refused. Nudge another agent with `agent_nudge`.
 6. If a task needs a decision, raise an escalation with clear options and one
    recommendation, mark the task blocked, then use `escalation_await`. Put a document
    on the project with `artifact_add` (then `artifact_id` on the question) when they
