@@ -753,12 +753,21 @@ struct AgentBellMark: View {
     var ringing: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
-        Image(systemName: ringing ? "bell.fill" : "bell")
-            .foregroundStyle(ringing ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.tertiary))
-            .symbolEffect(.wiggle, options: .repeating, isActive: ringing && !reduceMotion)
-            .help(ringing ? "It rang for your attention" : "It has not rung")
-            .accessibilityLabel(ringing ? "Wants a look" : "Quiet")
+    /// Nothing at all until it rings. It used to be drawn on every agent, grey and quiet,
+    /// on the argument that a mark which only exists while something is wrong is one
+    /// nobody learns to read. With eight agents on the floor that is eight grey bells
+    /// saying nothing, and the one orange bell among them is harder to find, not easier:
+    /// the quiet ones are what it has to be picked out from. A bell that is only ever
+    /// there when it means something needs no learning. (T289, Alex, 15 Sep 2026.)
+    @ViewBuilder var body: some View {
+        if ringing {
+            Image(systemName: "bell.fill")
+                .foregroundStyle(Color.orange)
+                .symbolEffect(.wiggle, options: .repeating, isActive: !reduceMotion)
+                .help("It rang for your attention")
+                .accessibilityLabel("Wants a look")
+                .transition(.opacity)
+        }
     }
 }
 

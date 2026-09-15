@@ -319,9 +319,11 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     beside the session names on the poll that was already running and `PaneTitles.parse`
     splits the two. A pane with no title is skipped rather than blanking the line a card
     already shows, which matters because a dead pane loses its title in tmux.
-    (Alex, 15 Sep 2026.) The bell is drawn on
-    every agent, grey and quiet, and fills in orange and wiggles when `bel` is set: a mark
-    that only exists while something is wrong is one nobody learns to read. tmux passes
+    (Alex, 15 Sep 2026.) The bell is drawn
+    only on an agent that has rung, orange and wiggling, and nothing is drawn on the rest.
+    It was on every agent, grey and quiet, so that it could be learned; with eight on the
+    floor that is eight grey bells saying nothing, and the one that means something is
+    harder to pick out among them, not easier (T289). tmux passes
     every bell through, `bell-action any` (Alex, 14 Sep 2026). The live path only hears a
     bell while this app is attached to that session, and most agents work with nobody
     looking, so the real route is a tmux hook: `alert-bell` runs `touch` on a file named
