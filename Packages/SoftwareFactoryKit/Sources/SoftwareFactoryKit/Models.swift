@@ -328,6 +328,17 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
     /// (Alex, 13 Sep 2026.)
     public var pid: Int32?
     public var pidStartedAt: Date?
+    /// How this agent is run and therefore how the factory watches it. A record written
+    /// before ACP has none and reads as `terminal`, which is what it is. (T373.)
+    public var runtime: Runtime = .terminal
+    /// The session the ACP agent minted for itself. `id` is still the record's key and
+    /// still what the agent signs its factory calls with; this is the conversation's name
+    /// in the agent's own world, and `session/load` takes it.
+    ///
+    /// The session used to be one UUID doing four jobs, made by the factory before it
+    /// launched anything. Under ACP the agent makes it, so two ids rather than one. This
+    /// is the compromise Cursor already forced in T206 and it has been fine.
+    public var acpSession: String?
     public var registered: Date
     public var lastSeen: Date
     /// When the factory last asked this agent for a status report. Kept so it is asked
@@ -349,6 +360,34 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
         self.lastSeen = registered
         self.isConnected = false
     }
+
+    /// How an agent is run, which decides how the factory watches it and what its page
+    /// shows. Three ways rather than a flag day: two of our four CLIs speak ACP today and
+    /// two do not, so both have to work at once. (T373.)
+    public enum Runtime: String, Codable, Sendable, Hashable {
+        /// A CLI in a terminal the app owns, held by tmux. What every agent was until
+        /// T373, and still what Grok, Cursor and a plain shell are.
+        case terminal
+        /// An ACP agent held by `software-factory agentd`. Its page is its transcript,
+        /// it is talked to with `session/prompt`, and the factory is told what it is
+        /// doing rather than reading it off a screen.
+        case acp
+        /// Registered over MCP from wherever it already was. There is nothing here to
+        /// watch or stop, which was true before ACP and is still true.
+        case external
+
+        public var title: String {
+            switch self {
+            case .terminal: "Terminal"
+            case .acp: "ACP"
+            case .external: "External"
+            }
+        }
+    }
+
+    /// Whether the daemon holds this one, which is the question every Stop, Start,
+    /// Nudge and message asks before it picks a path.
+    public var speaksACP: Bool { runtime == .acp }
 
     /// Longest terminal title we keep. The card truncates anyway; this stops a dump
     /// sitting in the record.
@@ -414,6 +453,7 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
         case version, id, number, title, bel, projectID, taskID, note, wantsLaunch
         case launchedWith
         case pid, pidStartedAt, registered, lastSeen, statusAskedAt, isConnected, deregistered
+        case runtime, acpSession
         case about, name
     }
 
@@ -436,6 +476,8 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
         try c.encodeIfPresent(statusAskedAt, forKey: .statusAskedAt)
         try c.encode(isConnected, forKey: .isConnected)
         try c.encodeIfPresent(deregistered, forKey: .deregistered)
+        try c.encode(runtime, forKey: .runtime)
+        try c.encodeIfPresent(acpSession, forKey: .acpSession)
     }
 
     public init(from decoder: Decoder) throws {
@@ -461,6 +503,10 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
         pid = try c.decodeIfPresent(Int32.self, forKey: .pid)
         pidStartedAt = try c.decodeIfPresent(Date.self, forKey: .pidStartedAt)
         launchedWith = try c.decodeIfPresent(String.self, forKey: .launchedWith)
+        // Every agent written down before ACP ran in a terminal, which is what the
+        // default says, so nothing has to be migrated and no version bump is needed.
+        runtime = try c.decodeIfPresent(Runtime.self, forKey: .runtime) ?? .terminal
+        acpSession = try c.decodeIfPresent(String.self, forKey: .acpSession)
         registered = try c.decode(Date.self, forKey: .registered)
         lastSeen = try c.decode(Date.self, forKey: .lastSeen)
         // Missing on any record written before status reports existed, which reads as
@@ -613,8 +659,12 @@ public struct AgentMessage: Codable, Identifiable, Hashable, Sendable {
     /// What the app types in. A poke goes in bare, because it already says the person
     /// asked for it. Anything else says who it is from first: an agent cannot tell a
     /// typed line from the person at the keyboard, so an unattributed message reads as
-    /// Alex asking for something.
-    public var terminalLine: String {
+    /// The one line of words the factory gives an agent, whatever holds that agent: it
+    /// is typed into a terminal for one tmux holds, and it is the `session/prompt` for
+    /// one the daemon holds. It was called `terminalLine`, which stopped being true the
+    /// day half the floor had no terminal. (T373.)
+    ///
+    public var promptLine: String {
         if isPoke { return contents }
         let subject = subject.trimmingCharacters(in: .whitespacesAndNewlines)
         let head = subject.isEmpty ? "Message from \(from)" : "Message from \(from), \(subject)"
@@ -948,6 +998,11 @@ public struct Escalation: Codable, Identifiable, Hashable, Sendable {
     public var raisedBy: String
     public var raised: Date
     public var decision: Decision?
+    /// What raised this, when something outside the store did and has to be able to find
+    /// it again. Today that is an ACP permission request, which the daemon holds and the
+    /// agent is blocked on: `acp-permission:<agent>:<request>`. Nil for a question an
+    /// agent asked with `escalation_raise`, which is every other one. (T373.)
+    public var reference: String?
 
     public init(
         id: UUID = UUID(), projectID: String, question: String, context: String = "",
@@ -1030,6 +1085,9 @@ public struct Escalation: Codable, Identifiable, Hashable, Sendable {
         raisedBy = try c.decode(String.self, forKey: .raisedBy)
         raised = try c.decode(Date.self, forKey: .raised)
         decision = try c.decodeIfPresent(Decision.self, forKey: .decision)
+        // Missing on every question written before ACP, which reads as a question an
+        // agent asked. No version bump needed.
+        reference = try c.decodeIfPresent(String.self, forKey: .reference)
     }
 
 }

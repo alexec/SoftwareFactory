@@ -149,12 +149,18 @@ public enum AgentDaemon {
         public var waiting: Pending?
         /// Whether a turn is in flight. An agent between turns is waiting for words.
         public var isPrompting: Bool = false
+        /// What it is doing, in one line: the tool it is running, else the last thing it
+        /// said. This is what the OSC terminal title used to be and it is better, because
+        /// it is the truth rather than whatever the CLI put in its window title. The app
+        /// writes it onto the record, so every card, row and board reads it the same way
+        /// as before. (T373.)
+        public var line: String?
 
         public var id: UUID { agent }
 
         public init(agent: UUID, state: State, pid: Int32? = nil, session: String? = nil,
                     startedAt: Date = .now, exit: Int32? = nil, waiting: Pending? = nil,
-                    isPrompting: Bool = false) {
+                    isPrompting: Bool = false, line: String? = nil) {
             self.agent = agent
             self.state = state
             self.pid = pid
@@ -163,6 +169,7 @@ public enum AgentDaemon {
             self.exit = exit
             self.waiting = waiting
             self.isPrompting = isPrompting
+            self.line = line
         }
 
         public enum State: String, Codable, Sendable {

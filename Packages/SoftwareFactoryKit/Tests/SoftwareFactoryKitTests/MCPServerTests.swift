@@ -316,7 +316,7 @@ private final class ResultBox: @unchecked Sendable {
         // line agents already read.
         #expect(waiting.delivered == nil)
         #expect(waiting.isNudge)
-        #expect(waiting.terminalLine == LaunchPrompt.nudge)
+        #expect(waiting.promptLine == LaunchPrompt.nudge)
         #expect(call(s, "agent_nudge", ["agent_id": lead, "to_agent_id": lead]).isError)
         #expect(call(s, "agent_nudge", ["agent_id": lead, "to_agent_id": "A99"]).isError)
     }
@@ -350,7 +350,7 @@ private final class ResultBox: @unchecked Sendable {
         // Not a nudge, so the typed line says who it is from: the agent cannot tell a
         // typed line from the person at the keyboard.
         #expect(!waiting.isNudge)
-        #expect(waiting.terminalLine == "Message from \(lead), Please review: Start with the MCP server.")
+        #expect(waiting.promptLine == "Message from \(lead), Please review: Start with the MCP server.")
         #expect(call(s, "agent_message_send", [
             "agent_id": lead, "to_agent_id": lead, "subject": "No", "contents": "No",
         ]).isError)
@@ -387,9 +387,9 @@ private final class ResultBox: @unchecked Sendable {
 
     @Test func aMessageIsTypedAsOneLineWhateverItCarries() throws {
         let plain = AgentMessage(recipientID: UUID(), from: "A2", subject: "", contents: "Look at T12.")
-        #expect(plain.terminalLine == "Message from A2: Look at T12.")
+        #expect(plain.promptLine == "Message from A2: Look at T12.")
         let nudge = AgentMessage(recipientID: UUID(), from: "A2", subject: "Nudge", contents: LaunchPrompt.nudge)
-        #expect(nudge.terminalLine == LaunchPrompt.nudge)
+        #expect(nudge.promptLine == LaunchPrompt.nudge)
     }
 
     @Test func aNearMissProjectNameIsRefusedRatherThanMadeTwice() throws {

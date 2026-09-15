@@ -38,6 +38,9 @@ public final class AgentFloor: @unchecked Sendable {
         var state: AgentDaemon.Running
         var kind: LaunchAgent
         var cwd: String
+        /// What it is doing, folded as the lines go past. Bounded on purpose: the whole
+        /// transcript belongs on the page reading it, not in the daemon watching sixteen.
+        var headline = ACPHeadline()
         init(connection: ACPConnection, state: AgentDaemon.Running, kind: LaunchAgent, cwd: String) {
             self.connection = connection
             self.state = state
@@ -118,6 +121,13 @@ public final class AgentFloor: @unchecked Sendable {
                 $0.isPrompting = false
             }
         }
+        connection.onLine = { [weak self] line in
+            self?.guarded.sync {
+                guard let one = self?.held[agent] else { return }
+                one.headline.apply(line: line)
+                one.state.line = one.headline.line
+            }
+        }
         connection.onPermission = { [weak self] id, ask in
             self?.change(agent) {
                 $0.waiting = AgentDaemon.Pending(
@@ -193,6 +203,11 @@ public final class AgentFloor: @unchecked Sendable {
             "sessionId": session,
             "update": ["sessionUpdate": "user_message_chunk", "content": ["type": "text", "text": words]],
         ]])
+        guarded.sync {
+            guard let held = held[agent] else { return }
+            held.headline.apply(.userMessage(.text(words)))
+            held.state.line = held.headline.line
+        }
         change(agent) { $0.isPrompting = true }
         Task { [weak self] in
             defer { self?.change(agent) { $0.isPrompting = false } }

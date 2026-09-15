@@ -510,6 +510,137 @@ final class AppModel {
         }
     }
 
+    /// How this agent is run, which decides how it is watched, talked to and stopped.
+    func setRuntime(_ runtime: Agent.Runtime, for agent: Agent) {
+        guard agent.runtime != runtime else { return }
+        persist { store in
+            guard var found = try store.load().agents.first(where: { $0.id == agent.id }) else { return }
+            found.runtime = runtime
+            try store.save(found)
+        }
+    }
+
+    /// The session the ACP agent minted for itself, kept beside the factory's own id so
+    /// its conversation can be picked back up. (T373.)
+    func rememberACPSession(_ session: String?, for agent: Agent) {
+        guard let session, agent.acpSession != session else { return }
+        persist { store in
+            guard var found = try store.load().agents.first(where: { $0.id == agent.id }) else { return }
+            found.acpSession = session
+            try store.save(found)
+        }
+    }
+
+    /// What the daemon says about the agents it holds, written onto their records.
+    ///
+    /// Three things, and all three exist so that nothing downstream has to know ACP from
+    /// tmux. The line it is showing goes into `title`, which every card, sidebar row and
+    /// status board already reads, and which the OSC terminal title used to fill. Its
+    /// process goes into `pid` and `pidStartedAt`, so `Agent.hasExited`, `Agents.mayStop`,
+    /// `mayResume` and `Sweep.stoppedAgents` all keep working off the kernel exactly as
+    /// they did. And the session it minted goes beside them. (T373.)
+    func noteFloor(_ running: [AgentDaemon.Running]) {
+        guard store != nil else { return }
+        for one in running {
+            guard let agent = snapshot.agents.first(where: { $0.id == one.agent }) else { continue }
+            let line = Agent.preparedTitle(one.line ?? "")
+            let newPID = one.pid != nil && agent.pid != one.pid
+            let newLine = !line.isEmpty && agent.title != line
+            let newSession = one.session != nil && agent.acpSession != one.session
+            guard newPID || newLine || newSession else { continue }
+            let started = newPID ? one.pid.flatMap { ProcessCheck.startTime(of: $0) } : nil
+            persist { store in
+                guard var found = try store.load().agents.first(where: { $0.id == one.agent }) else { return }
+                if newLine { found.title = line }
+                if newSession { found.acpSession = one.session }
+                if let started, let pid = one.pid {
+                    found.pid = pid
+                    found.pidStartedAt = started
+                }
+                try store.save(found)
+            }
+        }
+    }
+
+    /// Keeps the questions an ACP agent is blocked on and the floor's own escalations
+    /// saying the same thing, in both directions.
+    ///
+    /// One place rather than one per way of answering. A permission request can be
+    /// answered on the agent's page, on the Needs you strip, in a banner, on the phone or
+    /// from the Lock Screen, and the last three go through CloudKit and the store without
+    /// this app's views being involved at all. So nothing routes an answer to the daemon
+    /// at the point it is given: this looks at what is decided and what is still waiting,
+    /// and makes them agree.
+    ///
+    /// The one thing that makes these different from every other question is what an
+    /// unanswered one costs. A question in a list is an agent carrying on with something
+    /// else; this is an agent doing nothing at all. That is why the daemon takes the
+    /// recommended option after `AgentDaemon.answerWithin` and why the recommendation is
+    /// always allow once rather than allow always. (T373.)
+    func syncPermissions(_ floor: Floor) {
+        guard let store else { return }
+        var wrote = false
+        var waiting: Set<String> = []
+
+        for one in floor.held.values {
+            guard let ask = one.waiting else { continue }
+            let reference = Self.permissionReference(one.agent, ask.requestID)
+            waiting.insert(reference)
+            let already = snapshot.escalations.first { $0.reference == reference }
+
+            // Answered somewhere, by anybody. Hand it to the agent, which has been
+            // sitting on it since it asked.
+            if let already, let decision = already.decision {
+                let picked = already.options.first { $0.id == decision.optionID }
+                let option = picked.flatMap { title in ask.options.first { $0.name == title.title } }
+                    ?? ask.fallback
+                if let option {
+                    _Concurrency.Task { await floor.answer(one.agent, request: ask.requestID, option: option.optionID) }
+                }
+                continue
+            }
+            guard already == nil else { continue }
+            guard let agent = snapshot.agents.first(where: { $0.id == one.agent }),
+                  let projectID = agent.projectID else { continue }
+            var question = Escalation(
+                projectID: projectID,
+                question: "\(agent.label) wants to \(Self.lowered(ask.title)).",
+                context: "It is waiting on your answer and doing nothing until it has one.",
+                options: ask.options.map {
+                    Escalation.Option(title: $0.name, recommended: $0.optionID == ask.fallback?.optionID)
+                },
+                agentID: agent.id,
+                raisedBy: agent.label)
+            question.reference = reference
+            try? store.save(question)
+            wrote = true
+        }
+
+        // A question whose agent has stopped waiting, because the daemon ran out of
+        // patience or because it was answered on the agent's own page, is closed rather
+        // than left on the strip saying somebody has to do something.
+        for var question in snapshot.escalations where question.isOpen {
+            guard let reference = question.reference, reference.hasPrefix(Self.permissionPrefix),
+                  !waiting.contains(reference), !question.options.isEmpty else { continue }
+            try? question.decide(question.recommended ?? question.options[0], by: "the factory")
+            try? store.save(question)
+            wrote = true
+        }
+        if wrote { refresh() }
+    }
+
+    static let permissionPrefix = "acp-permission:"
+
+    static func permissionReference(_ agent: UUID, _ request: Int) -> String {
+        "\(permissionPrefix)\(agent.uuidString):\(request)"
+    }
+
+    /// "Write notes.md" reads as "wants to write notes.md" rather than "wants to Write".
+    static func lowered(_ title: String) -> String {
+        guard let first = title.first else { return title }
+        return first.lowercased() + title.dropFirst()
+    }
+
     /// Writes down which CLI started an agent. Its conversation lives in that one, under
     /// the session id the factory gave it, so a restart has to use the same. (T262.)
     func remember(_ kind: LaunchAgent, for agent: Agent) {

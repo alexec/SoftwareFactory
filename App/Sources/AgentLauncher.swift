@@ -96,8 +96,9 @@ enum StartAgent {
         style: AppModel.LaunchStyle,
         model: AppModel,
         terminals: TerminalSessions,
+        floor: Floor,
         words: String = ""
-    ) -> String? {
+    ) async -> String? {
         let cap = Agents.cap(model.throttle)
         if Agents.atCap(model.snapshot.agents, cap: cap) { return Agents.fullMessage(cap: cap) }
         guard let reserved = model.reserveAgent(for: project) else {
@@ -112,6 +113,21 @@ enum StartAgent {
             ? (task.map { LaunchPrompt.task($0, in: project, as: reserved.label, session: session) }
                 ?? LaunchPrompt.project(project, as: reserved.label, session: session))
             : LaunchPrompt.free(asked, as: reserved.label, session: session)
+        // An agent that speaks ACP goes to the daemon, which holds its process so it
+        // outlives this app. Everything above this line is the same either way: the cap,
+        // the reservation, the number, the task, the words. (T373.)
+        if agent.speaksACP, style == .embedded, !AgentLauncher.isSandboxed {
+            guard let path = project.path, !path.isEmpty else {
+                return AgentLauncher.LaunchError.noFolder.localizedDescription
+            }
+            model.setRuntime(.acp, for: reserved)
+            if let wrong = await floor.start(reserved, kind: agent, cwd: path, words: prompt) {
+                model.setRuntime(.terminal, for: reserved)
+                return wrong
+            }
+            model.rememberACPSession(floor.running(reserved.id)?.session, for: reserved)
+            return nil
+        }
         let command = agent.command(for: prompt, session: session)
         guard !AgentLauncher.isSandboxed else {
             AgentLauncher.copy(project, command: command)
@@ -140,9 +156,18 @@ enum StartAgent {
     /// The old tmux session is killed first. It is still there, holding a dead pane, and
     /// `new-session -A` would attach to that and run nothing. (T262.)
     @discardableResult
-    static func resume(agent: Agent, model: AppModel, terminals: TerminalSessions) async -> String? {
+    static func resume(agent: Agent, model: AppModel, terminals: TerminalSessions, floor: Floor) async -> String? {
         guard Agents.mayResume(agent) else { return "\(agent.label) is not stopped." }
         let kind = LaunchAgent.remembered(agent.launchedWith)
+        // The protocol's own resume: `session/load` on the session the agent minted,
+        // capability-gated, rather than `--resume` and a guess. (T373.)
+        if agent.speaksACP, !AgentLauncher.isSandboxed {
+            guard let path = agent.projectID.flatMap({ model.project(for: $0) })?.path, !path.isEmpty else {
+                return "\(agent.label) has no folder to start in."
+            }
+            return await floor.start(agent, kind: kind, cwd: path,
+                                     words: LaunchPrompt.carryOn, resuming: true)
+        }
         let command = kind.resumeCommand(session: agent.id)
         guard !AgentLauncher.isSandboxed else {
             if let project = agent.projectID.flatMap({ model.project(for: $0) }) {
@@ -187,7 +212,7 @@ enum StartAgent {
     /// Agents `agent_create` asked for: written down already, waiting for a terminal.
     /// Uses the last coding agent the person launched, and the in-app vs Terminal style
     /// they have set. (T179, 13 Sep 2026.)
-    static func launchPending(model: AppModel, terminals: TerminalSessions) {
+    static func launchPending(model: AppModel, terminals: TerminalSessions, floor: Floor) async {
         let pending = model.snapshot.agents.filter(\.wantsLaunch)
         for agent in pending {
             model.clearLaunchRequest(agent)
@@ -199,7 +224,20 @@ enum StartAgent {
             let kind = remembered.isCodingAgent ? remembered : .claudeCode
             let task = agent.taskID.flatMap { id in model.snapshot.tasks.first { $0.id == id } }
             model.remember(kind, for: agent)
-            let command = kind.launchCommand(for: project, task: task, as: agent.label, session: agent.id)
+            let prompt = task.map { LaunchPrompt.task($0, in: project, as: agent.label, session: agent.id) }
+                ?? LaunchPrompt.project(project, as: agent.label, session: agent.id)
+            if kind.speaksACP, model.launchStyle == .embedded, !AgentLauncher.isSandboxed,
+               let path = project.path, !path.isEmpty {
+                model.setRuntime(.acp, for: agent)
+                if let wrong = await floor.start(agent, kind: kind, cwd: path, words: prompt) {
+                    model.setRuntime(.terminal, for: agent)
+                    model.noteError(wrong)
+                } else {
+                    model.rememberACPSession(floor.running(agent.id)?.session, for: agent)
+                }
+                continue
+            }
+            let command = kind.command(for: prompt, session: agent.id)
             guard !AgentLauncher.isSandboxed else {
                 AgentLauncher.copy(project, command: command)
                 continue

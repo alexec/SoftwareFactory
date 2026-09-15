@@ -6,6 +6,7 @@ import SoftwareFactoryKit
 struct ProjectView: View {
     @Environment(AppModel.self) private var model
     @Environment(TerminalSessions.self) private var terminals
+    @Environment(Floor.self) private var floor
     var project: Project
     var selectAgent: (UUID) -> Void = { _ in }
 
@@ -296,9 +297,11 @@ struct ProjectView: View {
     /// Terminal, where it outlives the app.
     private func launchAgent(_ style: AppModel.LaunchStyle, agent: LaunchAgent, words: String) {
         // The agent is written down first, so it has a name before it starts and the
-        // card, the terminal and the prompt all say the same thing.
-        launchError = StartAgent.run(project: project, agent: agent, style: style, model: model,
-                                     terminals: terminals, words: words)
+        // card, the transcript and the prompt all say the same thing.
+        Task {
+            launchError = await StartAgent.run(project: project, agent: agent, style: style, model: model,
+                                               terminals: terminals, floor: floor, words: words)
+        }
     }
 
     private var pathDisplay: String {
@@ -477,6 +480,7 @@ struct DecidedRow: View {
 struct TaskRow: View {
     @Environment(AppModel.self) private var model
     @Environment(TerminalSessions.self) private var terminals
+    @Environment(Floor.self) private var floor
     var task: FactoryTask
     var selectAgent: (UUID) -> Void = { _ in }
     @State private var launchError: String?
@@ -638,8 +642,11 @@ struct TaskRow: View {
     private func launchAgent(_ agent: LaunchAgent) {
         choosingAgent = false
         guard let project else { return }
-        launchError = StartAgent.run(project: project, task: task, agent: agent, style: model.launchStyle,
-                                     model: model, terminals: terminals, words: words)
+        Task {
+            launchError = await StartAgent.run(project: project, task: task, agent: agent,
+                                               style: model.launchStyle, model: model,
+                                               terminals: terminals, floor: floor, words: words)
+        }
     }
 
     /// What this agent would be told if nobody touched it: the task, and what to produce.

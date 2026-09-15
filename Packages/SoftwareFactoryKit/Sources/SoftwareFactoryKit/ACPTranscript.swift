@@ -191,3 +191,69 @@ public struct ACPTranscript: Sendable, Equatable {
         return line.count <= Agent.maxTitle ? line : String(line.prefix(Agent.maxTitle))
     }
 }
+
+/// The one line an agent's card and sidebar row show, folded as the updates go past and
+/// never growing.
+///
+/// `ACPTranscript` answers the same question and holds the whole conversation to do it,
+/// which is right for a page somebody is reading and wrong for the daemon, which watches
+/// sixteen agents all day and is asked for this every two seconds. This keeps what it
+/// needs: the last thing said, and which tool calls are still open. (T373.)
+public struct ACPHeadline: Sendable, Equatable {
+    private var said: String?
+    /// Open calls in the order they started, so the line follows the one running now.
+    private var open: [(id: String, heading: String)] = []
+    private var lastFinished: String?
+
+    public init() {}
+
+    public static func == (a: ACPHeadline, b: ACPHeadline) -> Bool {
+        a.said == b.said && a.lastFinished == b.lastFinished
+            && a.open.map(\.id) == b.open.map(\.id)
+            && a.open.map(\.heading) == b.open.map(\.heading)
+    }
+
+    public mutating func apply(_ update: ACP.Update) {
+        switch update {
+        case .message(let block):
+            guard !block.text.isEmpty else { return }
+            // Chunks arrive a word at a time, so a new sentence starts only after
+            // something else has happened.
+            said = (startedSaying ? (said ?? "") : "") + block.text
+            startedSaying = true
+        case .tool(let call):
+            startedSaying = false
+            if let at = open.firstIndex(where: { $0.id == call.toolCallID }) {
+                if let heading = call.title, !heading.isEmpty { open[at].heading = heading }
+                if call.isFinished {
+                    lastFinished = open[at].heading
+                    open.remove(at: at)
+                }
+            } else if !call.isFinished {
+                open.append((call.toolCallID, call.heading))
+            } else {
+                lastFinished = call.heading
+            }
+        case .userMessage:
+            startedSaying = false
+            said = nil
+        case .thought, .plan, .usage, .other:
+            break
+        }
+    }
+
+    private var startedSaying = false
+
+    public mutating func apply(line: String) {
+        if case .update(_, let update) = ACP.read(line: line) { apply(update) }
+    }
+
+    /// What it is doing now, else the last thing it said, else the last thing it did.
+    public var line: String? {
+        if let running = open.last?.heading { return running }
+        if let said, let first = ACPTranscript.firstLine(said) { return first }
+        return lastFinished
+    }
+
+    public var isBusy: Bool { !open.isEmpty }
+}

@@ -192,6 +192,7 @@ struct AgentCard: View {
 
     @Environment(AppModel.self) private var model
     @Environment(TerminalSessions.self) private var terminals
+    @Environment(Floor.self) private var floor
     var status: Dashboard.AgentStatus
     var select: (UUID) -> Void
 
@@ -279,7 +280,7 @@ struct AgentCard: View {
         .overlay(alignment: .topTrailing) {
             if status.canNudge {
                 Button("Nudge") {
-                    sendNudge(to: status.agent, model: model, terminals: terminals)
+                    sendNudge(to: status.agent, model: model, terminals: terminals, floor: floor)
                 }
                 .buttonStyle(.glass)
                 .controlSize(.small)
@@ -287,7 +288,7 @@ struct AgentCard: View {
                 .padding(10)
             } else if status.canResume {
                 Button("Start") {
-                    Task { _ = await StartAgent.resume(agent: status.agent, model: model, terminals: terminals) }
+                    Task { _ = await StartAgent.resume(agent: status.agent, model: model, terminals: terminals, floor: floor) }
                 }
                 .buttonStyle(.glass)
                 .controlSize(.small)
@@ -299,13 +300,19 @@ struct AgentCard: View {
         .contextMenu {
             if status.canResume {
                 Button("Start \(status.agent.label)") {
-                    Task { _ = await StartAgent.resume(agent: status.agent, model: model, terminals: terminals) }
+                    Task { _ = await StartAgent.resume(agent: status.agent, model: model, terminals: terminals, floor: floor) }
                 }
             }
             if status.canStop {
-                Button("Stop \(status.agent.label)", role: .destructive) { model.stop(status.agent) }
+                Button("Stop \(status.agent.label)", role: .destructive) {
+                    stopAgent(status.agent, model: model, floor: floor)
+                }
             }
-            Button("Delete \(status.agent.label)", role: .destructive) { model.delete(status.agent) }
+            Button("Delete \(status.agent.label)", role: .destructive) {
+                stopAgent(status.agent, model: model, floor: floor)
+                floor.forget(status.agent.id)
+                model.delete(status.agent)
+            }
         }
     }
 }
@@ -313,6 +320,7 @@ struct AgentCard: View {
 struct AgentView: View {
     @Environment(AppModel.self) private var model
     @Environment(TerminalSessions.self) private var terminals
+    @Environment(Floor.self) private var floor
     var status: Dashboard.AgentStatus
     /// Back to the page this was opened from. Nil when there is nowhere to go.
     var back: (() -> Void)?
@@ -367,7 +375,13 @@ struct AgentView: View {
             GeometryReader { page in
                 HStack(spacing: 0) {
                     VStack(spacing: 0) {
-                        if let session = terminals.session(for: agent) {
+                        // An ACP agent has no terminal and does not need one: the page is
+                        // its transcript, which says what it is doing rather than showing
+                        // a picture of it saying so. (T373.)
+                        if agent.speaksACP {
+                            AgentTranscriptView(agent: agent)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else if let session = terminals.session(for: agent) {
                             // The pane is the terminal it was made with: a representable
                             // hands its view over once and SwiftUI keeps it. Going from
                             // one agent to the next in the sidebar reuses this position,
@@ -437,6 +451,9 @@ struct AgentView: View {
     /// part happens off the main thread and the page stays live while it does. Nothing
     /// here ever blocks the window. (Alex, 13 Sep 2026: not at the price of a beachball.)
     private func reattach() async {
+        // Nothing to attach to: the daemon has been holding the conversation all along
+        // and the transcript is on disk.
+        guard !agent.speaksACP else { return }
         guard terminals.session(for: agent) == nil else { return }
         let id = agent.id.uuidString
         await terminals.lookForHeldSessions()
@@ -477,7 +494,7 @@ struct AgentView: View {
             Spacer(minLength: 12)
             if status.canNudge {
                 Button("Nudge") {
-                    sendNudge(to: agent, model: model, terminals: terminals)
+                    sendNudge(to: agent, model: model, terminals: terminals, floor: floor)
                 }
                 .buttonStyle(.glass)
                 .controlSize(.small)
@@ -489,7 +506,7 @@ struct AgentView: View {
             // what it said, and what it held goes back on its own. A question in front of
             // something that undoes itself is a question asked for nothing. (T294.)
             if status.canStop {
-                Button("Stop") { model.stop(agent) }
+                Button("Stop") { stopAgent(agent, model: model, floor: floor) }
                     .buttonStyle(.glass)
                     .controlSize(.small)
                     .help("End this agent's process. What it has said stays on the page, and Start picks it back up.")
@@ -498,7 +515,7 @@ struct AgentView: View {
             // so it comes back knowing who it is and what it was doing. (T262.)
             if status.canResume {
                 Button("Start") {
-                    Task { resumeError = await StartAgent.resume(agent: agent, model: model, terminals: terminals) }
+                    Task { resumeError = await StartAgent.resume(agent: agent, model: model, terminals: terminals, floor: floor) }
                 }
                     .buttonStyle(.glassProminent)
                     .controlSize(.small)
@@ -722,33 +739,58 @@ private struct AgentMessages: View {
     }
 }
 
-/// Writes the nudge down and types it straight away, so the button acts at once rather
-/// than on the next pass. The agent cannot tell the typed line from a person at the
-/// keyboard.
+/// Stops an agent, whoever is holding it. The daemon holds an ACP one and the kernel
+/// holds the rest, and `AppModel.stop` knows only about the second. One call at every
+/// Stop, so a new way of running an agent is one edit here rather than five. (T373.)
 @MainActor
-func sendNudge(to agent: Agent, model: AppModel, terminals: TerminalSessions) {
-    model.nudge(agent)
-    deliverPendingMessages(model: model, terminals: terminals)
+func stopAgent(_ agent: Agent, model: AppModel, floor: Floor) {
+    if agent.speaksACP {
+        _Concurrency.Task { await floor.stop(agent.id) }
+        return
+    }
+    model.stop(agent)
 }
 
-/// Types every message nobody has typed yet into its agent's terminal: nudges the person
-/// sent, nudges `agent_nudge` asked for, and messages from other agents alike. One path,
-/// because they are the same thing. A message is only marked delivered when a terminal
-/// took it, so one sent to an agent with no window on screen waits instead of vanishing.
-/// (T195, and Alex, 14 Sep 2026: messages are typed in, there is nothing to collect.)
+/// Writes the nudge down and delivers it straight away, so the button acts at once
+/// rather than on the next pass.
 @MainActor
-func deliverPendingMessages(model: AppModel, terminals: TerminalSessions) {
+func sendNudge(to agent: Agent, model: AppModel, terminals: TerminalSessions, floor: Floor) {
+    model.nudge(agent)
+    _Concurrency.Task { await deliverPendingMessages(model: model, terminals: terminals, floor: floor) }
+}
+
+/// Every message nobody has delivered yet, given to its agent: nudges the person sent,
+/// nudges `agent_nudge` asked for, messages from other agents, and the factory's own
+/// hourly ask for a status report. One path, because they are the same thing.
+///
+/// Two ways of arriving now, and the agent's runtime picks. One in a terminal is typed
+/// to, exactly as a person at the keyboard would; one the daemon holds is told with
+/// `session/prompt`, which is the better of the two and the same idea. A message is only
+/// marked delivered when something took it, so one sent to an agent with nowhere to put
+/// it waits rather than vanishing. (T195; T373.)
+@MainActor
+func deliverPendingMessages(model: AppModel, terminals: TerminalSessions, floor: Floor) async {
     for agent in model.snapshot.agents {
         let waiting = model.undelivered(for: agent.id)
         guard !waiting.isEmpty else { continue }
+        if agent.speaksACP {
+            // Nothing to attach to and nothing to wake: the daemon has been holding the
+            // conversation all along, whether or not this app has been looking at it.
+            guard floor.running(agent.id)?.state == .running else { continue }
+            for message in waiting {
+                guard await floor.say(message.promptLine, to: agent.id) else { break }
+                model.delete(message)
+            }
+            continue
+        }
         // Pick the session back up if this app has restarted since the agent was launched.
         // A terminal is only attached when somebody opens that agent's page, and a message
         // is meant to arrive while the agent is working, not whenever its page is next
         // looked at. tmux has been holding the session all along. (Alex, 14 Sep 2026.)
         terminals.attach(agent.id.uuidString)
         for message in waiting {
-            guard terminals.sendLine(message.terminalLine, to: agent.id.uuidString) else { break }
-            // Typed in is arrived, and an arrived message is not an inbox item any more.
+            guard terminals.sendLine(message.promptLine, to: agent.id.uuidString) else { break }
+            // Delivered is arrived, and an arrived message is not an inbox item any more.
             // (Alex, 14 Sep 2026: once it is sent, take it out of their inbox.)
             model.delete(message)
         }

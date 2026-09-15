@@ -14,6 +14,7 @@ enum Destination: Hashable {
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(TerminalSessions.self) private var terminals
+    @Environment(Floor.self) private var floor
     @State private var selection: Destination? = .dashboard
     /// Where the agent page was opened from, so its back button returns there.
     @State private var cameFrom: Destination?
@@ -155,12 +156,27 @@ struct RootView: View {
                 try? await Task.sleep(for: .seconds(5))
             }
         }
+        // What the daemon is holding. On its own clock rather than on the store's,
+        // because an agent's state changes without anything being written down: a child
+        // exits, a permission request arrives, a turn ends. (T373.)
+        .task {
+            while !Task.isCancelled {
+                await floor.look()
+                model.noteFloor(Array(floor.held.values))
+                // A permission request is not a question in a list: the agent is blocked
+                // until it is answered, so it goes where every other question goes and
+                // can be answered from the floor, the phone or the Lock Screen. (T373.)
+                model.syncPermissions(floor)
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
         .task(id: model.snapshot.agents.filter(\.wantsLaunch).map(\.id)) {
-            StartAgent.launchPending(model: model, terminals: terminals)
+            await StartAgent.launchPending(model: model, terminals: terminals, floor: floor)
         }
         .task(id: model.snapshot.agents.flatMap { model.undelivered(for: $0.id) }.map(\.id)) {
-            deliverPendingMessages(model: model, terminals: terminals)
+            await deliverPendingMessages(model: model, terminals: terminals, floor: floor)
         }
+
         .sheet(isPresented: Binding(get: { !model.hasSeenIntro }, set: { model.hasSeenIntro = !$0 })) {
             IntroSheet()
         }
@@ -224,22 +240,24 @@ struct RootView: View {
             // down and typed into its terminal. (Alex, 14 Sep 2026.)
             if status.canNudge {
                 Button("Nudge \(status.agent.label)") {
-                    sendNudge(to: status.agent, model: model, terminals: terminals)
+                    sendNudge(to: status.agent, model: model, terminals: terminals, floor: floor)
                 }
             }
             // Stop ends its process where it stands; Delete takes the record away too.
             // (T261.)
             if status.canResume {
                 Button("Start \(status.agent.label)") {
-                    Task { _ = await StartAgent.resume(agent: status.agent, model: model, terminals: terminals) }
+                    Task { _ = await StartAgent.resume(agent: status.agent, model: model, terminals: terminals, floor: floor) }
                 }
             }
             if status.canStop {
                 Button("Stop \(status.agent.label)", role: .destructive) {
-                    model.stop(status.agent)
+                    stopAgent(status.agent, model: model, floor: floor)
                 }
             }
             Button("Delete \(status.agent.label)", role: .destructive) {
+                stopAgent(status.agent, model: model, floor: floor)
+                floor.forget(status.agent.id)
                 model.delete(status.agent)
             }
         }

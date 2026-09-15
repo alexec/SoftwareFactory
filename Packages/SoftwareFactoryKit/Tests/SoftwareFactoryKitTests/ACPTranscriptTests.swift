@@ -184,3 +184,60 @@ struct ACPClaudeTranscriptTests {
         #expect(transcript.line == "ACKNOWLEDGED")
     }
 }
+
+/// The bounded version of the same question, which is what the daemon keeps.
+struct ACPHeadlineTests {
+    @Test func itSaysTheSameThingAsTheWholeTranscript() {
+        var headline = ACPHeadline()
+        for line in ACPTests.recording { headline.apply(line: line) }
+        #expect(headline.line == ACPTranscript.folding(ACPTests.recording).line)
+        #expect(headline.isBusy == false)
+    }
+
+    @Test func andForTheOtherAgentToo() {
+        var headline = ACPHeadline()
+        for line in ACPClaudeTranscriptTests.recording { headline.apply(line: line) }
+        #expect(headline.line == "ACKNOWLEDGED")
+    }
+
+    @Test func aRunningToolWins() {
+        var headline = ACPHeadline()
+        headline.apply(.message(.text("Starting.")))
+        headline.apply(.tool(ACP.ToolCall(toolCallID: "a", title: "Editing Models.swift",
+                                          kind: .edit, status: .inProgress)))
+        #expect(headline.line == "Editing Models.swift")
+        #expect(headline.isBusy)
+        // Two at once: the newest is what it is doing.
+        headline.apply(.tool(ACP.ToolCall(toolCallID: "b", title: "Running tests",
+                                          kind: .execute, status: .inProgress)))
+        #expect(headline.line == "Running tests")
+        headline.apply(.tool(ACP.ToolCall(toolCallID: "b", status: .completed)))
+        #expect(headline.line == "Editing Models.swift")
+        headline.apply(.tool(ACP.ToolCall(toolCallID: "a", status: .completed)))
+        #expect(headline.isBusy == false)
+        #expect(headline.line == "Starting.")
+    }
+
+    @Test func itNeverGrows() {
+        var headline = ACPHeadline()
+        for turn in 0..<2000 {
+            headline.apply(.message(.text("word \(turn) ")))
+            headline.apply(.tool(ACP.ToolCall(toolCallID: "t\(turn)", title: "Reading", kind: .read,
+                                              status: .pending)))
+            headline.apply(.tool(ACP.ToolCall(toolCallID: "t\(turn)", status: .completed)))
+        }
+        // One sentence and no open calls: nothing here is a list of everything that has
+        // happened. The last thing it said wins over the last thing it did, which is why
+        // this is the word and not "Reading".
+        #expect(headline.isBusy == false)
+        #expect(headline.line == "word 1999")
+    }
+
+    @Test func aNewTurnStartsANewSentence() {
+        var headline = ACPHeadline()
+        headline.apply(.message(.text("First answer.")))
+        headline.apply(.userMessage(.text("Do something else.")))
+        headline.apply(.message(.text("Second answer.")))
+        #expect(headline.line == "Second answer.")
+    }
+}

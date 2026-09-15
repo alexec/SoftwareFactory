@@ -79,7 +79,7 @@ import Testing
             let message = AgentMessage(recipientID: UUID(), from: "Alex",
                                        subject: "Started", contents: poke)
             #expect(message.isPoke)
-            #expect(message.terminalLine == poke)
+            #expect(message.promptLine == poke)
         }
     }
 
@@ -87,7 +87,7 @@ import Testing
         let message = AgentMessage(recipientID: UUID(), from: "A2",
                                    subject: "The build", contents: "It is red again.")
         #expect(!message.isPoke)
-        #expect(message.terminalLine == "Message from A2, The build: It is red again.")
+        #expect(message.promptLine == "Message from A2, The build: It is red again.")
     }
 
     @Test func onlyANudgeIsANudge() {

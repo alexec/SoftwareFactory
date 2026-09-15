@@ -230,6 +230,17 @@ struct AgentFloorTests {
         #expect(reply.error == "Grok does not speak ACP.")
     }
 
+    @Test func theLineTheCardShowsComesOffTheWire() async throws {
+        let (store, root) = try Self.scratch()
+        let floor = Self.floor(store)
+        let agent = UUID()
+        #expect(await Self.start(floor, agent: agent, cwd: root, words: "look at the backlog").ok)
+        await Self.until("something to show") { floor.everything().first?.line != nil }
+        // What it last said, which is the words handed back. No OSC title anywhere.
+        #expect(floor.everything().first?.line?.trimmingCharacters(in: .whitespaces) == "look at the backlog")
+        _ = await floor.handle(AgentDaemon.Request(op: .stop, agent: agent))
+    }
+
     @Test func aPingAnswersBeforeAnythingIsTouched() async throws {
         let (store, _) = try Self.scratch()
         let reply = await Self.floor(store).handle(AgentDaemon.Request(op: .ping))
