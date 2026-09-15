@@ -145,8 +145,9 @@ public struct FileStore: Sendable {
         return try? Self.decoder.decode(Escalation.self, from: data)
     }
 
-    /// Messages are only read through an authenticated agent's inbox, never included in
-    /// the public snapshot that the phone receives.
+    /// Messages belong to one recipient and are never included in the public snapshot the
+    /// phone receives. The app reads them to type the undelivered ones into that agent's
+    /// terminal, and to show what has been sent on its page.
     public func messages(for recipientID: UUID) throws -> [AgentMessage] {
         try (loadAll("messages") as [AgentMessage])
             .filter { $0.recipientID == recipientID }

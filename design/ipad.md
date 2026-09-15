@@ -11,8 +11,8 @@ two exceptions that no plan can talk its way out of: an iPad cannot start a proc
 it cannot show a terminal.
 
 It does not need to. The Mac app already reads the store every 2 seconds and acts on what
-it finds there. `wantsLaunch` makes it start an agent in a terminal it owns. `wantsNudge`
-makes it type a line into one. The iPad writes a record and the Mac does the work. Remote
+it finds there. `wantsLaunch` makes it start an agent in a terminal it owns. A message
+written down for an agent makes it type that message into one. The iPad writes a record and the Mac does the work. Remote
 control is not a new channel to build; it is the channel that is already there, with more
 verbs on it.
 
@@ -20,7 +20,7 @@ verbs on it.
 
 - **No terminal.** SwiftTerm and tmux are the Mac's. The agent page on iPad shows what the
   card shows: the name, the title line the agent last set, whether it is working, its
-  tasks, its inbox, Nudge and Send a message. Where the Mac has the terminal, the iPad
+  tasks, the messages it has been sent, and Nudge. Where the Mac has the terminal, the iPad
   says the terminal is on the Mac. It does not fake a read-only one for the proof of
   concept. If reading the last lines turns out to matter, `tmux capture-pane -p` is text
   and the Mac could put it in the snapshot. That is its own task, later.
@@ -93,10 +93,10 @@ Each one ends with something you can hold.
    backlogs, artifacts, questions. All of it straight from the snapshot the iPad already
    polls.
 4. **The buttons that write.** Decide a question, add and rank tasks, start an agent with
-   the launch chooser, Nudge, send a message, hold a project, add and remove projects and
+   the launch chooser, Nudge, hold a project, add and remove projects and
    resources, take a lease back.
-5. **The agent page without a terminal.** Title line, activity, bell, tasks, inbox, the
-   two buttons, and one honest line about where the terminal is.
+5. **The agent page without a terminal.** Title line, activity, bell, tasks, the messages
+   it has been sent, the buttons, and one honest line about where the terminal is.
 6. **First run on iPad.** The intro sheet in the same three parts, How it works at the top
    of Settings, and every word that says phone checked.
 

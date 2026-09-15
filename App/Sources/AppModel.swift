@@ -9,7 +9,9 @@ import SoftwareFactoryKit
 final class AppModel {
     private(set) var snapshot = Snapshot()
     private(set) var dashboard = Dashboard.empty
-    private(set) var inboxes: [UUID: [AgentMessage]] = [:]
+    /// Every message sent to each agent, newest last. Kept beside the snapshot because
+    /// messages are per recipient and never travel in it.
+    private(set) var messagesByAgent: [UUID: [AgentMessage]] = [:]
     private(set) var lastRefresh: Date?
     private(set) var storeError: String?
 
@@ -133,12 +135,12 @@ final class AppModel {
 
     private func loadState(from store: FileStore) throws {
         let loaded = try store.load()
-        var loadedInboxes: [UUID: [AgentMessage]] = [:]
+        var loadedMessages: [UUID: [AgentMessage]] = [:]
         for agent in loaded.agents {
-            loadedInboxes[agent.id] = try store.messages(for: agent.id)
+            loadedMessages[agent.id] = try store.messages(for: agent.id)
         }
         snapshot = loaded
-        inboxes = loadedInboxes
+        messagesByAgent = loadedMessages
     }
 
     func askForNotifications() {
@@ -203,8 +205,24 @@ final class AppModel {
         dashboard.projects.first { $0.id == id }
     }
 
-    func inbox(for agentID: UUID) -> [AgentMessage] {
-        inboxes[agentID] ?? []
+    func messages(for agentID: UUID) -> [AgentMessage] {
+        messagesByAgent[agentID] ?? []
+    }
+
+    /// Messages that have not been typed into a terminal yet, oldest first. A message to an
+    /// agent with no terminal on screen stays here until one appears, rather than being
+    /// thrown away at a window that was not open.
+    func undelivered(for agentID: UUID) -> [AgentMessage] {
+        messages(for: agentID).filter { $0.delivered == nil }.sorted { $0.sent < $1.sent }
+    }
+
+    /// Stamps a message typed, so it is not typed twice. Called only when a terminal
+    /// actually took it.
+    func markDelivered(_ message: AgentMessage) {
+        guard message.delivered == nil else { return }
+        var m = message
+        m.delivered = .now
+        persist { try $0.save(m) }
     }
 
     /// Every task ever credited to this agent: the one it holds now, and whatever it
@@ -257,12 +275,14 @@ final class AppModel {
         persist { try $0.save(agent) }
     }
 
-    /// A poke for an agent sitting waiting: the same words land in its inbox.
+    /// A poke for an agent sitting waiting. It is a message like any other, and the app
+    /// types every undelivered message into its agent's terminal.
     func nudge(_ agent: Agent) {
         sendMessage(to: agent.id, subject: "Nudge", contents: LaunchPrompt.nudge)
     }
 
-    /// A note from the person, dropped straight into the agent's inbox.
+    /// A message for an agent, written down so the app can type it into that agent's
+    /// terminal.
     func sendMessage(to agentID: UUID, subject: String, contents: String) {
         let subject = subject.trimmingCharacters(in: .whitespacesAndNewlines)
         let contents = contents.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -341,15 +361,6 @@ final class AppModel {
 
     func noteError(_ message: String) {
         storeError = message
-    }
-
-    /// `agent_nudge` asked the factory to poke this one. The app types the line
-    /// and this clears the flag so it is not typed twice. (T195)
-    func clearNudgeRequest(_ agent: Agent) {
-        var a = agent
-        guard a.wantsNudge else { return }
-        a.wantsNudge = false
-        persist { try $0.save(a) }
     }
 
     /// Writes down the process an agent is running in, once its terminal is up. The

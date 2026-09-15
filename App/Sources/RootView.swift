@@ -138,8 +138,8 @@ struct RootView: View {
         .task(id: model.snapshot.agents.filter(\.wantsLaunch).map(\.id)) {
             StartAgent.launchPending(model: model, terminals: terminals)
         }
-        .task(id: model.snapshot.agents.filter(\.wantsNudge).map(\.id)) {
-            deliverPendingNudges(model: model, terminals: terminals)
+        .task(id: model.snapshot.agents.flatMap { model.undelivered(for: $0.id) }.map(\.id)) {
+            deliverPendingMessages(model: model, terminals: terminals)
         }
         .sheet(isPresented: Binding(get: { !model.hasSeenIntro }, set: { model.hasSeenIntro = !$0 })) {
             IntroSheet()
@@ -171,8 +171,8 @@ struct RootView: View {
         .help(sidebarLine(status))
         .tag(Destination.agent(status.id))
         .contextMenu {
-            // The same poke as the button on its card and page: the words go in its
-            // inbox and get typed into its terminal. (Alex, 14 Sep 2026.)
+            // The same poke as the button on its card and page: the words are written
+            // down and typed into its terminal. (Alex, 14 Sep 2026.)
             if status.canNudge {
                 Button("Nudge \(status.agent.label)") {
                     sendNudge(to: status.agent, model: model, terminals: terminals)

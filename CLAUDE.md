@@ -61,8 +61,10 @@ before you mark the task done. Build the phone too when the change is in it.
     another, which sets `wantsLaunch`; the app starts it. The one over the cap is
     refused. `agent_nudge` pokes another agent, sets
     `wantsNudge`, and the app types the same line as the person's Nudge),
-    `AgentMessage` (recipient, from, subject, contents, sent; private to the recipient's
-    MCP inbox),
+    `AgentMessage` (recipient, from, subject, contents, sent, and `delivered` when the app
+    typed it into the recipient's terminal; there is no inbox to read, `terminalLine` is
+    what gets typed, and a nudge is simply a message whose contents are
+    `LaunchPrompt.nudge`, so one path carries both),
     `Escalation` (options, one recommended; optional `link` to a document to review,
     filed as an artifact; optional `artifactID`; `decide(_:by:)` records a `Decision`),
     `Artifact` (a document on a project: title, body, optional link; twenty live ones
@@ -138,8 +140,8 @@ before you mark the task done. Build the phone too when the change is in it.
     table; `call(_:_:)` does the work. `escalation_await` polls the store.
     `agent_create` writes the agent down and sets `wantsLaunch`; the person's own cap,
     read off the throttle, is what refuses the one over it.
-    `agent_nudge` puts the same words as the person's Nudge in the inbox and sets
-    `wantsNudge` so the app types them into the terminal.
+    `agent_nudge` writes a message whose words are the nudge line; the app types every
+    undelivered message into its agent's terminal, so nudges and messages are one path.
   - `HTTP`: `HTTPRequest.parse`, `HTTPResponse.serialized`, and `HTTPRouter` (`POST /mcp`,
     `GET /api/snapshot`, `POST /api/decide`, `POST /api/task`; browser origins refused).
   - `SampleData`: records for a Debug build to look at.
@@ -182,7 +184,7 @@ before you mark the task done. Build the phone too when the change is in it.
     page clears the bell however you got there; right click to Nudge or Delete it.
     T222, T225, and Alex, 14 Sep 2026), `DashboardView` (stat tiles, Needs you as a horizontal strip,
     the agents on the floor as cards; `AgentCard` is one of them and `AgentView` is the
-    page behind it; an agent that is not stopped has Nudge, inbox and terminal),
+    page behind it; an agent that is not stopped has Nudge, its messages and terminal),
     `AgentsView` (every agent registered, and the button that starts a
     new one), `FactoryView` (the Capacity page: verdict and what each kind of work would
     be told, then one grid of cards for the Mac's own readings and every leasable
@@ -206,8 +208,10 @@ before you mark the task done. Build the phone too when the change is in it.
     session on a server of its own, so the agent outlives the app: quit, rebuild, come
     back, and opening its page attaches to what has been running all along. The person
     never sees tmux. OSC titles and BEL still reach SwiftTerm: the title is the line on
-    the agent's card, and BEL sets `bel` until the card is opened. A nudge is typed in
-    with `sendLine`, which is two writes: the words, a gap, then the return. In one write
+    the agent's card, and BEL sets `bel` until the card is opened. A nudge, and any other
+    message, is typed in with `sendLine`, which is two writes: the words, a gap, then the
+    return. It answers whether there was a terminal to type into, and a message is marked
+    delivered only when one took it. In one write
     the agent reads the lot as a paste and the return lands as a newline in its input box,
     so the nudge sat there unsent (Alex, 14 Sep 2026). Nothing asks tmux
     anything from the main thread: `TerminalSessions`

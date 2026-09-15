@@ -311,10 +311,28 @@ func wholeSecond() -> Date {
         json.removeValue(forKey: "wantsLaunch")
         let decoded = try FileStore.decoder.decode(Agent.self, from: JSONSerialization.data(withJSONObject: json))
         #expect(!decoded.wantsLaunch)
-        #expect(!decoded.wantsNudge)
-        json.removeValue(forKey: "wantsNudge")
-        let older = try FileStore.decoder.decode(Agent.self, from: JSONSerialization.data(withJSONObject: json))
-        #expect(!older.wantsNudge)
+    }
+
+    @Test func anAgentStillCarryingWantsNudgeStillReads() throws {
+        // The flag is gone: a nudge is a message and the message says whether it was
+        // typed. A record written while the flag existed must still open. (14 Sep 2026.)
+        let agent = Agent(number: 1, projectID: nil)
+        var json = try #require(try JSONSerialization.jsonObject(with: FileStore.encoder.encode(agent)) as? [String: Any])
+        json["wantsNudge"] = true
+        let decoded = try FileStore.decoder.decode(Agent.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(decoded.id == agent.id)
+    }
+
+    @Test func aMessageWrittenBeforeTerminalDeliveryCountsAsDelivered() throws {
+        // Those were read out of an inbox that no longer exists. Typing them in now would
+        // replay old mail into a working agent's terminal.
+        let message = AgentMessage(recipientID: UUID(), from: "A1", subject: "Old", contents: "Read long ago.")
+        var json = try #require(try JSONSerialization.jsonObject(with: FileStore.encoder.encode(message)) as? [String: Any])
+        json.removeValue(forKey: "delivered")
+        let decoded = try FileStore.decoder.decode(AgentMessage.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(decoded.delivered == decoded.sent)
+        // One written now is waiting to be typed.
+        #expect(AgentMessage(recipientID: UUID(), from: "A1", subject: "New", contents: "x").delivered == nil)
     }
 
     @Test func olderAgentsStartTheirQuietTimerFromLastSeen() throws {

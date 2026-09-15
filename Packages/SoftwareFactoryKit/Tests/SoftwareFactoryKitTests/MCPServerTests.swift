@@ -218,8 +218,6 @@ private final class ResultBox: @unchecked Sendable {
         let a = try startAgent(s, project: "W").label
 
         #expect(call(s, "task_next", ["project": "W", "timeout_seconds": 0]).text == "Nothing waiting. Call task_next again.")
-        #expect(call(s, "inbox", ["agent_id": a, "wait": true, "timeout_seconds": 0]).text
-            == "No new messages. Call inbox again with wait: true.")
         let raised = call(s, "escalation_raise", ["agent_id": a, "project": "W", "question": "Which?",
                                                  "options": [["title": "A"], ["title": "B"]]])
         let escalation = id(after: "", in: raised.text)
@@ -228,7 +226,7 @@ private final class ResultBox: @unchecked Sendable {
         // None of them is an error: the agent is meant to come back.
         #expect(!call(s, "task_next", ["project": "W", "timeout_seconds": 0]).isError)
         // And every one of them takes the same argument.
-        for tool in ["task_next", "inbox", "escalation_await"] {
+        for tool in ["task_next", "escalation_await"] {
             let defined = try #require(MCPServer.Tool.all.first { $0.name == tool })
             #expect(defined.properties["timeout_seconds"] != nil)
         }
@@ -302,23 +300,37 @@ private final class ResultBox: @unchecked Sendable {
         #expect(call(s, "agent_create", ["agent_id": onIt]).text.contains("folder"))
     }
 
-    @Test func agentNudgePutsTheSameWordsInTheInbox() throws {
+    @Test func agentNudgeWritesTheNudgeDownForTheAppToType() throws {
         let s = try server()
         let lead = try startAgent(s, project: "Mail").label
         let worker = try startAgent(s, project: "Mail").label
         let poked = call(s, "agent_nudge", ["agent_id": lead, "to_agent_id": worker])
         #expect(!poked.isError)
         #expect(poked.text == "Nudged \(worker).")
-        let inbox = call(s, "inbox", ["agent_id": worker]).text
-        #expect(inbox.contains("subject: Nudge"))
-        #expect(inbox.contains(LaunchPrompt.nudge))
-        #expect(inbox.contains("from: \(lead)"))
-        #expect(try s.store.load().agents.first { $0.label == worker }?.wantsNudge == true)
+        let workerID = try #require(try s.store.load().agents.first { $0.label == worker }?.id)
+        let waiting = try #require(try s.store.messages(for: workerID).last)
+        #expect(waiting.subject == "Nudge")
+        #expect(waiting.from == lead)
+        #expect(waiting.contents == LaunchPrompt.nudge)
+        // Undelivered is what the app looks for, and a nudge is typed in bare: it is the
+        // line agents already read.
+        #expect(waiting.delivered == nil)
+        #expect(waiting.isNudge)
+        #expect(waiting.terminalLine == LaunchPrompt.nudge)
         #expect(call(s, "agent_nudge", ["agent_id": lead, "to_agent_id": lead]).isError)
         #expect(call(s, "agent_nudge", ["agent_id": lead, "to_agent_id": "A99"]).isError)
     }
 
-    @Test func agentsCanDescribeThemselvesAndSendMail() throws {
+    @Test func thereIsNoToolForReadingMessages() throws {
+        // Messages are typed into the agent's terminal, so there is nothing to collect.
+        #expect(!MCPServer.Tool.all.contains { $0.name == "inbox" })
+        let s = try server()
+        let a = try startAgent(s, project: "Mail").label
+        #expect(call(s, "inbox", ["agent_id": a]).isError)
+        #expect(call(s, "agent_messages", ["agent_id": a]).isError)
+    }
+
+    @Test func agentsCanSendEachOtherAMessageTheAppTypesIn() throws {
         let s = try server()
         let lead = try startAgent(s, project: "Mail").label
         let worker = try startAgent(s, project: "Mail").label
@@ -327,39 +339,28 @@ private final class ResultBox: @unchecked Sendable {
         #expect(listed.contains(worker))
         #expect(!listed.contains(lead))
 
-        #expect(call(s, "agent_message_send", [
+        let sent = call(s, "agent_message_send", [
             "agent_id": lead, "to_agent_id": worker, "subject": "Please review", "contents": "Start with the MCP server.",
-        ]).text == "Sent to \(worker).")
-        let inbox = call(s, "agent_messages", ["agent_id": worker]).text
-        #expect(inbox.contains("from: \(lead)") && inbox.contains("subject: Please review") && inbox.contains("contents:\nStart with the MCP server."))
+        ])
+        #expect(sent.text.hasPrefix("Sent to \(worker)."))
+        let workerID = try #require(try s.store.load().agents.first { $0.label == worker }?.id)
+        let waiting = try #require(try s.store.messages(for: workerID).last)
+        #expect(waiting.from == lead && waiting.subject == "Please review")
+        #expect(waiting.delivered == nil)
+        // Not a nudge, so the typed line says who it is from: the agent cannot tell a
+        // typed line from the person at the keyboard.
+        #expect(!waiting.isNudge)
+        #expect(waiting.terminalLine == "Message from \(lead), Please review: Start with the MCP server.")
         #expect(call(s, "agent_message_send", [
             "agent_id": lead, "to_agent_id": lead, "subject": "No", "contents": "No",
         ]).isError)
     }
 
-    @Test func agentMessagesCanWaitForNewMail() throws {
-        let s = try server()
-        let sender = try startAgent(s, project: "P").label
-        let receiver = try startAgent(s, project: "P").label
-        _ = call(s, "agent_message_send", [
-            "agent_id": sender, "to_agent_id": receiver, "subject": "Earlier", "contents": "Already here.",
-        ])
-
-        let completed = DispatchSemaphore(value: 0)
-        let result = ResultBox()
-        DispatchQueue.global().async {
-            result.set(self.call(s, "agent_messages", ["agent_id": receiver, "wait_for_new": true, "timeout_seconds": 1]).text)
-            completed.signal()
-        }
-
-        Thread.sleep(forTimeInterval: 0.05)
-        #expect(completed.wait(timeout: .now()) == .timedOut)
-        _ = call(s, "agent_message_send", [
-            "agent_id": sender, "to_agent_id": receiver, "subject": "New", "contents": "This wakes the wait.",
-        ])
-        #expect(completed.wait(timeout: .now() + 1) == .success)
-        #expect(result.value()?.contains("subject: New") == true)
-        #expect(result.value()?.contains("subject: Earlier") == false)
+    @Test func aMessageIsTypedAsOneLineWhateverItCarries() throws {
+        let plain = AgentMessage(recipientID: UUID(), from: "A2", subject: "", contents: "Look at T12.")
+        #expect(plain.terminalLine == "Message from A2: Look at T12.")
+        let nudge = AgentMessage(recipientID: UUID(), from: "A2", subject: "Nudge", contents: LaunchPrompt.nudge)
+        #expect(nudge.terminalLine == LaunchPrompt.nudge)
     }
 
     @Test func aNearMissProjectNameIsRefusedRatherThanMadeTwice() throws {

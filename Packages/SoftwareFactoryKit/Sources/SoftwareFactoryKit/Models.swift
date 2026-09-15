@@ -325,9 +325,6 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
     /// The factory should start this agent. `agent_create` sets it; the app launches
     /// and clears it. (T179, 13 Sep 2026.)
     public var wantsLaunch: Bool = false
-    /// `agent_nudge` asked the factory to poke this agent. The app types the same
-    /// line into its terminal and clears the flag. (T195, 13 Sep 2026.)
-    public var wantsNudge: Bool = false
     /// The agent's own process, reported at registration, and when that process started.
     /// The pair is what makes an answer about running trustworthy: a pid on its own can
     /// be recycled and turn up wearing a dead agent's number, and a start time settles
@@ -415,7 +412,7 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case version, id, number, title, bel, projectID, taskID, note, wantsLaunch, wantsNudge
+        case version, id, number, title, bel, projectID, taskID, note, wantsLaunch
         case pid, pidStartedAt, registered, lastSeen, isConnected, deregistered
         case about, name
     }
@@ -431,7 +428,6 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
         try c.encodeIfPresent(taskID, forKey: .taskID)
         try c.encode(note, forKey: .note)
         try c.encode(wantsLaunch, forKey: .wantsLaunch)
-        try c.encode(wantsNudge, forKey: .wantsNudge)
         try c.encodeIfPresent(pid, forKey: .pid)
         try c.encodeIfPresent(pidStartedAt, forKey: .pidStartedAt)
         try c.encode(registered, forKey: .registered)
@@ -455,7 +451,9 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
         taskID = try c.decodeIfPresent(UUID.self, forKey: .taskID)
         note = try c.decode(String.self, forKey: .note)
         wantsLaunch = try c.decodeIfPresent(Bool.self, forKey: .wantsLaunch) ?? false
-        wantsNudge = try c.decodeIfPresent(Bool.self, forKey: .wantsNudge) ?? false
+        // `wantsNudge` was the flag that told the app to type a nudge. A nudge is now a
+        // message like any other and the message's own `delivered` says whether it has
+        // been typed, so the flag is read and thrown away. (Alex, 14 Sep 2026.)
         // Added after the fact, so a record written before this simply has no pid and
         // reads as an agent whose running we cannot speak for. No version bump needed.
         pid = try c.decodeIfPresent(Int32.self, forKey: .pid)
@@ -522,7 +520,10 @@ public enum Agents {
 
 }
 
-/// One message in an agent's private inbox.
+/// One message to an agent. It is typed into that agent's terminal, the same way a nudge
+/// is, and `delivered` is when that happened. There is no inbox to read any more: an agent
+/// that had to ask for its messages only heard between tasks, if it remembered to look,
+/// which is not what a message is for. (Alex, 14 Sep 2026.)
 public struct AgentMessage: Codable, Identifiable, Hashable, Sendable {
     public var version = Records.version
     public var id: UUID
@@ -531,14 +532,54 @@ public struct AgentMessage: Codable, Identifiable, Hashable, Sendable {
     public var subject: String
     public var contents: String
     public var sent: Date
+    /// When the app typed it into the recipient's terminal. Nil until then, which is what
+    /// the app looks for. A message to an agent with no terminal on screen waits here
+    /// rather than being thrown away, and goes in when one appears.
+    public var delivered: Date?
 
-    public init(id: UUID = UUID(), recipientID: UUID, from: String, subject: String, contents: String, sent: Date = .now) {
+    public init(id: UUID = UUID(), recipientID: UUID, from: String, subject: String, contents: String,
+                sent: Date = .now, delivered: Date? = nil) {
         self.id = id
         self.recipientID = recipientID
         self.from = from
         self.subject = subject
         self.contents = contents
         self.sent = sent
+        self.delivered = delivered
+    }
+
+    /// A nudge is a message whose words are the nudge line, so one delivery path carries
+    /// both and there is no second mechanism to keep in step.
+    public var isNudge: Bool { contents == LaunchPrompt.nudge }
+
+    /// What the app types in. A nudge goes in bare, because that is the line agents have
+    /// always read and it works. Anything else says who it is from first: an agent cannot
+    /// tell a typed line from the person at the keyboard, so an unattributed message reads
+    /// as Alex asking for something.
+    public var terminalLine: String {
+        if isNudge { return contents }
+        let subject = subject.trimmingCharacters(in: .whitespacesAndNewlines)
+        let head = subject.isEmpty ? "Message from \(from)" : "Message from \(from), \(subject)"
+        return "\(head): \(contents)"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case version, id, recipientID, from, subject, contents, sent, delivered
+    }
+
+    /// `delivered` is always written, null included. Left out when nil it would be
+    /// indistinguishable from a message written before the field existed, and every new
+    /// message would read back as already typed.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(version, forKey: .version)
+        try c.encode(id, forKey: .id)
+        try c.encode(recipientID, forKey: .recipientID)
+        try c.encode(from, forKey: .from)
+        try c.encode(subject, forKey: .subject)
+        try c.encode(contents, forKey: .contents)
+        try c.encode(sent, forKey: .sent)
+        try c.encode(delivered, forKey: .delivered)
     }
 
     public init(from decoder: Decoder) throws {
@@ -550,6 +591,12 @@ public struct AgentMessage: Codable, Identifiable, Hashable, Sendable {
         subject = try c.decode(String.self, forKey: .subject)
         contents = try c.decode(String.self, forKey: .contents)
         sent = try c.decode(Date.self, forKey: .sent)
+        // No key at all means a message written before terminal delivery existed, which was
+        // read out of an inbox that is gone: count it delivered rather than replaying old
+        // mail into a working agent's terminal. An explicit null means it is still waiting.
+        delivered = c.contains(.delivered)
+            ? try c.decodeIfPresent(Date.self, forKey: .delivered)
+            : sent
     }
 }
 

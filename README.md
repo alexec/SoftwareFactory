@@ -64,7 +64,7 @@ claude mcp add --transport http --scope user software-factory http://127.0.0.1:4
 ```
 
 The tools, and each says whether it reads or writes: queries are `project_list`,
-`task_list`, `task_next`, `agent_list`, `inbox`, `escalation_list`, `escalation_await`,
+`task_list`, `task_next`, `agent_list`, `escalation_list`, `escalation_await`,
 `artifact_list`, `artifact_read`,
 `resource_list`, `factory_status`, `factory_ask`. Commands are `message_send`, `project_add`, `project_read`, `project_set`,
 `project_remove`, `task_add`, `task_claim`, `task_status`, `task_note`, `task_set`,
@@ -72,10 +72,10 @@ The tools, and each says whether it reads or writes: queries are `project_list`,
 `agent_create`, `agent_nudge`, `resource_add`, `resource_lease`,
 `resource_release`. How many agents may be on the floor is yours to set on the Capacity
 page, eight to begin with; `agent_create` asks the factory to start another. `agent_nudge` pokes another agent the way the person's Nudge does. A query never writes anything but your heartbeat, and a test holds
-that true. Older names (`agent_messages`, `project_get`, the three `project_set_*`,
+that true. Older names (`project_get`, the three `project_set_*`,
 `task_number`, `task_rank`, `task_move`, `task_show`, `resource_renew`) still answer for
 sessions that loaded them.
-Three tools wait: `task_next`, `escalation_await`, and `agent_messages` with `wait_for_new`. Each takes `timeout_seconds` (600 by default), answers "call again" when it runs out, and queues in one pool of 20 connections.
+Two tools wait: `task_next` and `escalation_await`. Each takes `timeout_seconds` (600 by default), answers "call again" when it runs out, and queues in one pool of 20 connections.
 There is no check-in: every call an agent makes counts as a sign of life. The server's
 instructions tell an agent to register first, work from the backlog and never a parked
 task, claim what it is on, lease what it shares, ask the factory before anything heavy,
@@ -86,9 +86,12 @@ the factory again. Agent identity is the server-minted `Mcp-Session-Id` on its H
 session. The server uses MCP `2025-03-26`, the revision that supports that header, so the
 `mcp` command-line transport cannot register or act as an agent.
 
-`agent_list` shows the other agents on the floor, their ids and their terminal titles. `agent_message_send` delivers text with a subject
-to one of those ids; `agent_messages` reads the caller's private inbox. Set
-`wait_for_new` to wait for mail that arrives after the call begins.
+`agent_list` shows the other agents on the floor, their ids and their terminal titles.
+`message_send` delivers text with a subject to one of those ids, and the app types it into
+that agent's terminal the way it types a nudge. There is no tool for reading messages and
+no inbox: an agent that had to ask for its mail only heard between tasks, if it remembered
+to look, which is not what a message is for. A message to an agent with no terminal on
+screen waits until one is open rather than being thrown away.
 
 `project_add` takes a name. `project_read` returns the name, the folder and whether it
 is on hold. A project has no description and no instructions.

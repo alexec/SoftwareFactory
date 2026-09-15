@@ -484,13 +484,12 @@ struct AgentView: View {
         }
     }
 
-    /// The inbox and the line you send it: one conversation, read newest last, with the
-    /// box to write in underneath.
+    /// What has been sent to this agent, read newest last. There is no box to write in:
+    /// a message is typed into the agent's terminal, so the way to say something to an
+    /// agent is to say it in its terminal, which is on this page. (Alex, 14 Sep 2026.)
     private var messages: some View {
         AgentPanel("Messages") {
-            AgentMessages(messages: model.inbox(for: agent.id))
-            Divider()
-            SendMessage(agent: agent)
+            AgentMessages(messages: model.messages(for: agent.id))
         }
     }
 }
@@ -552,54 +551,34 @@ private struct AgentMessages: View {
     }
 }
 
-private struct SendMessage: View {
-    @Environment(AppModel.self) private var model
-    var agent: Agent
-    @State private var subject = ""
-    @State private var contents = ""
-    @State private var sent = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            TextField("Subject (optional)", text: $subject)
-            TextField("Message", text: $contents, axis: .vertical)
-                .lineLimit(3...8)
-            HStack {
-                if sent {
-                    Text("Sent. It is in \(agent.label)'s inbox, read the next time it looks.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button("Send") {
-                    model.sendMessage(to: agent.id, subject: subject, contents: contents)
-                    subject = ""
-                    contents = ""
-                    sent = true
-                }
-                .buttonStyle(.glassProminent)
-                .disabled(contents.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .onChange(of: contents) { sent = false }
-    }
-}
-
-/// Inbox, and the line typed into its terminal when there is one: the agent cannot
-/// tell the typed line from a person at the keyboard.
+/// Writes the nudge down and types it straight away, so the button acts at once rather
+/// than on the next pass. The agent cannot tell the typed line from a person at the
+/// keyboard.
 @MainActor
 func sendNudge(to agent: Agent, model: AppModel, terminals: TerminalSessions) {
     model.nudge(agent)
-    terminals.sendLine(LaunchPrompt.nudge, to: agent.id.uuidString)
+    deliverPendingMessages(model: model, terminals: terminals)
 }
 
-/// Agents `agent_nudge` asked the factory to poke: the words are already in the inbox;
-/// this types them into the terminal when there is one. (T195)
+/// Types every message nobody has typed yet into its agent's terminal: nudges the person
+/// sent, nudges `agent_nudge` asked for, and messages from other agents alike. One path,
+/// because they are the same thing. A message is only marked delivered when a terminal
+/// took it, so one sent to an agent with no window on screen waits instead of vanishing.
+/// (T195, and Alex, 14 Sep 2026: messages are typed in, there is nothing to collect.)
 @MainActor
-func deliverPendingNudges(model: AppModel, terminals: TerminalSessions) {
-    for agent in model.snapshot.agents where agent.wantsNudge {
-        model.clearNudgeRequest(agent)
-        terminals.sendLine(LaunchPrompt.nudge, to: agent.id.uuidString)
+func deliverPendingMessages(model: AppModel, terminals: TerminalSessions) {
+    for agent in model.snapshot.agents {
+        let waiting = model.undelivered(for: agent.id)
+        guard !waiting.isEmpty else { continue }
+        // Pick the session back up if this app has restarted since the agent was launched.
+        // A terminal is only attached when somebody opens that agent's page, and a message
+        // is meant to arrive while the agent is working, not whenever its page is next
+        // looked at. tmux has been holding the session all along. (Alex, 14 Sep 2026.)
+        terminals.attach(agent.id.uuidString)
+        for message in waiting {
+            guard terminals.sendLine(message.terminalLine, to: agent.id.uuidString) else { break }
+            model.markDelivered(message)
+        }
     }
 }
 

@@ -40,9 +40,8 @@ public enum LaunchPrompt {
         youAre(name, session) + " \(prompt)"
     }
 
-    /// A poke for an agent that has finished and is sitting waiting. The same words
-    /// go to its inbox and, when there is a terminal, are typed into it.
-    /// (T171, 13 Sep 2026.)
+    /// A poke for an agent that has finished and is sitting waiting. The words are written
+    /// down as a message and typed into its terminal. (T171, 13 Sep 2026.)
     public static let nudge =
         "There is work waiting. Look at the backlog and take the next task nobody is on."
 }

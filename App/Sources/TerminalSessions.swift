@@ -232,7 +232,11 @@ final class TerminalSessions {
     /// once the input has settled. Any newline inside the words is flattened for the
     /// same reason: this sends one line, and the only return is the one at the end.
     /// (Alex, 14 Sep 2026: the nudge does not send the right newline.)
-    func sendLine(_ text: String, to id: String) {
+    /// Answers whether there was a terminal to type into. A message for an agent whose
+    /// window is not open has not been delivered and must not be marked as though it had.
+    @discardableResult
+    func sendLine(_ text: String, to id: String) -> Bool {
+        guard sessions[id]?.terminal != nil else { return false }
         let line = text.replacingOccurrences(of: "\r\n", with: " ")
             .replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: "\r", with: " ")
@@ -241,6 +245,7 @@ final class TerminalSessions {
             try? await _Concurrency.Task.sleep(for: .milliseconds(150))
             self?.send("\r", to: id)
         }
+        return true
     }
 
     /// Control-C, for a session that has run away.

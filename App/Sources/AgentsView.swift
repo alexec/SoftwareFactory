@@ -91,7 +91,7 @@ struct AgentsView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("What is this agent for?")
                     .font(.headline)
-                Text("It starts in your home folder, on no project, and hears from other agents through its inbox.")
+                Text("It starts in your home folder, on no project, and hears from other agents in its terminal.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

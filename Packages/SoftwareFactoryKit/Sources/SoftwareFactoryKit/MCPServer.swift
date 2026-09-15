@@ -292,18 +292,14 @@ public struct MCPServer: Sendable {
                  properties: ["project": str("Project it works; defaults to yours"),
                               "task_id": str("Optional: start it on this task, already in its name")],
                  required: []),
-            Tool(name: "agent_nudge", description: "Poke another agent the same way the person's Nudge does: the words land in its inbox, and in its terminal when it has one. Tells it there is work waiting.",
+            Tool(name: "agent_nudge", description: "Poke another agent the same way the person's Nudge does: the words are typed into its terminal. Tells it there is work waiting.",
                  properties: ["to_agent_id": str("The agent's A<n> id from agent_list")],
                  required: ["to_agent_id"]),
-            Tool(name: "message_send", description: "Send a message to another agent's inbox.",
+            Tool(name: "message_send", description: "Send a message to another agent. It is typed into that agent's terminal, the way a nudge is, so it arrives while they are working rather than waiting to be collected. There is nothing to read: keep it to what they need to act on.",
                  properties: ["to_agent_id": str("The recipient's id from agent_list"),
-                              "subject": str("The message subject"),
-                              "contents": str("The message contents")],
+                              "subject": str("What it is about, in a few words"),
+                              "contents": str("The message itself, in one line")],
                  required: ["to_agent_id", "subject", "contents"]),
-            Tool(name: "inbox", description: "Read your inbox. Set wait to hold the call until a message arrives after it begins, and it answers 'no new messages' after timeout_seconds so you can call again.",
-                 properties: ["wait": ["type": "boolean", "description": "Wait for a message that arrives after this call begins"],
-                              "timeout_seconds": ["type": "integer", "description": "How long to wait, default 600"]],
-                 required: [], kind: .query),
 
             // Projects
             Tool(name: "project_list", description: "Every project, with what is in progress and who is on it.",
@@ -449,7 +445,6 @@ public struct MCPServer: Sendable {
     /// What a tool used to be called. A session that loaded the old list keeps working
     /// until it registers again. (Alex, 12 Sep 2026: drop these once nothing calls them.)
     static let oldNames = [
-        "agent_messages": "inbox",
         "agent_message_send": "message_send",
         "project_get": "project_read",
         "project_set_description": "project_set",
@@ -547,12 +542,12 @@ public struct MCPServer: Sendable {
                   recipient.isRegistered
             else { throw ToolError(message: "No active agent has that to_agent_id.") }
             guard recipient.id != sender.id else { throw ToolError(message: "Nudge another agent, not yourself.") }
+            // A nudge is a message whose words are the nudge line. The app types every
+            // undelivered message into its agent's terminal, so there is one path and no
+            // flag on the agent to keep in step with it. (Alex, 14 Sep 2026.)
             let message = AgentMessage(recipientID: recipient.id, from: sender.label,
                                        subject: "Nudge", contents: LaunchPrompt.nudge, sent: now())
             try store.save(message)
-            var poked = recipient
-            poked.wantsNudge = true
-            try store.save(poked)
             return "Nudged \(recipient.label)."
 
         case "message_send":
@@ -564,20 +559,7 @@ public struct MCPServer: Sendable {
             let message = AgentMessage(recipientID: recipient.id, from: sender.label,
                                        subject: try string("subject", args), contents: try string("contents", args), sent: now())
             try store.save(message)
-            return "Sent to \(recipient.label)."
-
-        case "inbox":
-            let recipient = try agent(args, in: snap)
-            let inbox = try store.messages(for: recipient.id)
-            guard args["wait"] as? Bool == true else {
-                return inbox.isEmpty ? "No messages." : Self.messages(inbox)
-            }
-            let known = Set(inbox.map(\.id))
-            let found = try waiting("inbox", args) { () -> String? in
-                let new = try store.messages(for: recipient.id).filter { !known.contains($0.id) }
-                return new.isEmpty ? nil : Self.messages(new)
-            }
-            return found ?? "No new messages. Call inbox again with wait: true."
+            return "Sent to \(recipient.label). It is typed into their terminal; there is no reply to wait for."
 
         case "project_list":
             let dash = Dashboard.make(snapshot: snap, now: now())
@@ -1104,12 +1086,6 @@ public struct MCPServer: Sendable {
         let blocked = t.blockers.isEmpty ? "" : "  [blocked on " + t.blockers.map { "\($0.kind.rawValue): \($0.why)" }.joined(separator: "; ") + "]"
         let last = t.note.split(whereSeparator: \.isNewline).last.map { "  — \($0)" } ?? ""
         return "\(t.label ?? "T-")  \(t.id.uuidString)  \(t.state.rawValue)  \(t.work.rawValue)  \(t.title)\(blocked)\(last)"
-    }
-
-    static func messages(_ messages: [AgentMessage]) -> String {
-        messages.map {
-            "\($0.id.uuidString)\nfrom: \($0.from)\nsubject: \($0.subject)\ncontents:\n\($0.contents)"
-        }.joined(separator: "\n\n")
     }
 
     func string(_ key: String, _ args: [String: Any]) throws -> String {
