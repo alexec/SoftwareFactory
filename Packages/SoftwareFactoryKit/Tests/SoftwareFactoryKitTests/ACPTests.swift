@@ -261,18 +261,41 @@ struct AgentProfileTests {
     }
 
     @Test func twoOfThemLoseSomethingIfYouTalkOverThem() {
-        // The measured reason the daemon never prompts an agent mid-turn.
+        // The measured reason the daemon never prompts an agent mid-turn. Half of them
+        // are fine with it and half are not, which is the worst possible split: it would
+        // have worked every time it was tried by hand.
         #expect(LaunchAgent.claudeCode.profile.whenBusy == .queues)
+        #expect(LaunchAgent.grok.profile.whenBusy == .queues)
+        #expect(LaunchAgent.copilot.profile.whenBusy == .dropsIt)
+        #expect(LaunchAgent.cursor.profile.whenBusy == .cancelsItsWork)
         #expect(LaunchAgent.claudeCode.profile.whenBusy.losesSomething == false)
+        #expect(LaunchAgent.grok.profile.whenBusy.losesSomething == false)
         #expect(LaunchAgent.copilot.profile.whenBusy.losesSomething)
         #expect(LaunchAgent.cursor.profile.whenBusy.losesSomething)
+    }
+
+    @Test func oneOfThemNeverAsksBeforeItActs() {
+        // Grok wrote a file without asking, so a permission request will never reach the
+        // person for one of its agents. Worth knowing before you pick it for something
+        // that touches a repo you care about.
+        #expect(LaunchAgent.grok.profile.asksFirst == .no)
+        #expect(LaunchAgent.claudeCode.profile.asksFirst == .yes)
+        #expect(LaunchAgent.copilot.profile.asksFirst == .yes)
+    }
+
+    @Test func oneOfThemDoesNotSayWhatKindOfToolItIsRunning() {
+        // Grok's tool calls carry a name and no kind, so `changesAnything` never speaks
+        // for it and its rows fall back to what it called the tool.
+        #expect(LaunchAgent.grok.profile.namesToolKinds == .no)
+        #expect(LaunchAgent.claudeCode.profile.namesToolKinds == .yes)
+        #expect(LaunchAgent.copilot.profile.namesToolKinds == .yes)
     }
 
     @Test func notTriedIsItsOwnAnswerAndNotNo() {
         // Writing "not tried" down as "no" would quietly take a feature away from an
         // agent that has it.
-        #expect(LaunchAgent.grok.profile.asksFirst == .untested)
-        #expect(LaunchAgent.grok.profile.asksFirst != .no)
+        #expect(LaunchAgent.cursor.profile.asksFirst == .untested)
+        #expect(LaunchAgent.cursor.profile.asksFirst != .no)
         #expect(AgentProfile.Known.untested.word == "Not tried")
     }
 

@@ -99,6 +99,7 @@ private struct WhatItDoes: View {
             row("Asks before it changes something", profile.asksFirst.word)
             row("Says what it is thinking", profile.thinksOutLoud.word)
             row("Sets out a plan", profile.plans.word)
+            row("Says what kind of tool it is running", profile.namesToolKinds.word)
             row("If you talk over it", profile.whenBusy.word)
         }
         .font(.callout)

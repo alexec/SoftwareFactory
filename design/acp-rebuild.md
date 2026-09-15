@@ -242,8 +242,12 @@ Driving all four through the daemon found one thing worth the whole exercise. A 
 that arrives while a turn is in flight is handled three different ways:
 
 - **Claude Code** queues it and answers both. It advertises `promptQueueing`.
+- **Grok** queues it too, and says nothing about doing so.
 - **Copilot** drops it. The first turn finishes, the second never happens, no error.
 - **Cursor** cancels the turn in flight and takes the new one, `stopReason: cancelled`.
+
+Half and half, which is the worst possible split: anybody trying it by hand on the
+agent they happened to be using would have found it worked and written nothing down.
 
 The factory called all three a success, marked the message delivered and deleted it. So a
 nudge to a busy Copilot agent vanished, and a nudge to a busy Cursor agent would have
@@ -256,3 +260,15 @@ only ever delivered when something took it.
 This is the argument for testing a protocol against the things that speak it rather than
 against its specification. Every one of these four is conformant. They simply disagree
 about what conformance means here, and the specification does not say.
+
+So each one has an `AgentProfile`: what it was measured doing, with three answers rather
+than two, because "not tried" is not "no" and writing it down as no would quietly take a
+feature away from an agent that has it. The app reads the profiles instead of guessing.
+A stopped Cursor agent is not offered a Start that would fail; it gets a line saying why,
+rather than a disabled button, because a control that can never work on this agent says
+come back later and later never comes.
+
+Two more things only measurement would have found. Grok never asks before it changes
+something, so a permission request will never reach the person for one of its agents.
+And Grok's tool calls carry a name but no `kind`, so the icon and `changesAnything` have
+nothing to work with and its rows fall back to what it called the tool.

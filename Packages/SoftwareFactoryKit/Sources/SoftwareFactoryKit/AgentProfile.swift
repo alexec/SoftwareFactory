@@ -26,17 +26,23 @@ public struct AgentProfile: Sendable, Equatable {
     public var thinksOutLoud: Known
     /// Whether it sets out a plan that ticks itself off.
     public var plans: Known
+    /// Whether its tool calls say what kind of thing they are. Grok's carry a title and
+    /// no `kind`, so its rows fall back to the title and `ToolCall.Kind.changesAnything`
+    /// never gets to speak for it.
+    public var namesToolKinds: Known
     /// Anything the person should know before they pick it. Empty when there is nothing.
     public var caveat: String?
 
     public init(agent: LaunchAgent, resuming: Resuming, whenBusy: WhenBusy,
-                asksFirst: Known, thinksOutLoud: Known, plans: Known, caveat: String? = nil) {
+                asksFirst: Known, thinksOutLoud: Known, plans: Known,
+                namesToolKinds: Known = .untested, caveat: String? = nil) {
         self.agent = agent
         self.resuming = resuming
         self.whenBusy = whenBusy
         self.asksFirst = asksFirst
         self.thinksOutLoud = thinksOutLoud
         self.plans = plans
+        self.namesToolKinds = namesToolKinds
         self.caveat = caveat
     }
 
@@ -109,21 +115,26 @@ public extension LaunchAgent {
         switch self {
         case .claudeCode:
             AgentProfile(agent: self, resuming: .theConversation, whenBusy: .queues,
-                         asksFirst: .yes, thinksOutLoud: .yes, plans: .untested)
+                         asksFirst: .yes, thinksOutLoud: .yes, plans: .untested,
+                         namesToolKinds: .yes)
         case .copilot:
             AgentProfile(agent: self, resuming: .theConversation, whenBusy: .dropsIt,
-                         asksFirst: .yes, thinksOutLoud: .yes, plans: .untested)
+                         asksFirst: .yes, thinksOutLoud: .yes, plans: .untested,
+                         namesToolKinds: .yes)
         case .grok:
-            AgentProfile(agent: self, resuming: .theConversation, whenBusy: .untested,
-                         asksFirst: .untested, thinksOutLoud: .untested, plans: .untested,
-                         caveat: "Only its handshake and its session have been tried here. The account had no Grok Build balance left, so it has not done a piece of work yet.")
+            AgentProfile(agent: self, resuming: .theConversation, whenBusy: .queues,
+                         asksFirst: .no, thinksOutLoud: .yes, plans: .untested,
+                         namesToolKinds: .no,
+                         caveat: "It does not ask before it changes something, so nothing it does will ever reach you as a question. Its tool calls carry a name but not what kind of thing they are, so its rows say what it called the tool.")
         case .cursor:
             AgentProfile(agent: self, resuming: .no, whenBusy: .cancelsItsWork,
                          asksFirst: .untested, thinksOutLoud: .untested, plans: .untested,
-                         caveat: "It says it can load a session and then refuses one, so a stopped Cursor agent cannot be started back up. The account also needs a plan before it will do any work.")
+                         namesToolKinds: .untested,
+                         caveat: "It says it can load a session and then refuses one, so a stopped Cursor agent cannot be started back up. The account also needs a plan before it will do any work here.")
         case .terminal:
             AgentProfile(agent: self, resuming: .untested, whenBusy: .untested,
                          asksFirst: .no, thinksOutLoud: .no, plans: .no,
+                         namesToolKinds: .no,
                          caveat: "Not an agent. A shell, which speaks none of this.")
         }
     }
