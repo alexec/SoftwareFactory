@@ -319,7 +319,6 @@ struct AgentView: View {
     @State private var showsDetails = true
     /// Stopping an agent cannot be taken back, and the header button is one click on a
     /// wide target, so it asks first. (T261.)
-    @State private var confirmingStop = false
     @State private var resumeError: String?
 
     private struct ResourceLease: Identifiable {
@@ -377,11 +376,6 @@ struct AgentView: View {
             Button("OK") { resumeError = nil }
         } message: {
             Text(resumeError ?? "")
-        }
-        .confirmationDialog("Stop \(agent.label)?", isPresented: $confirmingStop) {
-            Button("Stop \(agent.label)", role: .destructive) { model.stop(agent) }
-        } message: {
-            Text("It stops in the middle of whatever it is doing. What it has already said stays here, and anything it was holding goes back.")
         }
         .toolbar {
             if let back {
@@ -451,11 +445,16 @@ struct AgentView: View {
                 .controlSize(.small)
                 .help("Tell it to pick up the next task")
             }
+            // No asking. Stopping an agent used to want confirming, on the argument that
+            // one click ends it mid-thought and that cannot be taken back. In practice it
+            // can: Start picks the conversation back up where it left off, the pane keeps
+            // what it said, and what it held goes back on its own. A question in front of
+            // something that undoes itself is a question asked for nothing. (T294.)
             if status.canStop {
-                Button("Stop") { confirmingStop = true }
+                Button("Stop") { model.stop(agent) }
                     .buttonStyle(.glass)
                     .controlSize(.small)
-                    .help("End this agent's process. What it has said stays on the page.")
+                    .help("End this agent's process. What it has said stays on the page, and Start picks it back up.")
             }
             // A stopped agent is picked back up where it left off, in the same session,
             // so it comes back knowing who it is and what it was doing. (T262.)

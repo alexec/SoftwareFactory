@@ -279,8 +279,11 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     line of its status report, else the line it set with an OSC title
     (`AgentLine.underTheName`, T295). Its bell goes in front when it rang. The row opens that agent's page from anywhere, and opening the
     page clears the bell however you got there; right click to Nudge, Stop or Delete it.
-    Stop is on the agent's page too, beside Nudge, and asks first there: one click on a
-    wide target ends an agent mid-thought, and that cannot be taken back. (T261.)
+    Stop is on the agent's page too, beside Nudge, and asks nothing
+    before it acts: it used to, on the argument that one click ends an agent mid-thought,
+    but Start picks the conversation back up, the pane keeps what it said and what it held
+    goes back on its own, so the question was in front of something that undoes itself.
+    (T261, then T294.)
     T222, T225, and Alex, 14 Sep 2026), `DashboardView` (stat tiles, Needs you as a horizontal strip,
     the agents on the floor as cards; `AgentCard` is one of them and `AgentView` is the
     page behind it; an agent that is not stopped has Nudge, its messages and terminal),
