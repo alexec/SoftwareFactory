@@ -287,7 +287,13 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     session on a server of its own, so the agent outlives the app: quit, rebuild, come
     back, and opening its page attaches to what has been running all along. The person
     never sees tmux. OSC titles and BEL still reach SwiftTerm: the title is the line on
-    the agent's card, and BEL sets `bel` until the page is opened. The bell is drawn on
+    the agent's card, and BEL sets `bel` until the page is opened. Neither reaches this
+    app while nobody is attached, which is most of the time, so each has a second route.
+    A title is state: tmux keeps the last one the pane set, so `Tmux.holding()` reads it
+    beside the session names on the poll that was already running and `PaneTitles.parse`
+    splits the two. A pane with no title is skipped rather than blanking the line a card
+    already shows, which matters because a dead pane loses its title in tmux.
+    (Alex, 15 Sep 2026.) The bell is drawn on
     every agent, grey and quiet, and fills in orange and wiggles when `bel` is set: a mark
     that only exists while something is wrong is one nobody learns to read. tmux passes
     every bell through, `bell-action any` (Alex, 14 Sep 2026). The live path only hears a
