@@ -53,10 +53,13 @@ struct ProjectView: View {
                 }
             }
 
+            // The project's documents, and where they are cleared. An agent could take
+            // its own off with artifact_remove from the day artifacts existed and the
+            // person could not, so the section only ever grew. (T266.)
             if !artifacts.isEmpty {
                 Section("Artifacts") {
                     ForEach(artifacts) { artifact in
-                        ArtifactCard(artifact: artifact)
+                        ArtifactCard(artifact: artifact) { model.delete(artifact) }
                             .listRowSeparator(.hidden)
                             .padding(.vertical, 4)
                     }

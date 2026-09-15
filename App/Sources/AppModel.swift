@@ -550,6 +550,15 @@ final class AppModel {
         persist { try $0.save(Backlog.remove(task, why: "by Alex, in the app")) }
     }
 
+    /// A document off the project. Nothing is deleted here either: the record stays with
+    /// the reason, out of every list, so a plan an agent spent an afternoon on is still
+    /// on disk after a mis-click. An agent could already take its own documents off with
+    /// artifact_remove and the person could not, which left the project's page filling up
+    /// with documents only the thing that wrote them could clear. (T266.)
+    func delete(_ artifact: Artifact) {
+        persist { try $0.save(Artifacts.remove(artifact, why: "by Alex, in the app")) }
+    }
+
     func unblock(_ task: FactoryTask, _ blocker: FactoryTask.Blocker) {
         guard let index = task.blockers.firstIndex(of: blocker) else { return }
         guard let cleared = try? Backlog.unblock(task, matching: String(index + 1)) else { return }

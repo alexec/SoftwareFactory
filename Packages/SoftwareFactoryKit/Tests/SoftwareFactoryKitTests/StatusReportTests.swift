@@ -74,6 +74,33 @@ import Testing
         #expect(Sweep.statusReportsWanted(in: snap, messages: [typedIn], now: now).messages.count == 1)
     }
 
+    /// The person can take a report off the project like any other document, and once it
+    /// is gone the agent has none, so the factory asks for another. (T266.)
+    @Test func aReportThePersonTookOffIsAskedForAgain() throws {
+        let project = Project(name: "Software Factory")
+        let a = agent(on: project, registered: now - hour * 5)
+        let report = try Artifacts.add(
+            projectID: project.id, title: "Status", body: "Going well.", kind: .statusReport,
+            agentID: a.id, addedBy: a.label, in: [], at: now - 60).artifact
+        #expect(Sweep.statusReportsWanted(
+            in: Snapshot(projects: [project], artifacts: [report], agents: [a]),
+            messages: [], now: now).messages.isEmpty)
+
+        let gone = Artifacts.remove(report, why: "by Alex, in the app", at: now)
+        #expect(Artifacts.statusReport(by: a.id, on: project.id, in: [gone]) == nil)
+        #expect(Artifacts.live(for: project.id, in: [gone]).isEmpty)
+        // And the next one the agent files is a new record, not the deleted one dug up.
+        let next = try Artifacts.add(
+            projectID: project.id, title: "Status", body: "Still going.", kind: .statusReport,
+            agentID: a.id, addedBy: a.label, in: [gone], at: now + 1)
+        #expect(next.outcome == .created)
+        #expect(next.artifact.id != report.id)
+
+        #expect(Sweep.statusReportsWanted(
+            in: Snapshot(projects: [project], artifacts: [gone], agents: [a]),
+            messages: [], now: now).messages.count == 1)
+    }
+
     @Test func anAgentOnNoProjectIsNotAsked() {
         var a = Agent(number: 1, projectID: nil, registered: now - hour * 5)
         a.lastSeen = now - hour * 5
