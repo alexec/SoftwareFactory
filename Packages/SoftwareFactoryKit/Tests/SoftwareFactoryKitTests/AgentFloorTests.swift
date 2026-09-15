@@ -32,6 +32,13 @@ struct AgentFloorTests {
                                                cwd: cwd.path, text: words))
     }
 
+    /// Turns the questions on, for a test about what happens when one is asked.
+    static func asks(_ store: FileStore) throws {
+        var throttle = store.throttle()
+        throttle.permissions = .askAboutEverything
+        try store.save(throttle)
+    }
+
     /// Everything the factory has actually said to this agent, in order.
     static func asked(_ agent: UUID, in store: FileStore) -> [String] {
         ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store))
@@ -94,9 +101,40 @@ struct AgentFloorTests {
         _ = await floor.handle(AgentDaemon.Request(op: .stop, agent: agent))
     }
 
+    @Test func lettingThemGetOnWithItAnswersForYou() async throws {
+        let (store, root) = try Self.scratch()
+        // The default, and what every agent was launched with before ACP.
+        #expect(store.throttle().permissions == .allowEverything)
+        let floor = Self.floor(store, mode: "permission")
+        let agent = UUID()
+        #expect(await Self.start(floor, agent: agent, cwd: root, words: "make a note").ok)
+        // It asked, the daemon said yes, and nothing ever reached the floor as a question.
+        await Self.until("it to carry on") {
+            ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store)).entries
+                .contains { $0.text?.contains("picked:allow_once") == true }
+        }
+        #expect(floor.everything().first?.waiting == nil)
+        _ = await floor.handle(AgentDaemon.Request(op: .stop, agent: agent))
+    }
+
+    @Test func askingAboutChangesLetsAReadThroughAndStopsAnEdit() async throws {
+        let (store, root) = try Self.scratch()
+        var throttle = store.throttle()
+        throttle.permissions = .askAboutChanges
+        try store.save(throttle)
+        let floor = Self.floor(store, mode: "permission")
+        let agent = UUID()
+        #expect(await Self.start(floor, agent: agent, cwd: root, words: "make a note").ok)
+        // The stub asks about an edit, which changes something, so this one has to stop.
+        await Self.until("the question") { floor.everything().first?.waiting != nil }
+        #expect(floor.everything().first?.waiting?.kind == "edit")
+        _ = await floor.handle(AgentDaemon.Request(op: .stop, agent: agent))
+    }
+
     @Test func aBlockedAgentIsReportedAsWaitingAndFreedByAnAnswer() async throws {
         do {
             let (store, root) = try Self.scratch()
+            try Self.asks(store)
             let floor = Self.floor(store, mode: "permission")
             let agent = UUID()
             #expect(await Self.start(floor, agent: agent, cwd: root, words: "make a note").ok)
@@ -124,6 +162,7 @@ struct AgentFloorTests {
     @Test func answeringAQuestionItHasMovedOnFromIsRefused() async throws {
         do {
             let (store, root) = try Self.scratch()
+            try Self.asks(store)
             let floor = Self.floor(store, mode: "permission")
             let agent = UUID()
             #expect(await Self.start(floor, agent: agent, cwd: root).ok)

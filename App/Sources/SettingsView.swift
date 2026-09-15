@@ -63,6 +63,29 @@ struct SettingsView: View {
                 }
             }
 
+            // How much an agent may do without stopping to ask. Before ACP every agent was
+            // launched with its own auto-approve flag, because there was nobody on the
+            // other end to ask. The flags are gone and this replaced them, so the default
+            // is the behaviour that was already there. (T373.)
+            Section("Asking") {
+                Picker("Agents", selection: Binding(
+                    get: { model.throttle.permissions },
+                    set: { picked in model.setThrottle { $0.permissions = picked } })) {
+                    ForEach(Throttle.Permissions.allCases) { stance in
+                        Text(stance.title).tag(stance)
+                    }
+                }
+                Text(model.throttle.permissions.detail)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if model.throttle.permissions != .allowEverything {
+                    Text("A question stops the agent until it is answered, so one raised while you are away is an agent doing nothing. The factory takes the recommendation after ten minutes and says so.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             // The daemon that holds the ACP agents. It is the reason an agent survives a
             // rebuild, so what it is holding is worth being able to see. (T373.)
             Section("Agents that speak ACP") {

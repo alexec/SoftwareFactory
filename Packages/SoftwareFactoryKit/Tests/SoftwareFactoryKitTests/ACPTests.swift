@@ -313,3 +313,55 @@ struct AgentProfileTests {
         }
     }
 }
+
+/// How much an agent may do without asking. Before ACP every agent was launched with its
+/// own auto-approve flag, because there was nobody to ask; this is what replaced them.
+struct PermissionStanceTests {
+    @Test func theDefaultIsWhatTheFactoryAlreadyDid() {
+        #expect(Throttle.default.permissions == .allowEverything)
+        #expect(Throttle().permissions == .allowEverything)
+    }
+
+    @Test func aThrottleWrittenBeforeThisKeepsGettingOnWithIt() throws {
+        // An older throttle.json has no permissions field, and must not suddenly start
+        // asking about everything.
+        let old = Data(#"{"compileSlots":3,"simulatorSlots":2,"agentSlots":6,"swapCeiling":0.5,"memoryFloor":0.2}"#.utf8)
+        let read = try JSONDecoder().decode(Throttle.self, from: old)
+        #expect(read.permissions == .allowEverything)
+        #expect(read.agentSlots == 6, "And it keeps everything it did say.")
+    }
+
+    @Test func lettingThemGetOnWithItAllowsTheLot() {
+        for kind in [ACP.ToolCall.Kind.read, .edit, .delete, .execute, .other] {
+            #expect(Throttle.Permissions.allowEverything.allows(kind))
+        }
+        #expect(Throttle.Permissions.allowEverything.allows(nil))
+    }
+
+    @Test func askingAboutEverythingAllowsNothing() {
+        for kind in [ACP.ToolCall.Kind.read, .search, .edit, .execute] {
+            #expect(Throttle.Permissions.askAboutEverything.allows(kind) == false)
+        }
+    }
+
+    @Test func askingAboutChangesLetsLookingThrough() {
+        let stance = Throttle.Permissions.askAboutChanges
+        #expect(stance.allows(.read))
+        #expect(stance.allows(.search))
+        #expect(stance.allows(.fetch))
+        #expect(stance.allows(.edit) == false)
+        #expect(stance.allows(.delete) == false)
+        #expect(stance.allows(.execute) == false)
+        // Grok says nothing about what kind of call it is, and an unknown call is
+        // treated as one that changes something.
+        #expect(stance.allows(nil) == false)
+        #expect(stance.allows(.other) == false)
+    }
+
+    @Test func everyStanceSaysWhatItMeans() {
+        for stance in Throttle.Permissions.allCases {
+            #expect(!stance.title.isEmpty)
+            #expect(!stance.detail.isEmpty)
+        }
+    }
+}

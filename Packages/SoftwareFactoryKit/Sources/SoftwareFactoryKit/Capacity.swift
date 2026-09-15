@@ -47,14 +47,18 @@ public struct Throttle: Codable, Sendable, Equatable {
     public var swapCeiling: Double
     /// Memory free below this fraction and nothing new starts.
     public var memoryFloor: Double
+    /// How much an agent may do without asking. (T373.)
+    public var permissions: Permissions
 
     public init(compileSlots: Int = 5, simulatorSlots: Int = 4, agentSlots: Int = 8,
-                swapCeiling: Double = 0.75, memoryFloor: Double = 0.15) {
+                swapCeiling: Double = 0.75, memoryFloor: Double = 0.15,
+                permissions: Permissions = .allowEverything) {
         self.compileSlots = compileSlots
         self.simulatorSlots = simulatorSlots
         self.agentSlots = agentSlots
         self.swapCeiling = swapCeiling
         self.memoryFloor = memoryFloor
+        self.permissions = permissions
     }
 
     /// A throttle written before a limit existed keeps everything else it said, and takes
@@ -67,6 +71,56 @@ public struct Throttle: Codable, Sendable, Equatable {
         agentSlots = try c.decodeIfPresent(Int.self, forKey: .agentSlots) ?? fallback.agentSlots
         swapCeiling = try c.decodeIfPresent(Double.self, forKey: .swapCeiling) ?? fallback.swapCeiling
         memoryFloor = try c.decodeIfPresent(Double.self, forKey: .memoryFloor) ?? fallback.memoryFloor
+        permissions = try c.decodeIfPresent(Permissions.self, forKey: .permissions) ?? fallback.permissions
+    }
+
+    /// What an agent may do without stopping to ask.
+    ///
+    /// Under ACP the agent asks its client before it acts, and the client is this factory.
+    /// Before ACP every agent was launched with its own auto-approve flag, because there
+    /// was nobody on the other end to ask; the flags are gone and this is what replaced
+    /// them, so the default is the behaviour that was already there. Nothing gets slower
+    /// on the day this lands. (T373.)
+    public enum Permissions: String, Codable, Sendable, Equatable, CaseIterable, Identifiable {
+        /// Say yes to everything, at once, and raise no question. What every agent was
+        /// launched with before ACP.
+        case allowEverything
+        /// Reading and searching go through; editing, deleting, moving and running ask.
+        case askAboutChanges
+        /// Ask about all of it.
+        case askAboutEverything
+
+        public var id: String { rawValue }
+
+        public var title: String {
+            switch self {
+            case .allowEverything: "Let them get on with it"
+            case .askAboutChanges: "Ask before changing anything"
+            case .askAboutEverything: "Ask about everything"
+            }
+        }
+
+        public var detail: String {
+            switch self {
+            case .allowEverything:
+                "Agents do what they need to and never stop to ask. This is how the factory worked before it spoke ACP."
+            case .askAboutChanges:
+                "Reading and searching go through. Editing a file, deleting one, or running a command becomes a question on the floor."
+            case .askAboutEverything:
+                "Every tool an agent reaches for becomes a question. Thorough, and a lot of questions."
+            }
+        }
+
+        /// Whether this call may go through without asking. An agent that does not say
+        /// what kind of thing it is running is treated as though it changes something,
+        /// which is Grok, whose tool calls carry a name and no kind.
+        public func allows(_ kind: ACP.ToolCall.Kind?) -> Bool {
+            switch self {
+            case .allowEverything: true
+            case .askAboutEverything: false
+            case .askAboutChanges: !(kind ?? .other).changesAnything
+            }
+        }
     }
 
     public static let `default` = Throttle()

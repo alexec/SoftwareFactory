@@ -542,13 +542,29 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     nothing is answering, asks what it is holding on a clock of its own, and folds
     transcripts off disk for the pages that are open and no others. Every call to it goes
     off the main thread, for the reason tmux taught us.
-    The page is turns, tool calls with a state each, diffs drawn as diffs with their
-    counts, and the plan as a row of chips that tick themselves off. Thinking is folded
+    The page is turns, tool calls and the plan as a row of chips that tick themselves off.
+    A tool call is one line: a mark saying how it went, what it is, and the file it touched
+    with its counts on the same line, opening to the diff. It was a card each with the file
+    on a second line inside, and an agent makes dozens in a turn, so the page became a
+    column of boxes with a sentence of the agent's own every so often and the thing you
+    came to read was the smallest part of it. A tool call is a line in a log, not a
+    document, so the list is tight and what the agent says gets the space instead.
+    (Alex, 16 Sep 2026.) Thinking is folded
     away behind a button, because it is nine tenths of the words and a tenth of the
     interest. The field at the bottom is `session/prompt` and goes straight to the agent
     rather than through the mailbox: this is a person typing on the agent's own page,
     which is what the terminal was, and the terminal never queued. The mailbox and its cap
     of three are for messages from other agents. (T373.)
+  - `Throttle.permissions`, on the Asking section of Settings: how much an agent may do
+    without stopping to ask. Before ACP every agent was launched with its own auto-approve
+    flag, because there was nobody on the other end to ask. The flags are gone and this is
+    what replaced them, so **the default is `allowEverything`**, which is the behaviour
+    that was already there: nothing gets slower on the day this lands. `askAboutChanges`
+    lets reading and searching through and stops an edit, a delete or a command;
+    `askAboutEverything` stops the lot. The daemon reads it fresh on every request, so a
+    change takes effect on the next question rather than the next restart. A call whose
+    kind the agent did not say is treated as one that changes something, which is every
+    call Grok makes. (T373.)
   - A permission request becomes an `Escalation`, and `AppModel.syncPermissions` is one
     funnel in both directions rather than a route per way of answering: the agent's page,
     the Needs you strip, a banner, the phone and the Lock Screen all land in the store,

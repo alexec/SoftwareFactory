@@ -141,7 +141,15 @@ public final class AgentFloor: @unchecked Sendable {
             }
         }
         connection.onPermission = { [weak self] id, ask in
-            self?.change(agent) {
+            guard let self else { return }
+            // Read fresh each time, so changing it in Settings takes effect on the next
+            // question rather than on the next restart of the daemon.
+            let stance = self.store.throttle().permissions
+            if stance.allows(ask.toolCall.kind), let yes = ask.recommended {
+                connection.answerPermission(id: id, with: ACP.permissionAnswer(optionID: yes.optionID))
+                return
+            }
+            self.change(agent) {
                 $0.waiting = AgentDaemon.Pending(
                     requestID: id, title: ask.toolCall.heading,
                     kind: ask.toolCall.kind?.rawValue, options: ask.options)

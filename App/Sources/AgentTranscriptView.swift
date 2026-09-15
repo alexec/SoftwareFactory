@@ -38,9 +38,14 @@ struct AgentTranscriptView: View {
     private var page: some View {
         ScrollViewReader { scroller in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
+                // Tight, because a turn is mostly tool calls and they are lines in a log.
+                // What the agent actually says gets its own space instead, which is the
+                // thing you came to read. (Alex, 16 Sep 2026.)
+                LazyVStack(alignment: .leading, spacing: 5) {
                     ForEach(shown) { entry in
-                        Entry(entry: entry).id(entry.id)
+                        Entry(entry: entry)
+                            .padding(.vertical, entry.tool == nil ? 6 : 0)
+                            .id(entry.id)
                     }
                     if running?.isPrompting == true {
                         Working(queued: running?.queued ?? 0).id(Self.bottom)
@@ -182,9 +187,13 @@ struct AgentTranscriptView: View {
         }
     }
 
-    /// One tool call: what it is, whether it is done, and what it changed. A diff is
-    /// drawn as a diff, which is the thing a terminal could only ever show you as text
-    /// somebody else had already coloured in.
+    /// One tool call, on one line: a mark saying how it went, what it is, and what it
+    /// touched. Opens to show the diff.
+    ///
+    /// It was a card each, with the file on a second line inside it. An agent makes
+    /// dozens of these in a turn, so the page became a column of boxes with a sentence
+    /// of the agent's own every so often, and the thing you came to read was the smallest
+    /// part of it. A tool call is a line in a log, not a document. (Alex, 16 Sep 2026.)
     private struct ToolRow: View {
         var call: ACP.ToolCall
         @State private var open = false
@@ -194,76 +203,82 @@ struct AgentTranscriptView: View {
         }
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
                     mark
+                        .font(.caption2)
+                        .frame(width: 12)
                     Text(call.heading)
-                        .font(.callout.weight(.medium))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Spacer(minLength: 4)
-                    if !diffs.isEmpty {
-                        Button {
-                            withAnimation(.snappy) { open.toggle() }
-                        } label: {
-                            Image(systemName: open ? "chevron.down" : "chevron.right")
-                                .font(.caption)
-                        }
-                        .buttonStyle(.borderless)
+                    touched
+                    Spacer(minLength: 0)
+                }
+                .contentShape(.rect)
+                .onTapGesture { if !diffs.isEmpty { withAnimation(.snappy) { open.toggle() } } }
+                if open {
+                    ForEach(Array(diffs.enumerated()), id: \.offset) { _, diff in
+                        DiffBody(diff: diff)
                     }
                 }
-                ForEach(Array(diffs.enumerated()), id: \.offset) { _, diff in
-                    DiffRow(diff: diff, open: open)
-                }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(.quinary, in: .rect(cornerRadius: Style.panel))
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        /// What it touched, on the same line: the file and how much of it changed. A
+        /// second line for this is what made these rows into cards.
+        @ViewBuilder
+        private var touched: some View {
+            if let first = diffs.first {
+                HStack(spacing: 4) {
+                    Text(first.fileName)
+                        .font(.caption.monospaced())
+                    Text("+\(first.counts.added)")
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.green)
+                    if first.counts.removed > 0 {
+                        Text("-\(first.counts.removed)")
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.red)
+                    }
+                    if diffs.count > 1 {
+                        Text("and \(diffs.count - 1) more")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    Image(systemName: open ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.tertiary)
+                }
+                .foregroundStyle(.secondary)
+            }
         }
 
         @ViewBuilder
         private var mark: some View {
             switch call.status {
-            case .completed: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-            case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
-            default:
-                ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 16, height: 16)
+            case .completed: Image(systemName: "checkmark").foregroundStyle(.green)
+            case .failed: Image(systemName: "xmark").foregroundStyle(.red)
+            default: ProgressView().controlSize(.mini).scaleEffect(0.6)
             }
         }
     }
 
-    private struct DiffRow: View {
+    private struct DiffBody: View {
         var diff: ACP.Diff
-        var open: Bool
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Image(systemName: "doc.text")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(diff.fileName)
-                        .font(.caption.monospaced())
-                    Text("+\(diff.counts.added)")
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.green)
-                    if diff.counts.removed > 0 {
-                        Text("-\(diff.counts.removed)")
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.red)
-                    }
-                }
-                if open {
-                    ScrollView(.horizontal) {
-                        Text(diff.newText)
-                            .font(.caption.monospaced())
-                            .textSelection(.enabled)
-                            .padding(8)
-                    }
-                    .frame(maxHeight: 220)
-                    .background(.quaternary, in: .rect(cornerRadius: 8))
-                }
+            ScrollView(.horizontal) {
+                Text(diff.newText)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                    .padding(8)
             }
+            .frame(maxHeight: 220)
+            .background(.quinary, in: .rect(cornerRadius: 8))
+            .padding(.leading, 18)
         }
     }
 
