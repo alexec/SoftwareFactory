@@ -55,4 +55,16 @@ public enum LaunchPrompt {
     /// down as a message and typed into its terminal. (T171, 13 Sep 2026.)
     public static let nudge =
         "There is work waiting. Look at the backlog and take the next task nobody is on."
+
+    /// What the factory asks an agent that has not said how its work is going for an
+    /// hour. It goes in as a message like any other, so it is typed into the terminal
+    /// and the agent answers by filing its status report. (T262.)
+    public static func statusReport(on project: Project) -> String {
+        "Please provide a status report on your recent work on project \"\(project.name)\"."
+            + " File it with artifact_add, kind \"status report\": it replaces the one you"
+            + " filed before, so there is only ever the current one."
+    }
+
+    /// The subject the ask goes under, and what the person sees in the Messages panel.
+    public static let statusReportSubject = "Status report"
 }

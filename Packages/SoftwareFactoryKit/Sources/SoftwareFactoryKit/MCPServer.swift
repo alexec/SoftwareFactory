@@ -205,7 +205,10 @@ public struct MCPServer: Sendable {
         (escalation_raise) with two or more \
         options and your recommendation, then wait for the answer (escalation_await). Put a document \
         on the project (artifact_add) when they should read it here; a link on the question is filed \
-        as an artifact too. If a task is \
+        as an artifact too. Say how your work is going: file a status report (artifact_add with kind \
+        "status report") saying what you have done, what you are on and what is in your way. You keep \
+        one, and filing another replaces it, so it is always the current picture rather than a log. \
+        The factory asks you for one when an hour has gone by without it. If a task is \
         blocked (waiting on a decision, another task, or a person), mark it (task_block) and pick up \
         the next one (task_next); the factory unblocks it when the wait is over. Before using \
         anything shared (a phone, a simulator, the browser, the whole Mac) lease it (resource_lease) and \
@@ -395,14 +398,20 @@ public struct MCPServer: Sendable {
                  properties: ["project": str("Project name; omit for all")], required: [], kind: .query),
 
             // Documents
-            Tool(name: "artifact_add", description: "Put a document on a project for the person to read. The same title or the same link as one already there returns that one. Twenty live artifacts is the cap for a project.",
+            Tool(name: "artifact_add", description: "Put a document on a project for the person to read. The same title or the same link as one already there returns that one, unless you ask to replace it. Twenty live documents is the cap for a project; status reports do not count.",
                  properties: ["project": str("Project name"), "title": str("The document, in one line"),
                               "body": str("The document itself, markdown"),
+                              "kind": ["type": "string", "enum": ["note", "status report"],
+                                       "description": "What kind of document. A note is the default: a brief, a plan, a finding. A status report is the one document you keep about your own work, and filing another replaces it."],
                               "link": str("Optional http or https URL this document is"),
+                              "replace": ["type": "boolean", "description": "Write this over the document already there rather than returning it. A status report always replaces yours, whether you ask or not."],
                               "task_id": str("The task that produced it, if any")],
                  required: ["project", "title"], idempotentHint: true),
-            Tool(name: "artifact_list", description: "A project's documents: titles, who added them, when. Use artifact_read for the body.",
-                 properties: ["project": str("Project name")], required: ["project"], kind: .query),
+            Tool(name: "artifact_list", description: "A project's documents: titles, their kind, who added them, when. Use artifact_read for the body.",
+                 properties: ["project": str("Project name"),
+                              "kind": ["type": "string", "enum": ["note", "status report"],
+                                       "description": "Only documents of this kind; omit for all"]],
+                 required: ["project"], kind: .query),
             Tool(name: "artifact_read", description: "One document in full: its title, body, and link if it has one.",
                  properties: ["artifact_id": str("From artifact_add or artifact_list")],
                  required: ["artifact_id"], kind: .query),
@@ -858,7 +867,7 @@ public struct MCPServer: Sendable {
                         projectID: project.id, title: "", body: "", link: link,
                         taskID: task?.id, agentID: agent?.id, addedBy: agent?.label ?? "agent",
                         in: snap.artifacts, at: now())
-                    if result.created { try store.save(result.artifact) }
+                    if result.outcome != .alreadyThere { try store.save(result.artifact) }
                     artifactID = result.artifact.id
                 } catch Artifacts.AddError.atCap {
                     artifactID = nil
@@ -914,11 +923,17 @@ public struct MCPServer: Sendable {
             let agent = try? self.agent(args, in: snap)
             var task: FactoryTask?
             if let ref = args["task_id"] as? String, !ref.isEmpty { task = try self.task(args, in: snap) }
-            let result: (artifact: Artifact, created: Bool)
+            let kind = try artifactKind(args["kind"]) ?? .note
+            if kind == .statusReport, agent == nil {
+                throw ToolError(message: "A status report is one agent's own, so the factory has to know whose it is. Pass your session_id.")
+            }
+            let result: (artifact: Artifact, outcome: Artifacts.Outcome)
             do {
                 result = try Artifacts.add(
                     projectID: project.id, title: try string("title", args),
-                    body: args["body"] as? String ?? "", link: args["link"] as? String ?? "",
+                    body: args["body"] as? String ?? "", kind: kind,
+                    link: args["link"] as? String ?? "",
+                    replace: args["replace"] as? Bool ?? false,
                     taskID: task?.id, agentID: agent?.id, addedBy: agent?.label ?? "agent",
                     in: snap.artifacts, at: now())
             } catch Artifacts.AddError.emptyTitle {
@@ -930,19 +945,27 @@ public struct MCPServer: Sendable {
             } catch Artifacts.AddError.badLink {
                 throw ToolError(message: "link must be an http or https URL")
             }
-            if result.created { try store.save(result.artifact) }
-            let verb = result.created ? "Added" : "Already there"
+            if result.outcome != .alreadyThere { try store.save(result.artifact) }
+            let verb: String
+            switch result.outcome {
+            case .created: verb = "Added"
+            case .replaced: verb = "Replaced"
+            case .alreadyThere: verb = "Already there, and left as it was. Pass replace to write over it"
+            }
             return "\(verb). artifact_id: \(result.artifact.id.uuidString). \(result.artifact.title)"
 
         case "artifact_list":
             let project = try resolveProject(try string("project", args), in: snap, create: false)
-            let listed = Artifacts.live(for: project.id, in: snap.artifacts)
+            let wanted = try artifactKind(args["kind"])
+            var listed = Artifacts.live(for: project.id, in: snap.artifacts)
+            if let wanted { listed = listed.filter { $0.kind == wanted } }
             if listed.isEmpty { return "No artifacts on \(project.name)." }
             return listed.map { a in
                 let task = a.taskID.flatMap { id in snap.tasks.first { $0.id == id } }
                     .map { "  task: \($0.label ?? $0.title)" } ?? ""
                 let link = a.link.isEmpty ? "" : "  link: \(a.link)"
-                return "\(a.id.uuidString)  \(a.title)  \(a.addedBy)\(task)\(link)"
+                let kind = a.kind == .note ? "" : "  [\(a.kind.title.lowercased())]"
+                return "\(a.id.uuidString)  \(a.title)\(kind)  \(a.addedBy)\(task)\(link)"
             }.joined(separator: "\n")
 
         case "artifact_read":
@@ -952,6 +975,7 @@ public struct MCPServer: Sendable {
                 "artifact_id: \(artifact.id.uuidString)",
                 "title: \(artifact.title)",
                 "project: \(project)",
+                "kind: \(artifact.kind.title.lowercased())",
                 "added by \(artifact.addedBy)",
             ]
             if let task = artifact.taskID.flatMap({ id in snap.tasks.first { $0.id == id } }) {
@@ -1167,6 +1191,20 @@ public struct MCPServer: Sendable {
             throw ToolError(message: "Unknown artifact_id: \(ref).")
         }
         return artifact
+    }
+
+    /// The kind of document asked for, if any. Written the way a person would say it,
+    /// "status report", and read the way a machine wrote it, "statusReport": an agent
+    /// reading the tool's enum and an agent copying the phrase from a message both get
+    /// the same answer.
+    func artifactKind(_ raw: Any?) throws -> Artifact.Kind? {
+        guard let raw = raw as? String else { return nil }
+        let folded = raw.lowercased().filter { !$0.isWhitespace && $0 != "-" && $0 != "_" }
+        guard !folded.isEmpty else { return nil }
+        for kind in Artifact.Kind.allCases where kind.rawValue.lowercased() == folded {
+            return kind
+        }
+        throw ToolError(message: "kind is \"note\" or \"status report\".")
     }
 
     /// A project by name (case does not matter) or id. An old caller may still send a

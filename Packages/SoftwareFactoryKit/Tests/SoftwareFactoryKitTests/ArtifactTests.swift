@@ -6,21 +6,21 @@ import Testing
     @Test func addIsIdempotentOnTitleAndOnLink() throws {
         let project = "/p"
         let first = try Artifacts.add(projectID: project, title: "Login", body: "A brief.", in: [])
-        #expect(first.created)
+        #expect(first.outcome == .created)
         let again = try Artifacts.add(
             projectID: project, title: "login", body: "A different body.", in: [first.artifact])
-        #expect(!again.created)
+        #expect(again.outcome == .alreadyThere)
         #expect(again.artifact.id == first.artifact.id)
         #expect(again.artifact.body == "A brief.")
 
         let fromLink = try Artifacts.add(
             projectID: project, title: "", link: "https://example.com/weather.md", in: [first.artifact])
-        #expect(fromLink.created)
+        #expect(fromLink.outcome == .created)
         #expect(fromLink.artifact.title == "example.com/weather.md")
         let sameLink = try Artifacts.add(
             projectID: project, title: "Weather", link: "https://example.com/weather.md",
             in: [first.artifact, fromLink.artifact])
-        #expect(!sameLink.created)
+        #expect(sameLink.outcome == .alreadyThere)
         #expect(sameLink.artifact.id == fromLink.artifact.id)
     }
 
@@ -28,18 +28,18 @@ import Testing
         var live: [Artifact] = []
         for n in 1...Artifacts.cap {
             let result = try Artifacts.add(projectID: "/p", title: "Doc \(n)", in: live)
-            #expect(result.created)
+            #expect(result.outcome == .created)
             live.append(result.artifact)
         }
         #expect(throws: Artifacts.AddError.atCap) {
             try Artifacts.add(projectID: "/p", title: "One more", in: live)
         }
         let again = try Artifacts.add(projectID: "/p", title: "Doc 1", in: live)
-        #expect(!again.created)
+        #expect(again.outcome == .alreadyThere)
         #expect(live.count == Artifacts.cap)
 
         let other = try Artifacts.add(projectID: "/q", title: "Doc 1", in: live)
-        #expect(other.created)
+        #expect(other.outcome == .created)
     }
 
     @Test func aRemovedArtifactFreesTheTitleAndDoesNotCount() throws {
@@ -48,7 +48,7 @@ import Testing
         #expect(gone.removed != nil)
         #expect(Artifacts.live(for: "/p", in: [gone]).isEmpty)
         let next = try Artifacts.add(projectID: "/p", title: "Login", body: "v2", in: [gone])
-        #expect(next.created)
+        #expect(next.outcome == .created)
         #expect(next.artifact.id != added.artifact.id)
         #expect(next.artifact.body == "v2")
     }
@@ -82,6 +82,83 @@ import Testing
         let theirs = try Artifacts.add(
             projectID: "/p", title: "Theirs", agentID: b, addedBy: "A2", in: [mine]).artifact
         #expect(Artifacts.produced(by: a, in: [mine, theirs]).map(\.id) == [mine.id])
+    }
+
+    @Test func aStatusReportReplacesTheOneThatAgentAlreadyFiled() throws {
+        let agent = UUID()
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        let first = try Artifacts.add(
+            projectID: "/p", title: "Where I am", body: "Reading the backlog.",
+            kind: .statusReport, agentID: agent, addedBy: "A1", in: [], at: start)
+        #expect(first.outcome == .created)
+        #expect(first.artifact.kind == .statusReport)
+
+        // A different title, and no replace asked for: it is still the same report,
+        // because an agent has one.
+        let second = try Artifacts.add(
+            projectID: "/p", title: "Half way", body: "T262 is written, tests next.",
+            kind: .statusReport, agentID: agent, addedBy: "A1",
+            in: [first.artifact], at: start + 60)
+        #expect(second.outcome == .replaced)
+        #expect(second.artifact.id == first.artifact.id)
+        #expect(second.artifact.title == "Half way")
+        #expect(second.artifact.body == "T262 is written, tests next.")
+        #expect(second.artifact.updated == start + 60)
+        #expect(Artifacts.statusReports(for: "/p", in: [second.artifact]).count == 1)
+    }
+
+    @Test func anotherAgentsReportIsItsOwn() throws {
+        let a = UUID()
+        let b = UUID()
+        let mine = try Artifacts.add(
+            projectID: "/p", title: "Status", kind: .statusReport, agentID: a, addedBy: "A1",
+            in: []).artifact
+        let theirs = try Artifacts.add(
+            projectID: "/p", title: "Status", kind: .statusReport, agentID: b, addedBy: "A2",
+            in: [mine])
+        #expect(theirs.outcome == .created)
+        #expect(theirs.artifact.id != mine.id)
+        #expect(Artifacts.statusReport(by: a, on: "/p", in: [mine, theirs.artifact])?.id == mine.id)
+    }
+
+    @Test func replaceWritesOverANoteAndWithoutItTheOldOneStands() throws {
+        let first = try Artifacts.add(projectID: "/p", title: "Plan", body: "v1", in: [])
+        let left = try Artifacts.add(
+            projectID: "/p", title: "Plan", body: "v2", in: [first.artifact])
+        #expect(left.outcome == .alreadyThere)
+        #expect(left.artifact.body == "v1")
+
+        let over = try Artifacts.add(
+            projectID: "/p", title: "Plan", body: "v2", replace: true, in: [first.artifact])
+        #expect(over.outcome == .replaced)
+        #expect(over.artifact.id == first.artifact.id)
+        #expect(over.artifact.body == "v2")
+    }
+
+    @Test func statusReportsDoNotCountTowardTheCap() throws {
+        var live: [Artifact] = []
+        for n in 1...Artifacts.cap {
+            live.append(try Artifacts.add(projectID: "/p", title: "Doc \(n)", in: live).artifact)
+        }
+        #expect(throws: Artifacts.AddError.atCap) {
+            try Artifacts.add(projectID: "/p", title: "One more", in: live)
+        }
+        let report = try Artifacts.add(
+            projectID: "/p", title: "Status", kind: .statusReport, agentID: UUID(), addedBy: "A1",
+            in: live)
+        #expect(report.outcome == .created)
+    }
+
+    @Test func anAgentsPageShowsItsReportFirstHoweverOldTheRecordIs() throws {
+        let agent = UUID()
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        let report = try Artifacts.add(
+            projectID: "/p", title: "Status", kind: .statusReport, agentID: agent, addedBy: "A1",
+            in: [], at: start).artifact
+        let note = try Artifacts.add(
+            projectID: "/p", title: "A plan", agentID: agent, addedBy: "A1",
+            in: [report], at: start + 3600).artifact
+        #expect(Artifacts.produced(by: agent, in: [report, note]).map(\.id) == [report.id, note.id])
     }
 
     @Test func titleFromALinkDropsWwwAndKeepsThePath() {

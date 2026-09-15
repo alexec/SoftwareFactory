@@ -74,9 +74,18 @@ before you mark the task done. Build the phone too when the change is in it.
     the Messages panel. Alex, 14 Sep 2026),
     `Escalation` (options, one recommended; optional `link` to a document to review,
     filed as an artifact; optional `artifactID`; `decide(_:by:)` records a `Decision`),
-    `Artifact` (a document on a project: title, body, optional link; twenty live ones
-    is the cap, `Artifacts.cap`; adding the same title or the same link returns the one
-    already there),
+    `Artifact` (a document on a project: title, body, optional link, and a `kind`.
+    A note is the ordinary thing: a brief, a plan, a finding, matched on its title or its
+    link, and twenty live ones is the cap (`Artifacts.cap`). Adding the same one again
+    returns the one already there unless `replace` is passed. A status report is the one
+    document an agent keeps about its own work: matched on the agent whatever it is
+    called, always written over rather than added to, and outside the twenty, because
+    there is only ever one per agent and a busy floor's reports would otherwise crowd out
+    the project's own documents. `Artifacts.add` answers `created`, `replaced` or
+    `alreadyThere`. The factory asks an agent for one when an hour has gone by without
+    it: `Sweep.statusReportsWanted` writes the message, `Agent.statusAskedAt` is how it
+    knows not to ask twice, and a message still waiting in the mailbox stops it too,
+    because asking again for something nobody has read is noise. T262, Alex, 15 Sep 2026),
     `Resource` (slots, maxLease), `Lease` (one slot, one agent, until; `isActive(now:)`).
   - `FileStore`: one JSON file per record under `projects/`, `tasks/`, `escalations/`,
     `artifacts/`, `agents/`, `messages/`, `resources/`, `leases/`; atomic writes; unreadable files skipped. Tasks
@@ -122,9 +131,13 @@ before you mark the task done. Build the phone too when the change is in it.
     `--continue`, the newest chat in that folder, which is that agent's because a
     terminal holds one agent. (T206)
   - `Escalations.visible`: open questions in full, the newest three answered ones.
-  - `Artifacts`: live (not removed) documents on a project, newest first; `produced(by:)`
-    those one agent filed. Twenty is the cap; adding the same title or the same link
-    returns the one already there.
+  - `Artifacts`: live (not removed) documents on a project, newest first; `notes` and
+    `statusReports` split them by kind, and `statusReport(by:on:)` is the one an agent
+    keeps. `produced(by:)` is what one agent filed, its report first: a report keeps the
+    date it was first filed however many times it is written over, so ordering everything
+    by `added` would sink it further down its own page the longer it worked. Twenty is
+    the cap on notes; adding the same title or the same link returns the one already
+    there unless you replace it.
   - Two kinds of agent, and `Agent.isEmbedded` (it has a `session`) is the question.
     An embedded one the factory wrote down, named and started in a terminal it owns: its
     page shows it working, you can type to it, the factory can stop it, and tmux keeps it
@@ -168,6 +181,11 @@ before you mark the task done. Build the phone too when the change is in it.
     replaced an hour of silence, which was a guess: an agent thinking is silent too.
   - `Sweep.unblocked`: a task blocked on a decision now made, or a task now done, goes
     back to the backlog with a line saying so. A block on a person clears by hand.
+  - `Sweep.statusReportsWanted`: an agent at work is silent, and silence reads the same
+    whether the work is going well or the agent is lost. So once an hour the factory asks
+    the ones that have not said, with a message like any other. Nothing is asked of an
+    agent in its first hour, one that filed or was asked within the hour, or one with mail
+    still waiting. (T262.)
   - `Records.version` on every record; a decoder reads an older shape without it.
   - `Capacity`: `MachineReading` (`sample()` on macOS reads memory, swap, load, compiles,
     simulators through sysctl and Mach), `Throttle` (one file, `throttle.json`), the

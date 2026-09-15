@@ -561,6 +561,60 @@ private final class ResultBox: @unchecked Sendable {
         #expect((unknown["error"] as? [String: Any])?["code"] as? Int == -32601)
     }
 
+    /// An agent has one status report and files it again to replace it, whatever it is
+    /// called; a note is left alone unless replace is asked for. (T262.)
+    @Test func aStatusReportReplacesItselfAndReplaceWritesOverANote() throws {
+        let s = try server()
+        _ = call(s, "project_add", ["name": "Packed"])
+        let a = try startAgent(s, project: "Packed").label
+        let first = call(s, "artifact_add", [
+            "agent_id": a, "project": "Packed", "title": "Where I am",
+            "body": "Reading the backlog.", "kind": "status report",
+        ])
+        #expect(first.text.hasPrefix("Added"))
+        let reportID = id(after: "artifact_id:", in: first.text)
+
+        let second = call(s, "artifact_add", [
+            "agent_id": a, "project": "Packed", "title": "Half way",
+            "body": "T262 written, tests next.", "kind": "status report",
+        ])
+        #expect(second.text.hasPrefix("Replaced"))
+        #expect(id(after: "artifact_id:", in: second.text) == reportID)
+        #expect(try s.store.load().artifacts.count == 1)
+        let read = call(s, "artifact_read", ["agent_id": a, "artifact_id": reportID])
+        #expect(read.text.contains("kind: status report"))
+        #expect(read.text.contains("T262 written, tests next."))
+
+        // "statusReport" reads the same as "status report": an agent copying the enum
+        // and an agent copying the phrase both land here.
+        #expect(call(s, "artifact_add", [
+            "agent_id": a, "project": "Packed", "title": "Still going", "kind": "statusReport",
+        ]).text.hasPrefix("Replaced"))
+        #expect(call(s, "artifact_add", [
+            "agent_id": a, "project": "Packed", "title": "Nope", "kind": "memo",
+        ]).isError)
+
+        let note = call(s, "artifact_add", [
+            "agent_id": a, "project": "Packed", "title": "Plan", "body": "v1",
+        ])
+        #expect(note.text.hasPrefix("Added"))
+        let noteID = id(after: "artifact_id:", in: note.text)
+        #expect(call(s, "artifact_add", [
+            "agent_id": a, "project": "Packed", "title": "Plan", "body": "v2",
+        ]).text.hasPrefix("Already there"))
+        #expect(call(s, "artifact_read", ["agent_id": a, "artifact_id": noteID]).text.contains("v1"))
+        #expect(call(s, "artifact_add", [
+            "agent_id": a, "project": "Packed", "title": "Plan", "body": "v2", "replace": true,
+        ]).text.hasPrefix("Replaced"))
+        #expect(call(s, "artifact_read", ["agent_id": a, "artifact_id": noteID]).text.contains("v2"))
+
+        let reports = call(s, "artifact_list", [
+            "agent_id": a, "project": "Packed", "kind": "status report",
+        ])
+        #expect(reports.text.contains("Still going"))
+        #expect(!reports.text.contains("Plan"))
+    }
+
     @Test func artifactsAreFiledIdempotentlyAndReadInFull() throws {
         let s = try server()
         _ = call(s, "project_add", ["name": "Packed", "description": "Packing work."])

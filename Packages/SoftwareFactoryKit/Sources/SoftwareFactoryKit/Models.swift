@@ -341,6 +341,10 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
     public var pidStartedAt: Date?
     public var registered: Date
     public var lastSeen: Date
+    /// When the factory last asked this agent for a status report. Kept so it is asked
+    /// once an hour rather than once every two seconds: the message is deleted the moment
+    /// it is typed in, so the mailbox cannot answer "have we already asked". (T262.)
+    public var statusAskedAt: Date?
     /// The quiet and gone timers start only after the MCP session disconnects.
     public var isConnected: Bool
     public var deregistered: Date?
@@ -420,7 +424,7 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
     enum CodingKeys: String, CodingKey {
         case version, id, number, title, bel, projectID, taskID, note, wantsLaunch
         case launchedWith
-        case pid, pidStartedAt, registered, lastSeen, isConnected, deregistered
+        case pid, pidStartedAt, registered, lastSeen, statusAskedAt, isConnected, deregistered
         case about, name
     }
 
@@ -440,6 +444,7 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
         try c.encodeIfPresent(launchedWith, forKey: .launchedWith)
         try c.encode(registered, forKey: .registered)
         try c.encode(lastSeen, forKey: .lastSeen)
+        try c.encodeIfPresent(statusAskedAt, forKey: .statusAskedAt)
         try c.encode(isConnected, forKey: .isConnected)
         try c.encodeIfPresent(deregistered, forKey: .deregistered)
     }
@@ -469,6 +474,9 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
         launchedWith = try c.decodeIfPresent(String.self, forKey: .launchedWith)
         registered = try c.decode(Date.self, forKey: .registered)
         lastSeen = try c.decode(Date.self, forKey: .lastSeen)
+        // Missing on any record written before status reports existed, which reads as
+        // never asked, which is true. No version bump needed.
+        statusAskedAt = try c.decodeIfPresent(Date.self, forKey: .statusAskedAt)
         isConnected = try c.decodeIfPresent(Bool.self, forKey: .isConnected) ?? false
         deregistered = try c.decodeIfPresent(Date.self, forKey: .deregistered)
     }
@@ -725,6 +733,47 @@ public enum Sweep {
             }
         }
         return changes
+    }
+
+    /// Agents that owe the person a word about how it is going, and the message that
+    /// asks each of them for one.
+    ///
+    /// An agent is quiet for long stretches by design, and silence on the floor reads
+    /// the same whether the work is going well or the agent is lost in a rabbit hole.
+    /// So the factory asks: once an hour, and only of an agent that has not said
+    /// anything in that hour. (T262, Alex, 15 Sep 2026.)
+    ///
+    /// Three things stop an ask, and they are all the same thing said three ways: a
+    /// report filed in the last hour, an ask sent in the last hour, and an agent that
+    /// started in the last hour and has not had time to have anything to report. The
+    /// newest of those three is what the hour is measured from. A message already
+    /// waiting stops it too: asking twice for something nobody has read yet is noise.
+    public static func statusReportsWanted(
+        in snapshot: Snapshot, messages: [AgentMessage], now: Date
+    ) -> (agents: [Agent], messages: [AgentMessage]) {
+        var stamped: [Agent] = []
+        var asks: [AgentMessage] = []
+        let waitingFor = Set(Mailbox.waiting(messages).map(\.recipientID))
+        for agent in Agents.onTheFloor(snapshot.agents) {
+            guard let projectID = agent.projectID,
+                  let project = snapshot.projects.first(where: { $0.id == projectID }),
+                  project.removed == nil else { continue }
+            guard !waitingFor.contains(agent.id) else { continue }
+            var since = agent.registered
+            if let asked = agent.statusAskedAt { since = max(since, asked) }
+            if let report = Artifacts.statusReport(by: agent.id, on: projectID, in: snapshot.artifacts) {
+                since = max(since, report.updated)
+            }
+            guard now.timeIntervalSince(since) >= Artifacts.statusReportStandsFor else { continue }
+            var agent = agent
+            agent.statusAskedAt = now
+            stamped.append(agent)
+            asks.append(AgentMessage(
+                recipientID: agent.id, from: "the factory",
+                subject: LaunchPrompt.statusReportSubject,
+                contents: LaunchPrompt.statusReport(on: project), sent: now))
+        }
+        return (stamped, asks)
     }
 }
 

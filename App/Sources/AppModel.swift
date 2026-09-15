@@ -114,11 +114,17 @@ final class AppModel {
         }
         let gone = Sweep.stoppedAgents(in: snapshot, now: .now)
         let unblocked = Sweep.unblocked(in: snapshot, now: .now)
-        if !gone.isEmpty || !unblocked.isEmpty {
+        // An agent working is silent, and silence says nothing about how it is going.
+        // Once an hour the factory asks the ones that have not said. (T262.)
+        let wanted = Sweep.statusReportsWanted(
+            in: snapshot, messages: messagesByAgent.values.flatMap { $0 }, now: .now)
+        if !gone.isEmpty || !unblocked.isEmpty || !wanted.messages.isEmpty {
             do {
                 for a in gone.agents { try store.save(a) }
                 for l in gone.leases { try store.save(l) }
                 for t in unblocked { try store.save(t) }
+                for a in wanted.agents { try store.save(a) }
+                for m in wanted.messages { try store.save(m) }
                 try loadState(from: store)
             } catch {
                 storeError = error.localizedDescription
