@@ -542,14 +542,15 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     nothing is answering, asks what it is holding on a clock of its own, and folds
     transcripts off disk for the pages that are open and no others. Every call to it goes
     off the main thread, for the reason tmux taught us.
-    The page is turns, tool calls and the plan as a row of chips that tick themselves off.
-    A tool call is one line: a mark saying how it went, what it is, and the file it touched
-    with its counts on the same line, opening to the diff. It was a card each with the file
-    on a second line inside, and an agent makes dozens in a turn, so the page became a
-    column of boxes with a sentence of the agent's own every so often and the thing you
-    came to read was the smallest part of it. A tool call is a line in a log, not a
-    document, so the list is tight and what the agent says gets the space instead.
-    (Alex, 16 Sep 2026.) Thinking is folded
+    The page is turns, tool calls with a state each, diffs drawn as diffs with their
+    counts, and the plan as a row of chips that tick themselves off.
+    **Only the most recent tool call of a run is drawn**, `ACPTranscript.page`, and the
+    card says how many went before it. An agent reads four files and searches twice before
+    it writes anything, and a dozen finished cards buried the two things worth reading:
+    what it said, and what it is doing now. Making each one smaller was the wrong fix,
+    because the problem was how many there were rather than how big each was. Thinking is
+    dropped before the grouping rather than after, or a thought between two tool calls
+    splits one run into two. (Alex, 16 Sep 2026.) Thinking is folded
     away behind a button, because it is nine tenths of the words and a tenth of the
     interest. The field at the bottom is `session/prompt` and goes straight to the agent
     rather than through the mailbox: this is a person typing on the agent's own page,

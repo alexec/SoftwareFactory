@@ -38,14 +38,9 @@ struct AgentTranscriptView: View {
     private var page: some View {
         ScrollViewReader { scroller in
             ScrollView {
-                // Tight, because a turn is mostly tool calls and they are lines in a log.
-                // What the agent actually says gets its own space instead, which is the
-                // thing you came to read. (Alex, 16 Sep 2026.)
-                LazyVStack(alignment: .leading, spacing: 5) {
-                    ForEach(shown) { entry in
-                        Entry(entry: entry)
-                            .padding(.vertical, entry.tool == nil ? 6 : 0)
-                            .id(entry.id)
+                LazyVStack(alignment: .leading, spacing: 14) {
+                    ForEach(shown) { row in
+                        Entry(row: row).id(row.id)
                     }
                     if running?.isPrompting == true {
                         Working(queued: running?.queued ?? 0).id(Self.bottom)
@@ -69,12 +64,10 @@ struct AgentTranscriptView: View {
     private static let bottom = -1
 
     /// Thinking is off by default. It is worth having and not worth reading most of the
-    /// time, and an agent's thoughts are nine tenths of the words on this page.
-    private var shown: [ACPTranscript.Entry] {
-        showsThinking ? transcript.entries : transcript.entries.filter {
-            if case .thought = $0.kind { return false }
-            return true
-        }
+    /// time, and an agent's thoughts are nine tenths of the words on this page. Runs of
+    /// tool calls are collapsed to their most recent by `ACPTranscript.page`.
+    private var shown: [ACPTranscript.Shown] {
+        transcript.page(thinking: showsThinking)
     }
 
     private var nothingYet: some View {
@@ -136,14 +129,14 @@ struct AgentTranscriptView: View {
     // MARK: The pieces
 
     private struct Entry: View {
-        var entry: ACPTranscript.Entry
+        var row: ACPTranscript.Shown
 
         var body: some View {
-            switch entry.kind {
+            switch row.entry.kind {
             case .asked(let text): Asked(text: text)
             case .said(let text): Said(text: text)
             case .thought(let text): Thought(text: text)
-            case .tool(let call): ToolRow(call: call)
+            case .tool(let call): ToolRow(call: call, alsoRan: row.alsoRan)
             }
         }
     }
@@ -187,15 +180,18 @@ struct AgentTranscriptView: View {
         }
     }
 
-    /// One tool call, on one line: a mark saying how it went, what it is, and what it
-    /// touched. Opens to show the diff.
+    /// One tool call: what it is, whether it is done, and what it changed. A card, because
+    /// it is a thing that happened rather than a line in a log.
     ///
-    /// It was a card each, with the file on a second line inside it. An agent makes
-    /// dozens of these in a turn, so the page became a column of boxes with a sentence
-    /// of the agent's own every so often, and the thing you came to read was the smallest
-    /// part of it. A tool call is a line in a log, not a document. (Alex, 16 Sep 2026.)
+    /// Only the most recent of a run is drawn, `ACPTranscript.page`, and this says how
+    /// many went before it. An agent reads four files and searches twice before it writes
+    /// anything, and a dozen finished cards buried the two things worth reading: what it
+    /// said, and what it is doing now. (Alex, 16 Sep 2026.)
     private struct ToolRow: View {
         var call: ACP.ToolCall
+        /// "4 steps before this", for a run collapsed into this one. Nil when it is the
+        /// only one, which is most of them.
+        var alsoRan: String?
         @State private var open = false
 
         private var diffs: [ACP.Diff] {
@@ -203,82 +199,82 @@ struct AgentTranscriptView: View {
         }
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
                     mark
-                        .font(.caption2)
-                        .frame(width: 12)
                     Text(call.heading)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.callout.weight(.medium))
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    touched
-                    Spacer(minLength: 0)
-                }
-                .contentShape(.rect)
-                .onTapGesture { if !diffs.isEmpty { withAnimation(.snappy) { open.toggle() } } }
-                if open {
-                    ForEach(Array(diffs.enumerated()), id: \.offset) { _, diff in
-                        DiffBody(diff: diff)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-
-        /// What it touched, on the same line: the file and how much of it changed. A
-        /// second line for this is what made these rows into cards.
-        @ViewBuilder
-        private var touched: some View {
-            if let first = diffs.first {
-                HStack(spacing: 4) {
-                    Text(first.fileName)
-                        .font(.caption.monospaced())
-                    Text("+\(first.counts.added)")
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.green)
-                    if first.counts.removed > 0 {
-                        Text("-\(first.counts.removed)")
-                            .font(.caption2.monospaced())
-                            .foregroundStyle(.red)
-                    }
-                    if diffs.count > 1 {
-                        Text("and \(diffs.count - 1) more")
-                            .font(.caption2)
+                    if let alsoRan {
+                        Text(alsoRan)
+                            .font(.caption)
                             .foregroundStyle(.tertiary)
+                            .lineLimit(1)
                     }
-                    Image(systemName: open ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 8))
-                        .foregroundStyle(.tertiary)
+                    Spacer(minLength: 4)
+                    if !diffs.isEmpty {
+                        Button {
+                            withAnimation(.snappy) { open.toggle() }
+                        } label: {
+                            Image(systemName: open ? "chevron.down" : "chevron.right")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.borderless)
+                    }
                 }
-                .foregroundStyle(.secondary)
+                ForEach(Array(diffs.enumerated()), id: \.offset) { _, diff in
+                    DiffRow(diff: diff, open: open)
+                }
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(.quinary, in: .rect(cornerRadius: Style.panel))
         }
 
         @ViewBuilder
         private var mark: some View {
             switch call.status {
-            case .completed: Image(systemName: "checkmark").foregroundStyle(.green)
-            case .failed: Image(systemName: "xmark").foregroundStyle(.red)
-            default: ProgressView().controlSize(.mini).scaleEffect(0.6)
+            case .completed: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+            default:
+                ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 16, height: 16)
             }
         }
     }
 
-    private struct DiffBody: View {
+    private struct DiffRow: View {
         var diff: ACP.Diff
+        var open: Bool
 
         var body: some View {
-            ScrollView(.horizontal) {
-                Text(diff.newText)
-                    .font(.caption.monospaced())
-                    .textSelection(.enabled)
-                    .padding(8)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "doc.text")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(diff.fileName)
+                        .font(.caption.monospaced())
+                    Text("+\(diff.counts.added)")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.green)
+                    if diff.counts.removed > 0 {
+                        Text("-\(diff.counts.removed)")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.red)
+                    }
+                }
+                if open {
+                    ScrollView(.horizontal) {
+                        Text(diff.newText)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                            .padding(8)
+                    }
+                    .frame(maxHeight: 220)
+                    .background(.quaternary, in: .rect(cornerRadius: 8))
+                }
             }
-            .frame(maxHeight: 220)
-            .background(.quinary, in: .rect(cornerRadius: 8))
-            .padding(.leading, 18)
         }
     }
 

@@ -241,3 +241,91 @@ struct ACPHeadlineTests {
         #expect(headline.line == "Second answer.")
     }
 }
+
+/// Runs of tool calls, collapsed. An agent reads four files and searches twice before it
+/// writes anything, and a dozen finished rows bury the two things worth reading.
+struct ACPTranscriptPageTests {
+    private func tool(_ id: String, _ title: String, done: Bool = true) -> ACP.Update {
+        .tool(ACP.ToolCall(toolCallID: id, title: title, kind: .read,
+                           status: done ? .completed : .inProgress))
+    }
+
+    @Test func aRunOfThemShowsItsMostRecent() {
+        var page = ACPTranscript()
+        page.weSaid("get on with it")
+        for n in 1...5 { page.apply(tool("t\(n)", "Reading file\(n).swift")) }
+        page.apply(.message(.text("Done.")))
+
+        let rows = page.page()
+        #expect(rows.count == 3, "Asked, one tool row, said.")
+        #expect(rows[1].entry.tool?.title == "Reading file5.swift")
+        #expect(rows[1].before == 4)
+        #expect(rows[1].alsoRan == "4 steps before this")
+    }
+
+    @Test func aRunStartsAgainAfterTheAgentSaysSomething() {
+        var page = ACPTranscript()
+        page.apply(tool("a", "Reading one"))
+        page.apply(tool("b", "Reading two"))
+        page.apply(.message(.text("Now I will write it.")))
+        page.apply(tool("c", "Editing three"))
+        page.apply(tool("d", "Editing four"))
+
+        let rows = page.page()
+        #expect(rows.map(\.before) == [1, 0, 1])
+        #expect(rows[0].entry.tool?.title == "Reading two")
+        #expect(rows[2].entry.tool?.title == "Editing four")
+    }
+
+    @Test func theOneStillRunningIsTheOneYouSee() {
+        var page = ACPTranscript()
+        page.apply(tool("a", "Reading one"))
+        page.apply(tool("b", "Running the tests", done: false))
+        let rows = page.page()
+        #expect(rows.count == 1)
+        #expect(rows[0].entry.tool?.title == "Running the tests")
+        #expect(rows[0].entry.tool?.isFinished == false)
+    }
+
+    @Test func aThoughtBetweenTwoToolsDoesNotSplitTheRun() {
+        var page = ACPTranscript()
+        page.apply(tool("a", "Reading one"))
+        page.apply(.thought(.text("Hmm.")))
+        page.apply(tool("b", "Reading two"))
+        // Thinking hidden, which is the default: one run of two.
+        #expect(page.page().count == 1)
+        #expect(page.page()[0].before == 1)
+        // Thinking shown: the thought is a row, so it is two runs of one.
+        let withThinking = page.page(thinking: true)
+        #expect(withThinking.count == 3)
+        #expect(withThinking.map(\.before) == [0, 0, 0])
+    }
+
+    @Test func oneOnItsOwnSaysNothingAboutStepsBefore() {
+        var page = ACPTranscript()
+        page.apply(tool("a", "Reading one"))
+        #expect(page.page()[0].before == 0)
+        #expect(page.page()[0].alsoRan == nil)
+    }
+
+    @Test func oneStepBeforeIsSingular() {
+        var page = ACPTranscript()
+        page.apply(tool("a", "Reading one"))
+        page.apply(tool("b", "Reading two"))
+        #expect(page.page()[0].alsoRan == "1 step before this")
+    }
+
+    @Test func aPageOfNothingIsNoRows() {
+        #expect(ACPTranscript().page().isEmpty)
+    }
+
+    @Test func therealRecordingCollapses() {
+        let whole = ACPTranscript.folding(ACPClaudeTranscriptTests.recording)
+        // asked, tool, said, asked, said. Nothing to collapse there, and it must not
+        // lose anything either.
+        #expect(whole.page().count == whole.entries.filter {
+            if case .thought = $0.kind { return false }
+            return true
+        }.count)
+    }
+}

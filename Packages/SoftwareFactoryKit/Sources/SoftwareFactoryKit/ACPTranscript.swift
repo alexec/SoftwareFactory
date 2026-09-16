@@ -129,6 +129,59 @@ public struct ACPTranscript: Sendable, Equatable {
         return nextID
     }
 
+    /// The page, with runs of tool calls collapsed to the last one.
+    ///
+    /// An agent reads four files, searches twice and then writes one, and every one of
+    /// those is a row. What the person came for is what the agent said and what it is
+    /// doing now, and a column of a dozen finished tool calls buries both. So a run of
+    /// them shows its most recent, which is the one still running when there is one, and
+    /// says how many went before it rather than pretending they did not happen.
+    ///
+    /// Thinking is dropped before the grouping rather than after, or a thought between two
+    /// tool calls would split one run into two. (Alex, 16 Sep 2026.)
+    public func page(thinking: Bool = false) -> [Shown] {
+        let kept = thinking ? entries : entries.filter {
+            if case .thought = $0.kind { return false }
+            return true
+        }
+        var out: [Shown] = []
+        var run = 0
+        for entry in kept {
+            if entry.tool != nil {
+                run += 1
+                // Replace the one before it: only the latest of a run is drawn.
+                if run > 1 { out.removeLast() }
+                out.append(Shown(entry: entry, before: run - 1))
+            } else {
+                run = 0
+                out.append(Shown(entry: entry, before: 0))
+            }
+        }
+        return out
+    }
+
+    /// One row of the page: the entry, and how many tool calls ran before it in the same
+    /// run and are not drawn.
+    public struct Shown: Identifiable, Sendable, Equatable {
+        public var entry: Entry
+        public var before: Int
+        public var id: Int { entry.id }
+
+        public init(entry: Entry, before: Int) {
+            self.entry = entry
+            self.before = before
+        }
+
+        /// What to say about the ones not drawn, or nil when this is the only one.
+        public var alsoRan: String? {
+            switch before {
+            case 0: nil
+            case 1: "1 step before this"
+            default: "\(before) steps before this"
+            }
+        }
+    }
+
     // MARK: What the rest of the floor asks it
 
     /// The line under the agent's name on its card and in the sidebar. This is what the
