@@ -250,10 +250,14 @@ struct AgentTranscriptView: View {
             .background(Color(.block), in: .rect(cornerRadius: Style.panel))
         }
 
+        /// How it went. A call that worked is the ordinary case and gets the quiet ink:
+        /// a green tick is a small celebration, and there are dozens of these in a turn.
+        /// Red stays, because a call that failed is the one you want to find.
+        /// (Alex, 16 Sep 2026.)
         @ViewBuilder
         private var mark: some View {
             switch call.status {
-            case .completed: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            case .completed: Image(systemName: "checkmark").foregroundStyle(Color(.quiet))
             case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
             default:
                 ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 16, height: 16)
