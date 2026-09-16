@@ -91,9 +91,8 @@ struct LaunchChooser<Extra: View>: View {
             // Last thing before the button, because it is the last thing you decide and
             // it changes with the agent above it: pick what to start, see what it needs,
             // then read the words it will go with and press Launch. It used to sit at the
-            // top, where you read it before you had chosen who was going to get it.
-            // Nothing is said to a shell, so the words are not offered for one. (T273.)
-            if agent.isCodingAgent { extra }
+            // top, where you read it before you had chosen who was going to get it. (T273.)
+            extra
 
             HStack {
                 Spacer()
@@ -114,7 +113,7 @@ struct LaunchChooser<Extra: View>: View {
 
     private var launchTitle: String {
         if AgentLauncher.isSandboxed { return "Copy the command for \(agent.title)" }
-        return agent.isCodingAgent ? "Launch \(agent.title)" : "Open a terminal"
+        return "Launch \(agent.title)"
     }
 }
 

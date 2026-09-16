@@ -13,23 +13,19 @@ import Testing
     }
 
     @Test func everyKindHasATitleAndSomewhereToGetIt() {
-        #expect(LaunchAgent.allCases.map(\.title) == ["Claude Code", "GitHub Copilot", "Grok", "Cursor", "Terminal"])
-        for agent in LaunchAgent.allCases where agent.isCodingAgent {
+        #expect(LaunchAgent.allCases.map(\.title) == ["Claude Code", "GitHub Copilot", "Grok", "Cursor"])
+        for agent in LaunchAgent.allCases {
             #expect(agent.installURL?.scheme == "https")
         }
     }
 
-    /// A terminal is a shell and nothing else: nothing to install, no plugin, no prompt,
-    /// and starting one again is a new shell rather than a conversation picked back up.
-    /// (Alex, 15 Sep 2026.)
-    @Test func aTerminalIsAShellAndNothingElse() {
-        let shell = LaunchAgent.terminal
-        #expect(!shell.isCodingAgent)
-        #expect(shell.installURL == nil)
-        #expect(shell.command(for: "Work the backlog.", session: Self.session) == "zsh -il")
-        #expect(shell.launchCommand(for: project, as: "A9", session: Self.session) == "zsh -il")
-        #expect(shell.resumeCommand(session: Self.session) == "zsh -il")
-        #expect(LaunchAgent.allCases.filter(\.isCodingAgent).count == LaunchAgent.allCases.count - 1)
+    /// A shell was one of these and never was one: it registered with nothing, was told
+    /// nothing, held no task and had no conversation to resume, so every question asked of
+    /// this type had to be answered "except for that one". It is opened beside an agent
+    /// now, which is what it was always for. (Alex, 16 Sep 2026.)
+    @Test func aShellIsNotOneOfThese() {
+        #expect(LaunchAgent.allCases.map(\.rawValue) == ["claudeCode", "copilot", "grok", "cursor"])
+        #expect(LaunchAgent.remembered("terminal") == .claudeCode)
     }
 
     /// There is no registering any more. `session/new` carries the factory's MCP server,
@@ -42,7 +38,7 @@ import Testing
         }
         // The one thing still worth installing is Zed's adapter, for Claude Code.
         #expect(LaunchAgent.claudeCode.setUp.count == 1)
-        for agent in [LaunchAgent.copilot, .grok, .cursor, .terminal] {
+        for agent in [LaunchAgent.copilot, .grok, .cursor] {
             #expect(agent.setUp.isEmpty)
         }
     }
@@ -53,7 +49,7 @@ import Testing
         #expect(LaunchAgent.copilot.command(for: words, session: Self.session).hasPrefix("copilot --session-id \(Self.session.uuidString) --allow-all --interactive "))
         #expect(LaunchAgent.grok.command(for: words, session: Self.session).hasPrefix("grok --session-id \(Self.session.uuidString) --always-approve --trust "))
         #expect(LaunchAgent.cursor.command(for: words, session: Self.session).hasPrefix("cursor-agent --force --trust --approve-mcps "))
-        for agent in LaunchAgent.allCases where agent.isCodingAgent {
+        for agent in LaunchAgent.allCases {
             #expect(agent.command(for: words, session: Self.session).contains(LaunchAgent.quoted(words)))
         }
     }
@@ -92,7 +88,7 @@ import Testing
     /// Every one of them approves its own tool calls and trusts the folder it opens in,
     /// or the agent stops on a prompt nobody is there to answer.
     @Test func everyKindStartsWithoutAskingPermission() {
-        let started = LaunchAgent.allCases.filter(\.isCodingAgent).map { $0.command(for: "Work the backlog.", session: Self.session) }
+        let started = LaunchAgent.allCases.map { $0.command(for: "Work the backlog.", session: Self.session) }
         #expect(started.allSatisfy { $0.contains("--permission-mode=auto") || $0.contains("--allow-all") || $0.contains("--always-approve") || $0.contains("--force") })
     }
 

@@ -20,6 +20,9 @@ struct SoftwareFactoryApp: App {
     @State private var terminals = TerminalSessions()
     /// The daemon holding every ACP agent, and this app's side of it. (T373.)
     @State private var floor: Floor
+    /// Terminals a person has opened beside an agent. Kept here so moving between pages
+    /// leaves what is running alone. (Alex, 16 Sep 2026.)
+    @State private var shells = AgentShells()
 
     /// Made here rather than as a default, and there is no default: a stored property's
     /// default is assigned before init runs and then thrown away, so `AppModel()` would
@@ -36,6 +39,7 @@ struct SoftwareFactoryApp: App {
                 .environment(model)
                 .environment(terminals)
                 .environment(floor)
+                .environment(shells)
         }
         .defaultSize(width: 980, height: 680)
         // Help goes in the Help menu, which is where a Mac keeps it. The launch popover
@@ -52,6 +56,7 @@ struct SoftwareFactoryApp: App {
                 .environment(model)
                 .environment(terminals)
                 .environment(floor)
+                .environment(shells)
         }
     }
 }

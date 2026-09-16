@@ -1,18 +1,18 @@
 import Foundation
 
-/// What the factory can start in a terminal it owns: Claude Code, GitHub Copilot, Grok,
-/// Cursor, or a plain shell. Chosen at launch, not as a setting, so a session can pick a
-/// different one each time.
+/// The coding agents the factory can start: Claude Code, GitHub Copilot, Grok, Cursor.
+/// Chosen at launch, not as a setting, so a session can pick a different one each time.
+///
+/// A plain shell used to be one of these, and it never was one. It registered with
+/// nothing, was told nothing, held no task and had no conversation to resume, so every
+/// question asked of this type had to be answered "except for that one". A terminal is
+/// something you open beside an agent now, in the same folder, which is what it was
+/// always for. (Alex, 16 Sep 2026.)
 public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable {
     case claudeCode
     case copilot
     case grok
     case cursor
-    /// No agent at all: a shell in the project's folder, on the floor like any other, so
-    /// you can run something by hand and watch it from the same page as the rest.
-    /// Nothing registers, nothing is told anything, and there is no plugin to install.
-    /// (Alex, 15 Sep 2026.)
-    case terminal
 
     public var id: String { rawValue }
 
@@ -28,22 +28,15 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
         case .copilot: "GitHub Copilot"
         case .grok: "Grok"
         case .cursor: "Cursor"
-        case .terminal: "Terminal"
         }
     }
 
-    /// Whether this one is an agent at all. A terminal takes no prompt, registers with
-    /// nothing and has no conversation to resume: it is a shell.
-    public var isCodingAgent: Bool { self != .terminal }
-
-    /// Nil for a terminal: zsh is already there.
     public var installURL: URL? {
         switch self {
         case .claudeCode: URL(string: "https://code.claude.com/docs/en/quickstart")!
         case .copilot: URL(string: "https://docs.github.com/en/copilot/get-started/cli-quickstart")!
         case .grok: URL(string: "https://docs.x.ai/build/overview")!
         case .cursor: URL(string: "https://cursor.com/docs/cli/installation")!
-        case .terminal: nil
         }
     }
 
@@ -84,10 +77,6 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
         case .copilot: return "copilot --session-id \(id) --allow-all --interactive \(quoted)"
         case .grok: return "grok --session-id \(id) --always-approve --trust \(quoted)"
         case .cursor: return "cursor-agent --force --trust --approve-mcps \(quoted)"
-        // A shell is told nothing. The words are dropped rather than echoed: a terminal
-        // that opens with somebody else's instructions printed in it is a terminal
-        // pretending to be an agent.
-        case .terminal: return "zsh -il"
         }
     }
 
@@ -101,9 +90,6 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
         case .copilot: return "copilot --resume=\(session.uuidString) --allow-all --interactive"
         case .grok: return "grok --resume \(session.uuidString) --always-approve --trust"
         case .cursor: return "cursor-agent --continue --force --trust --approve-mcps"
-        // A shell that has exited has nothing to pick up. Start gives you a new one in
-        // the same place.
-        case .terminal: return "zsh -il"
         }
     }
 
@@ -120,8 +106,6 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
             "xAI's CLI. It speaks ACP, so the factory hands it the tools as it starts and its page shows the work it is doing rather than a terminal."
         case .cursor:
             "Cursor's CLI. It speaks ACP, so the factory hands it the tools as it starts and its page shows the work it is doing rather than a terminal."
-        case .terminal:
-            "Not an agent. A shell in the project's folder that shows up on the floor like anything else, so you can run something by hand and watch it from the same page as the rest. Nothing is started in it and nothing is said to it."
         }
     }
 
@@ -159,8 +143,6 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
         // where it left off, which is still the protocol answering instead of `--continue`
         // and a guess about which chat was this agent's. (T206 is finally closed.)
         case .cursor: ACPLaunch(command: "cursor-agent", arguments: ["acp"])
-        // Not an agent. A shell has nothing to say to anybody.
-        case .terminal: nil
         }
     }
 
@@ -172,7 +154,7 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
         // The only one of the four that speaks it through something you install
         // separately. The rest have it built in.
         case .claudeCode: "npm install -g @agentclientprotocol/claude-agent-acp"
-        case .copilot, .grok, .cursor, .terminal: nil
+        case .copilot, .grok, .cursor: nil
         }
     }
 

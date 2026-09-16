@@ -176,10 +176,10 @@ struct LaunchAgentHelpTests {
         }
     }
 
-    @Test func aShellNeedsNothingSettingUp() {
-        #expect(LaunchAgent.terminal.setUp.isEmpty)
-        #expect(LaunchAgent.terminal.installURL == nil)
-        #expect(LaunchAgent.terminal.isCodingAgent == false)
+    @Test func everyOneNeedsSomewhereToBeGotFrom() {
+        for agent in LaunchAgent.allCases {
+            #expect(agent.installURL != nil)
+        }
     }
 
     @Test func anACPAgentIsHandedTheFactoryRatherThanRegisteringWithIt() {
@@ -196,14 +196,15 @@ struct LaunchAgentHelpTests {
         }
     }
 
-    @Test func everyAgentSpeaksItAndOnlyTheShellDoesNot() {
+    @Test func everyAgentSpeaksIt() {
         // Checked by handshaking with each binary rather than by grepping its help,
-        // which found two and missed the two that put it behind a subcommand.
-        for agent in LaunchAgent.allCases where agent.isCodingAgent {
+        // which found two and missed the two that put it behind a subcommand. A shell was
+        // in this list and never belonged: it is opened beside an agent now rather than
+        // instead of one. (Alex, 16 Sep 2026.)
+        for agent in LaunchAgent.allCases {
             #expect(agent.speaksACP, "\(agent.title) has to speak ACP.")
             #expect(agent.installURL != nil)
         }
-        #expect(LaunchAgent.terminal.speaksACP == false)
     }
 
     @Test func eachOneIsStartedByItsOwnWord() {
@@ -302,7 +303,7 @@ struct AgentProfileTests {
     @Test func theOnesWithSomethingToWarnAboutSayIt() {
         #expect(LaunchAgent.claudeCode.profile.caveat == nil)
         #expect(LaunchAgent.copilot.profile.caveat == nil)
-        for kind in [LaunchAgent.grok, .cursor, .terminal] {
+        for kind in [LaunchAgent.grok, .cursor] {
             #expect(kind.profile.caveat?.isEmpty == false, "\(kind.title) has a caveat to give.")
         }
     }

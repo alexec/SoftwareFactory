@@ -193,6 +193,7 @@ struct AgentCard: View {
     @Environment(AppModel.self) private var model
     @Environment(TerminalSessions.self) private var terminals
     @Environment(Floor.self) private var floor
+    @Environment(AgentShells.self) private var shells
     var status: Dashboard.AgentStatus
     var select: (UUID) -> Void
 
@@ -311,6 +312,7 @@ struct AgentCard: View {
             Button("Delete \(status.agent.label)", role: .destructive) {
                 stopAgent(status.agent, model: model, floor: floor)
                 floor.forget(status.agent.id)
+                shells.closeAll(for: status.agent.id, terminals: terminals)
                 model.delete(status.agent)
             }
         }
@@ -321,6 +323,7 @@ struct AgentView: View {
     @Environment(AppModel.self) private var model
     @Environment(TerminalSessions.self) private var terminals
     @Environment(Floor.self) private var floor
+    @Environment(AgentShells.self) private var shells
     var status: Dashboard.AgentStatus
     /// Back to the page this was opened from. Nil when there is nowhere to go.
     var back: (() -> Void)?
@@ -328,7 +331,7 @@ struct AgentView: View {
     /// The documents column. On by default: what the agent has written down is the thing
     /// you most want beside the terminal, and the column is not drawn at all when it has
     /// written nothing. (T311.)
-    @State private var showsDocuments = true
+    @State private var chosenSide: Side? = .documents
     @State private var showsMessages = false
     @State private var resumeError: String?
     /// How wide the documents are, remembered across launches and across agents: it is
@@ -372,6 +375,8 @@ struct AgentView: View {
                 strip
                 Divider()
             }
+            sideIcons
+            Divider()
             GeometryReader { page in
                 HStack(spacing: 0) {
                     VStack(spacing: 0) {
@@ -398,11 +403,15 @@ struct AgentView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    if hasDocuments && showsDocuments {
+                    if let side {
                         ColumnGrip(width: $documentsWidth, beside: page.size.width)
-                        documents
-                            .frame(width: ColumnGrip.width(
-                                documentsWidth, beside: page.size.width))
+                        Group {
+                            switch side {
+                            case .documents: documents
+                            case .shells: AgentShellsPane(agent: agent, folder: status.project?.path)
+                            }
+                        }
+                        .frame(width: ColumnGrip.width(documentsWidth, beside: page.size.width))
                     }
                 }
             }
@@ -430,16 +439,62 @@ struct AgentView: View {
                 }
                 .help(showsDetails ? "Hide what it is on and holding" : "Show what it is on and holding")
             }
-            ToolbarItem {
-                Button("Documents", systemImage: "doc.richtext") {
-                    withAnimation(.snappy) { showsDocuments.toggle() }
-                }
-                .disabled(!hasDocuments)
-                .help(hasDocuments
-                      ? (showsDocuments ? "Hide what it has written" : "Show what it has written")
-                      : "It has not written anything yet")
-            }
         }
+    }
+
+    /// What can sit beside the agent: what it has written, and shells you have opened in
+    /// its folder.
+    ///
+    /// The shells are the part that used to be a kind of agent, which it never was. What
+    /// a person wants is to run something by hand where the agent is working and watch
+    /// both, so a terminal is opened beside one now rather than being launched instead of
+    /// one. (Alex, 16 Sep 2026.)
+    private enum Side: String, Hashable {
+        case documents, shells
+    }
+
+    /// Which pane is showing, or none. Two small icons rather than two toggles, because
+    /// only one of them can be showing and a pair of toggles says otherwise.
+    private var side: Side? {
+        guard let chosen = chosenSide else { return nil }
+        if chosen == .documents, !hasDocuments { return nil }
+        return chosen
+    }
+
+    private var sideIcons: some View {
+        HStack(spacing: 4) {
+            Spacer(minLength: 0)
+            icon(.documents, "doc.richtext",
+                 on: hasDocuments ? "Hide what it has written" : "It has not written anything yet",
+                 enabled: hasDocuments)
+            icon(.shells, shells.has(agent.id) ? "apple.terminal.fill" : "apple.terminal",
+                 on: "A shell in this agent's folder, beside it",
+                 enabled: status.project?.path?.isEmpty == false || shells.has(agent.id))
+        }
+        .padding(.horizontal, Style.cardPadding)
+        .padding(.vertical, 5)
+    }
+
+    private func icon(_ which: Side, _ symbol: String, on help: String, enabled: Bool) -> some View {
+        Button {
+            withAnimation(.snappy) { chosenSide = chosenSide == which ? nil : which }
+            // Opening the shells with none open gives you one, because that is what
+            // clicking a terminal icon means.
+            if which == .shells, chosenSide == .shells, !shells.has(agent.id),
+               let folder = status.project?.path {
+                shells.open(for: agent.id, in: folder, terminals: terminals)
+            }
+        } label: {
+            Image(systemName: symbol)
+                .font(.callout)
+                .frame(width: 26, height: 22)
+                .background(chosenSide == which ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
+                            in: .rect(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(chosenSide == which ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+        .disabled(!enabled)
+        .help(help)
     }
 
     /// Opening the page is the whole instruction. If this app has lost the terminal but

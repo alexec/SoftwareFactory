@@ -138,11 +138,6 @@ public extension LaunchAgent {
                          asksFirst: .untested, thinksOutLoud: .untested, plans: .untested,
                          namesToolKinds: .untested, asksThroughTheProtocol: .untested,
                          caveat: "It says it can load a session and then refuses one, so a stopped Cursor agent cannot be started back up. The account also needs a plan before it will do any work here.")
-        case .terminal:
-            AgentProfile(agent: self, resuming: .untested, whenBusy: .untested,
-                         asksFirst: .no, thinksOutLoud: .no, plans: .no,
-                         namesToolKinds: .no, asksThroughTheProtocol: .no,
-                         caveat: "Not an agent. A shell, which speaks none of this.")
         }
     }
 }

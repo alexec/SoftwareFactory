@@ -75,7 +75,7 @@ private struct AgentSetup: View {
             ForEach(Array(agent.setUp.enumerated()), id: \.offset) { _, step in
                 CommandToRun(what: step.what, command: step.command)
             }
-            if agent.isCodingAgent { WhatItDoes(profile: agent.profile) }
+            WhatItDoes(profile: agent.profile)
             if let caveat = agent.profile.caveat {
                 Label(caveat, systemImage: "exclamationmark.triangle")
                     .font(.callout)

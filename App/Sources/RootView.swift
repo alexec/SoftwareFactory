@@ -15,6 +15,7 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(TerminalSessions.self) private var terminals
     @Environment(Floor.self) private var floor
+    @Environment(AgentShells.self) private var shells
     @State private var selection: Destination? = .dashboard
     /// Where the agent page was opened from, so its back button returns there.
     @State private var cameFrom: Destination?
@@ -276,6 +277,7 @@ struct RootView: View {
             Button("Delete \(status.agent.label)", role: .destructive) {
                 stopAgent(status.agent, model: model, floor: floor)
                 floor.forget(status.agent.id)
+                shells.closeAll(for: status.agent.id, terminals: terminals)
                 model.delete(status.agent)
             }
         }

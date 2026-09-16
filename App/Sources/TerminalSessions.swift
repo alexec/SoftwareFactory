@@ -50,12 +50,14 @@ final class TerminalSessions {
     }
 
     /// An agent on no project: a browser owner, a reviewer, anything that works across
-    /// the factory. It starts in your home folder.
+    /// the factory. It starts in your home folder unless it is given one, which is what a
+    /// shell opened beside an agent does. (Alex, 16 Sep 2026.)
     @discardableResult
-    func start(prompt: String, session: String, agentID: UUID? = nil, command: (String) -> String) -> Session {
+    func start(prompt: String, session: String, agentID: UUID? = nil, folder: String? = nil,
+               command: (String) -> String) -> Session {
         let words = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         return start(id: session, command: command(words),
-                     folder: FileManager.default.homeDirectoryForCurrentUser.path,
+                     folder: folder ?? FileManager.default.homeDirectoryForCurrentUser.path,
                      projectID: nil, agentID: agentID)
     }
 

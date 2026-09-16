@@ -173,13 +173,12 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
   - `LaunchPrompt`: the words an agent starts with, in one place: `project` (work the
     backlog), `task` (one task, already in its name, to claim), `free` (no project,
     the person says what for).
-  - `LaunchAgent`: Claude Code, GitHub Copilot, Grok, Cursor or Terminal, chosen at
-    launch. Terminal is not an agent: `isCodingAgent` is false, the command is `zsh -il`,
-    there is no install link, no plugin command, no words to edit and no task assigned,
-    and starting a stopped one is a new shell rather than a conversation picked back up.
-    It is a shell in the project's folder that shows up on the floor like anything else,
-    so you can run something by hand and watch it from the same page. `agent_create` never
-    gets one, even when Terminal was the last pick. (Alex, 15 Sep 2026.) Grok's
+  - `LaunchAgent`: Claude Code, GitHub Copilot, Grok or Cursor, chosen at launch. A plain
+    shell used to be a fifth and never was one: it registered with nothing, was told
+    nothing, held no task and had no conversation to resume, so every question asked of
+    this type had to be answered "except for that one". A terminal is opened **beside** an
+    agent now, in the same folder, which is what it was always for. See `AgentShells`.
+    (Alex, 16 Sep 2026.) Grok's
     shell line is `grok --session-id <id> --always-approve --trust`: `--trust` grants
     folder trust for the launch directory (the project's folder), so project hooks,
     skills and MCP load without a prompt. The flag takes no path. (T180) Cursor is
@@ -562,6 +561,14 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     and `taskWork` are what that field starts as, and the line naming the agent and its
     session goes in front of whatever it says, T260), `IntroSheet`, `SettingsView`
     (How it works on top, in-app vs Terminal, iCloud, the store, Developer in DEBUG).
+  - `AgentShells` and `App/Sources/AgentShells.swift`: the terminals a person has opened
+    beside an agent, in that agent's folder, as tabs. Two small icons sit above the
+    agent's columns, one for what it has written and one for a shell, and they choose what
+    the side column shows: only one can be showing, and a pair of toggles would say
+    otherwise. Clicking the terminal icon with none open gives you one, because that is
+    what clicking a terminal icon means. A shell is `zsh -il` and nothing is typed into it:
+    a terminal that opens with somebody else's instructions in it is a terminal pretending
+    to be an agent. They go when the agent is deleted. (Alex, 16 Sep 2026.)
   - `Floor` and `App/Sources/AgentTranscriptView.swift`: the app's side of the daemon, and
     what an ACP agent's page is instead of a terminal. `Floor` starts the daemon when
     nothing is answering, asks what it is holding on a clock of its own, and folds

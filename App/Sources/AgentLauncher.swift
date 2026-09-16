@@ -106,7 +106,7 @@ enum StartAgent {
         }
         let session = reserved.id
         // A shell is not given a task: nothing in it would read one.
-        if let task, agent.isCodingAgent { model.assign(task, to: reserved) }
+        if let task { model.assign(task, to: reserved) }
         model.remember(agent, for: reserved)
         let asked = words.trimmingCharacters(in: .whitespacesAndNewlines)
         let prompt = asked.isEmpty
@@ -221,7 +221,7 @@ enum StartAgent {
             // An agent asked for this one, so it gets an agent: the last coding agent the
             // person picked, never the terminal.
             let remembered = LaunchAgent.remembered(UserDefaults.standard.string(forKey: lastLaunchAgentKey))
-            let kind = remembered.isCodingAgent ? remembered : .claudeCode
+            let kind = remembered
             let task = agent.taskID.flatMap { id in model.snapshot.tasks.first { $0.id == id } }
             model.remember(kind, for: agent)
             let prompt = task.map { LaunchPrompt.task($0, in: project, as: agent.label, session: agent.id) }
