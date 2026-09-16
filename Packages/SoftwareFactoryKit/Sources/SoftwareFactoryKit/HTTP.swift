@@ -137,7 +137,16 @@ public struct HTTPRouter: Sendable {
         if let origin = request.headers["origin"], !Self.originAllowed(origin) {
             return .text("Forbidden origin", status: 403)
         }
-        switch (request.method, request.path.split(separator: "?").first.map(String.init) ?? request.path) {
+        let path = request.path.split(separator: "?").first.map(String.init) ?? request.path
+        // An agent reached at its own address, `/mcp/<its id>`. The factory hands each ACP
+        // agent one at `session/new`, so the caller is the address and does not have to
+        // say who it is on every call. (T373.)
+        if request.method == "POST", path.hasPrefix("/mcp/") {
+            let caller = String(path.dropFirst("/mcp/".count))
+            guard !caller.isEmpty, !caller.contains("/") else { return .text("Not found", status: 404) }
+            return mcp(request, as: caller)
+        }
+        switch (request.method, path) {
         case ("POST", "/mcp"):
             return mcp(request)
         case ("GET", "/mcp"):
@@ -180,18 +189,24 @@ public struct HTTPRouter: Sendable {
         return host == "localhost" || host == "127.0.0.1" || host == "::1"
     }
 
-    func mcp(_ request: HTTPRequest) -> HTTPResponse {
+    func mcp(_ request: HTTPRequest, as caller: String? = nil) -> HTTPResponse {
         guard let parsed = try? JSONSerialization.jsonObject(with: request.body) else {
             return .json(MCPServer.error(id: nil, code: -32700, message: "Parse error"), status: 400)
         }
         if let batch = parsed as? [[String: Any]] {
+            // An agent at its own address needs no transport session: the address is who
+            // it is, and a session is something any caller can ask for. (T373.)
+            if caller != nil {
+                let responses = batch.compactMap { handle($0, sessionID: UUID(), as: caller) }
+                return responses.isEmpty ? HTTPResponse(status: 202) : .json(responses)
+            }
             guard let sessionID = sessionID(in: request) else {
                 return .text("Mcp-Session-Id is required", status: 400)
             }
             guard sessions.contains(sessionID) else {
                 return .text("Unknown MCP session", status: 404)
             }
-            let responses = batch.compactMap { handle($0, sessionID: sessionID) }
+            let responses = batch.compactMap { handle($0, sessionID: sessionID, as: caller) }
             return responses.isEmpty ? HTTPResponse(status: 202) : .json(responses)
         }
         guard let one = parsed as? [String: Any] else {
@@ -203,8 +218,13 @@ public struct HTTPRouter: Sendable {
                 return .text("MCP session is assigned during initialization", status: 400)
             }
             let sessionID = sessions.create()
-            guard let response = server.handle(one) else { return HTTPResponse(status: 202) }
+            guard let response = server.handle(one, as: caller) else { return HTTPResponse(status: 202) }
             return .json(response, headers: ["Mcp-Session-Id": sessionID.uuidString])
+        }
+        if caller != nil {
+            guard let response = handle(one, sessionID: UUID(), as: caller)
+            else { return HTTPResponse(status: 202) }
+            return .json(response)
         }
         guard let sessionID = sessionID(in: request) else {
             return .text("Mcp-Session-Id is required", status: 400)
@@ -212,15 +232,15 @@ public struct HTTPRouter: Sendable {
         guard sessions.contains(sessionID) else {
             return .text("Unknown MCP session", status: 404)
         }
-        guard let response = handle(one, sessionID: sessionID) else { return HTTPResponse(status: 202) }
+        guard let response = handle(one, sessionID: sessionID, as: caller) else { return HTTPResponse(status: 202) }
         return .json(response)
     }
 
     /// The transport's session is not the agent's. The agent says who it is in the call
     /// itself, so nothing here has to remember one across requests.
     /// (T-session, 13 Sep 2026.)
-    func handle(_ request: [String: Any], sessionID: UUID) -> [String: Any]? {
-        server.handle(request, agentID: nil)
+    func handle(_ request: [String: Any], sessionID: UUID, as caller: String? = nil) -> [String: Any]? {
+        server.handle(request, agentID: nil, as: caller)
     }
 
     func sessionID(in request: HTTPRequest) -> UUID? {

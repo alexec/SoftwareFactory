@@ -69,7 +69,11 @@ public struct MCPServer: Sendable {
     // MARK: Dispatch
 
     /// One request in, one response out. Notifications (no id) return nil.
-    public func handle(_ request: [String: Any], agentID: String? = nil) -> [String: Any]? {
+    /// `as` is the agent the caller is, when the address says so: an ACP agent is handed
+    /// `/mcp/<its id>` at `session/new`, so it never has to name itself. Nil for an
+    /// external agent, which passes `session_id` on every call as it always did. (T373.)
+    public func handle(_ request: [String: Any], agentID: String? = nil,
+                       as caller: String? = nil) -> [String: Any]? {
         let id = request["id"]
         let method = request["method"] as? String ?? ""
         let params = request["params"] as? [String: Any] ?? [:]
@@ -86,15 +90,22 @@ public struct MCPServer: Sendable {
         case "ping":
             return Self.result(id: id, [:])
         case "tools/list":
-            return Self.result(id: id, ["tools": Tool.all.map(\.descriptor)])
+            let asking = caller.map { asksThroughTheProtocol($0) } ?? false
+            return Self.result(id: id, [
+                "tools": Tool.all(asking: asking).map { $0.descriptor(needsSession: caller == nil) },
+            ])
         case "tools/call":
             let name = params["name"] as? String ?? ""
-            let args = params["arguments"] as? [String: Any] ?? [:]
+            var args = params["arguments"] as? [String: Any] ?? [:]
             // The caller says who it is on every call, rather than the connection
             // remembering. A connection drops when the app restarts and the agent lives
             // on, so an identity that belonged to the connection had to be registered
             // again to get it back, and the agent came back as somebody else.
             // (Alex, 13 Sep 2026.)
+            // The address said who this is, so the call does not have to. A caller that
+            // names somebody else is left alone: that is `agent_nudge` and
+            // `message_send`, which are about another agent by design.
+            if let caller, args["session_id"] == nil { args["session_id"] = caller }
             do {
                 let text = try call(name, args)
                 return Self.result(id: id, ["content": [["type": "text", "text": text]], "isError": false])
@@ -199,12 +210,11 @@ public struct MCPServer: Sendable {
     }
 
     public static let instructions = """
-        You are working in a software factory. Register first (agent_register), naming the project \
-        you work on if you are working one, and keep the id it returns; your MCP session identifies you on every later call, and every call you make is \
-        your heartbeat. If you were told to register as a particular name, like A6, pass it as \
-        `agent_id`: the app wrote that agent down before it started you, and its card and terminal \
-        are already waiting. Without it you are given the next free name instead. If SOFTWARE_FACTORY_SESSION is set in your environment, pass its value as \
-        `session` when you register: the app started you and shows your terminal on your page. \
+        You are working in a software factory. There is nothing to register and nothing to say \
+        goodbye to: the factory wrote you down, named you and started you, so it already has you. \
+        Every call you make is your heartbeat. If a tool asks for `session_id`, it is the UUID in \
+        the words you began with; if none of them do, the factory knows who you are from the \
+        address you are calling and there is no id to keep. \
         Work from the \
         backlog. Read the backlog (task_list) and take the work in the order it \
         is in; tasks that belong together sit together, and you may claim several at once when they \
@@ -281,12 +291,18 @@ public struct MCPServer: Sendable {
             str("The UUID the factory started you with, in the words you began with. It is your session: your name here, the terminal you run in, and the conversation you can be resumed into.")
         }
 
-        var descriptor: [String: Any] {
+        var descriptor: [String: Any] { descriptor(needsSession: true) }
+
+        /// `needsSession` is false for an agent reached at its own URL. The factory hands
+        /// each ACP agent `/mcp/<its id>` at `session/new`, so the caller is the address
+        /// and does not have to say who it is on all thirty-three tools. An external agent
+        /// has no such URL and still passes it. (T373.)
+        func descriptor(needsSession: Bool) -> [String: Any] {
             var properties = properties
             if properties["description"] == nil {
                 properties["description"] = Self.callDescription
             }
-            properties["session_id"] = Self.sessionID
+            if needsSession { properties["session_id"] = Self.sessionID }
             // The hints a client reads to decide what it may do on its own.
             let annotations: [String: Any] = [
                 "readOnlyHint": kind == .query,
@@ -296,7 +312,22 @@ public struct MCPServer: Sendable {
             return ["name": name, "description": description,
                     "annotations": annotations,
                     "inputSchema": ["type": "object", "properties": properties,
-                                    "required": required + ["session_id"]]]
+                                    "required": required + (needsSession ? ["session_id"] : [])]]
+        }
+
+        /// The tools this agent gets. Everything, less the ones it has a better way of
+        /// doing.
+        ///
+        /// An agent that puts questions through the protocol does not need
+        /// `escalation_raise`: it asks with `elicitation/create`, the factory files the
+        /// same `Escalation`, and the agent blocks on the answer rather than raising one
+        /// and polling for it. Only Claude Code does; Copilot and Grok write the question
+        /// as prose and end the turn, so they keep the tool, and an external agent has no
+        /// pipe at all. (T373, Alex's ask: one shape, and only offer ours where theirs is
+        /// missing.)
+        public static func all(asking: Bool) -> [Tool] {
+            guard asking else { return all }
+            return all.filter { $0.name != "escalation_raise" && $0.name != "escalation_await" }
         }
 
         public static var all: [Tool] { [
@@ -1188,6 +1219,13 @@ public struct MCPServer: Sendable {
 
     /// Resolves the caller. Reading only: the heartbeat is stamped once per call, at
     /// the top of `call`.
+    /// Whether this agent has its own way of putting a question to the person, so the
+    /// factory does not offer it one as well.
+    func asksThroughTheProtocol(_ caller: String) -> Bool {
+        guard let snap = try? store.load(), let agent = agentRef(caller, in: snap) else { return false }
+        return LaunchAgent.remembered(agent.launchedWith).profile.asksThroughTheProtocol == .yes
+    }
+
     func agent(_ args: [String: Any], in snap: Snapshot) throws -> Agent {
         guard let agent = agentRef(try string("session_id", args), in: snap)
         else { throw ToolError(message: "Unknown session_id. It is the UUID the factory started you with, in the words you began with. Call agent_register with it first.") }

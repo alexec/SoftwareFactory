@@ -109,9 +109,12 @@ struct AgentFloorTests {
         let agent = UUID()
         #expect(await Self.start(floor, agent: agent, cwd: root, words: "make a note").ok)
         // It asked, the daemon said yes, and nothing ever reached the floor as a question.
+        // Always rather than once: the person decided in advance, so the answer is a
+        // standing one and the agent stops asking about this kind of thing. One round
+        // trip rather than one per call. (Alex, 16 Sep 2026.)
         await Self.until("it to carry on") {
             ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store)).entries
-                .contains { $0.text?.contains("picked:allow_once") == true }
+                .contains { $0.text?.contains("picked:allow_always") == true }
         }
         #expect(floor.everything().first?.waiting == nil)
         _ = await floor.handle(AgentDaemon.Request(op: .stop, agent: agent))

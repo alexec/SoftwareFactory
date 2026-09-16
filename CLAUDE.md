@@ -409,6 +409,27 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     read off the throttle, is what refuses the one over it.
     `agent_nudge` writes a message whose words are the nudge line; the app types every
     undelivered message into its agent's terminal, so nudges and messages are one path.
+  - **An agent is reached at its own address.** `session/new` hands each ACP agent
+    `http://127.0.0.1:4747/mcp/<its id>`, so the factory knows who is calling from where
+    the call arrived and the agent never says. `session_id` comes off all thirty-three
+    tools for it, and `LaunchPrompt.youAreNamed` drops the sentence that told it an id and
+    asked it to keep one. An external agent has no such address, calls `/mcp` and passes
+    `session_id` exactly as before, which is why the argument still exists. A call at an
+    agent's address needs no `Mcp-Session-Id` either: the address is the identity, and a
+    transport session is something any caller can ask for. The tool list can differ per
+    agent for the same reason: one that asks through the protocol is not offered
+    `escalation_raise` or `escalation_await`, because it has a better way and the factory
+    should not offer a second. (T373.)
+  - `Throttle.permissions` also picks the agent's **session mode**, where it has one.
+    Claude Code offers `bypassPermissions`, "Accepts all permissions", which is what every
+    agent was launched with before ACP; `ACP.Modes.wanted` takes the most permissive on
+    offer when the person has said to let agents get on with it, and puts it back to
+    `default` when they have not. The daemon follows a change in Settings on its next
+    `list`. Copilot's modes are about how it converses and Grok has none, so for those the
+    factory answers their requests instead, and it answers `allow_always` rather than
+    `allow_once`: the person decided in advance, so it is a standing decision and one
+    round trip rather than one per call. `allow_once` is still what nobody-answered takes,
+    because that is the case where no decision was made on purpose. (Alex, 16 Sep 2026.)
   - `HTTP`: `HTTPRequest.parse`, `HTTPResponse.serialized`, and `HTTPRouter` (`POST /mcp`,
     `GET /api/snapshot`, `POST /api/decide`, `POST /api/task`; browser origins refused).
   - `SampleData`: records for a Debug build to look at.
@@ -686,7 +707,8 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
 - A rule goes in the package with a test before it goes in a view.
 - **The session is the agent.** `Agent.id` is one UUID doing four jobs: the record's key,
   the name of the tmux session it runs in, the `--session-id` its CLI is launched with,
-  and the `session_id` every MCP tool requires. The factory makes it before it launches
+  and the `session_id` an MCP tool requires. An ACP agent is the exception and does not
+  carry it: it is handed `/mcp/<its id>` and the address does that job. (T373.) The factory makes it before it launches
   anything, and the agent is told it in the words it starts with, not in the environment:
   an environment variable is lost when a conversation is resumed and the prompt is not.
   A terminal therefore cannot hold two agents, and there is no name to claim.

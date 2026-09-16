@@ -425,3 +425,132 @@ struct ToolHeadingTests {
         }
     }
 }
+
+/// An agent reached at its own address. The factory hands each ACP agent
+/// `/mcp/<its id>` at `session/new`, so it never has to say who it is. (T373.)
+struct OwnAddressTests {
+    static func store() throws -> FileStore {
+        let root = URL.temporaryDirectory.appending(path: "own-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return try FileStore(root: root)
+    }
+
+    @Test func eachAgentIsHandedItsOwnAddress() {
+        let agent = UUID()
+        let mine = ACP.factoryServer(agent: agent)
+        #expect(mine["url"] as? String == "http://127.0.0.1:4747/mcp/\(agent.uuidString)")
+        // An external agent has no address of its own and passes the session as before.
+        #expect(ACP.factoryServer()["url"] as? String == "http://127.0.0.1:4747/mcp")
+    }
+
+    @Test func atItsOwnAddressNoToolAsksWhoItIs() throws {
+        let store = try Self.store()
+        let server = MCPServer(store: store)
+        let listed = try #require(server.handle(
+            ["jsonrpc": "2.0", "id": 1, "method": "tools/list"], as: UUID().uuidString))
+        let tools = try #require((listed["result"] as? [String: Any])?["tools"] as? [[String: Any]])
+        #expect(!tools.isEmpty)
+        for tool in tools {
+            let schema = tool["inputSchema"] as? [String: Any]
+            let properties = schema?["properties"] as? [String: Any]
+            let required = schema?["required"] as? [String] ?? []
+            #expect(properties?["session_id"] == nil, "\(tool["name"] ?? "?") still asks who it is.")
+            #expect(!required.contains("session_id"))
+        }
+    }
+
+    @Test func atThePlainAddressEveryToolStillAsks() throws {
+        let store = try Self.store()
+        let server = MCPServer(store: store)
+        let listed = try #require(server.handle(["jsonrpc": "2.0", "id": 1, "method": "tools/list"]))
+        let tools = try #require((listed["result"] as? [String: Any])?["tools"] as? [[String: Any]])
+        for tool in tools {
+            let required = (tool["inputSchema"] as? [String: Any])?["required"] as? [String] ?? []
+            #expect(required.contains("session_id"), "\(tool["name"] ?? "?") has to ask an external agent.")
+        }
+    }
+
+    @Test func aCallFromItsOwnAddressIsSignedForIt() throws {
+        let store = try Self.store()
+        let project = Project(name: "Demo")
+        try store.save(project)
+        var agent = Agent(projectID: project.id)
+        agent.number = 7
+        try store.save(agent)
+        let server = MCPServer(store: store)
+
+        // No session_id anywhere in the call, and the answer is about this agent's own
+        // tasks, which is the thing that needed to know.
+        let answered = try #require(server.handle([
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": ["name": "task_list", "arguments": ["project": "Demo", "mine": true]],
+        ], as: agent.id.uuidString))
+        let result = try #require(answered["result"] as? [String: Any])
+        #expect(result["isError"] as? Bool == false)
+    }
+
+    @Test func theOneWithAQuestionOfItsOwnIsNotOfferedOurs() {
+        // Claude Code asks with `elicitation/create`, so it does not need the tool.
+        let asking = MCPServer.Tool.all(asking: true).map(\.name)
+        #expect(!asking.contains("escalation_raise"))
+        #expect(!asking.contains("escalation_await"))
+        #expect(asking.contains("escalation_list"), "It can still read what it asked.")
+        // Everyone else keeps it, because prose is not a question the floor can see.
+        #expect(MCPServer.Tool.all(asking: false).map(\.name).contains("escalation_raise"))
+    }
+
+    @Test func theWordsStopTellingAnAgentAnIdItNeverUses() {
+        let project = Project(name: "Demo")
+        let named = LaunchPrompt.project(project, as: "A7")
+        #expect(named.contains("You are agent \"A7\""))
+        #expect(!named.contains("session_id"))
+        #expect(named.contains("Demo"))
+        // An agent in a terminal still gets told, because it calls the plain address.
+        let told = LaunchPrompt.project(project, as: "A7", session: UUID())
+        #expect(told.contains("session_id"))
+    }
+}
+
+/// Putting an agent into a mode where it does not have to ask. (Alex, 16 Sep 2026.)
+struct SessionModeTests {
+    /// What Claude Code really offers, from its `session/new` answer.
+    static let claudeOffers = ["default", "acceptEdits", "plan", "auto", "bypassPermissions"]
+
+    @Test func theModesComeOffTheAnswer() {
+        let answer: [String: Any] = ["modes": [
+            "currentModeId": "default",
+            "availableModes": [["id": "default"], ["id": "bypassPermissions"]],
+        ]]
+        #expect(ACP.Modes.offered(in: answer) == ["default", "bypassPermissions"])
+        #expect(ACP.Modes.current(in: answer) == "default")
+        #expect(ACP.Modes.offered(in: [:]).isEmpty)
+        #expect(ACP.Modes.current(in: [:]) == nil)
+    }
+
+    @Test func gettingOnWithItTakesTheMostPermissiveOnOffer() {
+        #expect(ACP.Modes.wanted(.allowEverything, from: Self.claudeOffers) == "bypassPermissions")
+        // Without the best one, the next best.
+        #expect(ACP.Modes.wanted(.allowEverything, from: ["default", "acceptEdits"]) == "acceptEdits")
+        #expect(ACP.Modes.wanted(.allowEverything, from: ["default", "auto"]) == "auto")
+    }
+
+    @Test func askingPutsItBackIntoAsking() {
+        #expect(ACP.Modes.wanted(.askAboutChanges, from: Self.claudeOffers) == "default")
+        #expect(ACP.Modes.wanted(.askAboutEverything, from: Self.claudeOffers) == "default")
+    }
+
+    @Test func anAgentWithNothingUsefulToOfferIsLeftAlone() {
+        // Copilot's modes are about how it converses, and Grok has none at all. For those
+        // the factory answers their requests quickly instead.
+        let copilot = ["https://agentclientprotocol.com/protocol/session-modes#agent"]
+        #expect(ACP.Modes.wanted(.allowEverything, from: copilot) == nil)
+        #expect(ACP.Modes.wanted(.allowEverything, from: []) == nil)
+        #expect(ACP.Modes.wanted(.askAboutEverything, from: []) == nil)
+    }
+
+    @Test func theRequestIsTheShapeTheWireWants() {
+        let asked = ACP.setMode("bypassPermissions", session: "s1")
+        #expect(asked["sessionId"] as? String == "s1")
+        #expect(asked["modeId"] as? String == "bypassPermissions")
+    }
+}

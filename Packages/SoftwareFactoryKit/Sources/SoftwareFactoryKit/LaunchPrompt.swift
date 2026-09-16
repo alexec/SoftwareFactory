@@ -18,6 +18,28 @@ public enum LaunchPrompt {
         + "register and nothing to say goodbye to; the factory already has you. Keep it."
     }
 
+    /// The same line for an agent the factory hands its own MCP address to. It does not
+    /// need to be told a session, because it never has to say one: the factory knows who
+    /// is calling from the address the call arrived at. Two thirds of that sentence was
+    /// an id for a person to read and an instruction to hold on to it. (T373.)
+    static func youAreNamed(_ name: String) -> String {
+        "You are agent \"\(name)\". The factory's tools already know it is you, so there "
+        + "is nothing to register, nothing to say goodbye to and no id to keep."
+    }
+
+    /// An agent reached at its own address needs no session in its words.
+    public static func project(_ project: Project, as name: String) -> String {
+        named(projectWork(project), as: name)
+    }
+
+    public static func task(_ task: FactoryTask, in project: Project, as name: String) -> String {
+        named(taskWork(task, in: project), as: name)
+    }
+
+    public static func named(_ prompt: String, as name: String) -> String {
+        youAreNamed(name) + " \(prompt)"
+    }
+
     /// The work half of the words, without the line that says who the agent is. This is
     /// what the person sees and may edit before they launch: the factory writes the name
     /// and the session in front of whatever they type, because those are not theirs to

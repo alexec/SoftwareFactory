@@ -120,8 +120,14 @@ enum StartAgent {
             guard let path = project.path, !path.isEmpty else {
                 return AgentLauncher.LaunchError.noFolder.localizedDescription
             }
+            // No session in the words: it is handed its own MCP address, so the factory
+            // knows who is calling without being told. (T373.)
+            let acpPrompt = asked.isEmpty
+                ? (task.map { LaunchPrompt.task($0, in: project, as: reserved.label) }
+                    ?? LaunchPrompt.project(project, as: reserved.label))
+                : LaunchPrompt.named(asked, as: reserved.label)
             model.setRuntime(.acp, for: reserved)
-            if let wrong = await floor.start(reserved, kind: agent, cwd: path, words: prompt) {
+            if let wrong = await floor.start(reserved, kind: agent, cwd: path, words: acpPrompt) {
                 model.setRuntime(.terminal, for: reserved)
                 return wrong
             }
@@ -228,8 +234,10 @@ enum StartAgent {
                 ?? LaunchPrompt.project(project, as: agent.label, session: agent.id)
             if kind.speaksACP, model.launchStyle == .embedded, !AgentLauncher.isSandboxed,
                let path = project.path, !path.isEmpty {
+                let acpPrompt = task.map { LaunchPrompt.task($0, in: project, as: agent.label) }
+                    ?? LaunchPrompt.project(project, as: agent.label)
                 model.setRuntime(.acp, for: agent)
-                if let wrong = await floor.start(agent, kind: kind, cwd: path, words: prompt) {
+                if let wrong = await floor.start(agent, kind: kind, cwd: path, words: acpPrompt) {
                     model.setRuntime(.terminal, for: agent)
                     model.noteError(wrong)
                 } else {

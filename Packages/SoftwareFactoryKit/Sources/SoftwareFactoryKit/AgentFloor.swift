@@ -46,6 +46,10 @@ public final class AgentFloor: @unchecked Sendable {
         /// The question it is blocked on, as it came off the wire, so the answer can be
         /// put back in the shape the agent asked in.
         var asked: ACP.Elicitation?
+        /// The modes this agent offered, and the one it is in, so the daemon can put it
+        /// back into asking or stop it asking when the person changes their mind.
+        var modes: [String] = []
+        var mode: String?
         init(connection: ACPConnection, state: AgentDaemon.Running, kind: LaunchAgent, cwd: String) {
             self.connection = connection
             self.state = state
@@ -62,6 +66,7 @@ public final class AgentFloor: @unchecked Sendable {
             return AgentDaemon.Reply(ok: true, pid: ProcessInfo.processInfo.processIdentifier)
         case .list:
             answerLateQuestions()
+            followTheStance()
             return AgentDaemon.Reply(ok: true, agents: everything(), pid: ProcessInfo.processInfo.processIdentifier)
         case .start, .resume:
             return await start(request, resuming: request.op == .resume)
@@ -168,9 +173,17 @@ public final class AgentFloor: @unchecked Sendable {
             // Read fresh each time, so changing it in Settings takes effect on the next
             // question rather than on the next restart of the daemon.
             let stance = self.store.throttle().permissions
-            if stance.allows(ask.toolCall.kind), let yes = ask.recommended {
-                connection.answerPermission(id: id, with: ACP.permissionAnswer(optionID: yes.optionID))
-                return
+            if stance.allows(ask.toolCall.kind) {
+                // Always, not once. The person has already decided in advance, so the
+                // answer is a standing one and the agent stops asking about this kind of
+                // thing: one round trip rather than one per call. The once-only preference
+                // belongs to the other path, where nobody answered and no decision was
+                // made on purpose. (Alex, 16 Sep 2026.)
+                let yes = ask.options.first { $0.kind == .allowAlways } ?? ask.recommended
+                if let yes {
+                    connection.answerPermission(id: id, with: ACP.permissionAnswer(optionID: yes.optionID))
+                    return
+                }
             }
             self.change(agent) {
                 $0.waiting = AgentDaemon.Pending(
@@ -183,11 +196,15 @@ public final class AgentFloor: @unchecked Sendable {
         do {
             try connection.start()
             _ = try await connection.ask("initialize", ACP.initialize())
-            let servers = [ACP.factoryServer()]
+            let servers = [ACP.factoryServer(agent: agent)]
+            var answered: [String: Any] = [:]
             let session: String
             if resuming, let known = knownSession(for: agent) {
-                _ = try await connection.ask("session/load", ACP.loadSession(known, cwd: cwd, mcpServers: servers),
-                                             patience: 120)
+                let back = try await connection.ask("session/load", ACP.loadSession(known, cwd: cwd, mcpServers: servers),
+                                                    patience: 120)
+                answered = back.flatMap {
+                    (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any]
+                } ?? [:]
                 session = known
             } else {
                 let answer = try await connection.ask("session/new", ACP.newSession(cwd: cwd, mcpServers: servers),
@@ -197,12 +214,22 @@ public final class AgentFloor: @unchecked Sendable {
                       let made = body["sessionId"] as? String
                 else { throw ACPConnection.Failure.notStarted("it made no session") }
                 session = made
+                answered = body
             }
+            let offered = ACP.Modes.offered(in: answered)
             change(agent) {
                 $0.state = .running
                 $0.session = session
                 $0.pid = connection.pid
             }
+            // Into the mode that matches what the person said an agent may do. Where an
+            // agent has one, this beats answering every request instantly: it stops
+            // asking at all. (T373.)
+            guarded.sync {
+                self.held[agent]?.modes = offered
+                self.held[agent]?.mode = ACP.Modes.current(in: answered)
+            }
+            setMode(agent, to: store.throttle().permissions)
             if let words = request.text, !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 prompt(agent, words)
             }
@@ -327,6 +354,31 @@ public final class AgentFloor: @unchecked Sendable {
             held[agent]?.asked = nil
         }
         return .yes
+    }
+
+    /// Puts an agent into the mode that matches what the person said agents may do, when
+    /// it has one to go into. Nothing happens for an agent with no modes, and for those
+    /// the factory answers their requests instead.
+    private func setMode(_ agent: UUID, to permissions: Throttle.Permissions) {
+        let want: (String, ACPConnection, String)? = guarded.sync {
+            guard let held = held[agent], let session = held.state.session,
+                  let wanted = ACP.Modes.wanted(permissions, from: held.modes),
+                  wanted != held.mode
+            else { return nil }
+            held.mode = wanted
+            return (wanted, held.connection, session)
+        }
+        guard let (wanted, connection, session) = want else { return }
+        connection.tell("session/set_mode", ACP.setMode(wanted, session: session))
+    }
+
+    /// The person changed their mind in Settings, so every agent that has a mode goes
+    /// into the one that matches. Called off `list`, which the app runs on its refresh.
+    private func followTheStance() {
+        let stance = store.throttle().permissions
+        for one in everythingHeld() where one.state.state == .running {
+            setMode(one.state.agent, to: stance)
+        }
     }
 
     /// A permission request nobody has answered inside the hour gets the recommended

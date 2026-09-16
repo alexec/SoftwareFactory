@@ -47,14 +47,61 @@ public enum ACP {
     /// `headers` is an empty array and not an omitted field: the agent validates the
     /// whole shape and answers "Invalid params" for a missing one, which says nothing
     /// about which field it meant. (T373.)
-    public static func factoryServer(port: Int = 4747) -> [String: Any] {
-        ["type": "http", "name": MCPServer.name, "url": "http://127.0.0.1:\(port)/mcp", "headers": []]
+    public static func factoryServer(agent: UUID? = nil, port: Int = 4747) -> [String: Any] {
+        // Each agent gets its own address, so the factory knows who is calling and the
+        // agent never has to say. That is `session_id` off all thirty-three tools. (T373.)
+        let path = agent.map { "/mcp/\($0.uuidString)" } ?? "/mcp"
+        return ["type": "http", "name": MCPServer.name, "url": "http://127.0.0.1:\(port)\(path)", "headers": []]
     }
 
     /// Words for the agent. Everything the factory says to one goes through here: the
     /// launch prompt, a nudge, a message from another agent, the status report ask.
     public static func prompt(_ text: String, session: String) -> [String: Any] {
         ["sessionId": session, "prompt": [["type": "text", "text": text]]]
+    }
+
+    /// Which mode the session runs in, `session/set_mode`.
+    public static func setMode(_ mode: String, session: String) -> [String: Any] {
+        ["sessionId": session, "modeId": mode]
+    }
+
+    /// The modes an agent offered at `session/new`, and which one asks the fewest
+    /// questions.
+    ///
+    /// This is the difference between the factory answering every permission request
+    /// instantly and the agent never asking one. Claude Code offers `bypassPermissions`,
+    /// "Accepts all permissions", which is what every agent was launched with before ACP.
+    /// Copilot's modes are about how it converses rather than what it may do, and Grok has
+    /// none at all, so for those two the answer stays "say yes quickly". (T373, and Alex,
+    /// 16 Sep 2026: can we enable auto-permission mode for Claude.)
+    public enum Modes {
+        /// Most permissive first. Matched by id, because the names are prose and the
+        /// descriptions are prose about the prose.
+        static let permissiveFirst = ["bypassPermissions", "auto", "acceptEdits"]
+
+        /// The modes in a `session/new` or `session/load` answer.
+        public static func offered(in result: [String: Any]) -> [String] {
+            guard let modes = result["modes"] as? [String: Any],
+                  let available = modes["availableModes"] as? [[String: Any]]
+            else { return [] }
+            return available.compactMap { $0["id"] as? String }
+        }
+
+        public static func current(in result: [String: Any]) -> String? {
+            (result["modes"] as? [String: Any])?["currentModeId"] as? String
+        }
+
+        /// The one to ask for, given how much the person said an agent may do. Nil when
+        /// the agent offers nothing better than what it is already in.
+        public static func wanted(_ permissions: Throttle.Permissions, from offered: [String]) -> String? {
+            switch permissions {
+            case .allowEverything:
+                return permissiveFirst.first { offered.contains($0) }
+            case .askAboutChanges, .askAboutEverything:
+                // Back to asking, so the factory gets to decide each one.
+                return offered.contains("default") ? "default" : nil
+            }
+        }
     }
 
     /// Stop what you are doing. A notification: there is no answer to wait for.
