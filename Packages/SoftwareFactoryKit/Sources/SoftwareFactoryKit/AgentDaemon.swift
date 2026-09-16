@@ -188,7 +188,7 @@ public enum AgentDaemon {
         /// The modes this agent offers, as it named them, and the one it is in. Shown on
         /// its page: what an agent may do without asking is per agent, and every one of
         /// these CLIs has its own words for it. (Alex, 16 Sep 2026.)
-        public var modes: [Mode] = []
+        public var modes: [ACP.Mode] = []
         public var mode: String?
 
         public var id: UUID { agent }
@@ -196,7 +196,7 @@ public enum AgentDaemon {
         public init(agent: UUID, state: State, pid: Int32? = nil, session: String? = nil,
                     startedAt: Date = .now, exit: Int32? = nil, waiting: Pending? = nil,
                     isPrompting: Bool = false, line: String? = nil, queued: Int = 0,
-                    asking: Question? = nil, modes: [Mode] = [], mode: String? = nil) {
+                    asking: Question? = nil, modes: [ACP.Mode] = [], mode: String? = nil) {
             self.agent = agent
             self.state = state
             self.pid = pid
@@ -224,19 +224,6 @@ public enum AgentDaemon {
         }
 
         public var isAlive: Bool { state == .starting || state == .running }
-    }
-
-    /// One way an agent can be told to run: its id, and the words it uses for it.
-    public struct Mode: Codable, Sendable, Equatable, Identifiable {
-        public var id: String
-        public var name: String
-        public var detail: String?
-
-        public init(id: String, name: String, detail: String? = nil) {
-            self.id = id
-            self.name = name
-            self.detail = detail
-        }
     }
 
     /// The agent's own question, flattened into what a person needs to answer it.

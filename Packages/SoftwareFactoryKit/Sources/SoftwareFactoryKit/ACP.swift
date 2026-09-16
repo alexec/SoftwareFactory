@@ -60,6 +60,23 @@ public enum ACP {
         ["sessionId": session, "prompt": [["type": "text", "text": text]]]
     }
 
+    /// One way an agent can be told to run: its id, and the words it uses for it.
+    ///
+    /// Here rather than on the daemon, because a session mode is the protocol's idea and
+    /// the daemon is macOS only: the phone builds this package too, and putting it there
+    /// took the whole phone build down. (Alex, 16 Sep 2026.)
+    public struct Mode: Codable, Sendable, Equatable, Identifiable {
+        public var id: String
+        public var name: String
+        public var detail: String?
+
+        public init(id: String, name: String, detail: String? = nil) {
+            self.id = id
+            self.name = name
+            self.detail = detail
+        }
+    }
+
     /// Which mode the session runs in, `session/set_mode`.
     public static func setMode(_ mode: String, session: String) -> [String: Any] {
         ["sessionId": session, "modeId": mode]
@@ -88,14 +105,14 @@ public enum ACP {
         }
 
         /// The same, with the words the agent uses for them, for a menu a person reads.
-        public static func listed(in result: [String: Any]) -> [AgentDaemon.Mode] {
+        public static func listed(in result: [String: Any]) -> [Mode] {
             guard let modes = result["modes"] as? [String: Any],
                   let available = modes["availableModes"] as? [[String: Any]]
             else { return [] }
             return available.compactMap { one in
                 guard let id = one["id"] as? String else { return nil }
-                return AgentDaemon.Mode(id: id, name: one["name"] as? String ?? id,
-                                        detail: one["description"] as? String)
+                return Mode(id: id, name: one["name"] as? String ?? id,
+                            detail: one["description"] as? String)
             }
         }
 
