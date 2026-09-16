@@ -24,9 +24,12 @@ struct AgentTranscriptView: View {
                 PlanBar(entries: transcript.plan)
                 Divider()
             }
+            // The input floats over the page rather than sitting under a rule at the
+            // bottom of it. The conversation runs on behind it, which is what the glass
+            // is for: you can see there is more page under the thing you are typing into.
+            // (Alex, 16 Sep 2026.)
             page
-            Divider()
-            sayBox
+                .overlay(alignment: .bottom) { sayBox }
         }
         .task(id: agent.id) {
             floor.watch(agent.id)
@@ -49,7 +52,9 @@ struct AgentTranscriptView: View {
                     }
                 }
                 .padding(.horizontal, Style.page)
-                .padding(.vertical, Style.page)
+                .padding(.top, Style.page)
+                // Room for the input that floats over the bottom.
+                .padding(.bottom, 78)
                 // A measure: past about this width the eye loses the start of the next
                 // line. It is the same one the documents are set to. (T311's paper.)
                 .frame(maxWidth: Paper.measure, alignment: .leading)
@@ -117,9 +122,15 @@ struct AgentTranscriptView: View {
                 .labelStyle(.iconOnly)
                 .disabled(words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
+        .padding(.leading, 14)
+        .padding(.trailing, 8)
+        .padding(.vertical, 8)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: Style.card))
+        // The same measure as the page, so the field lines up with what it is answering
+        // rather than running the width of the window.
+        .frame(maxWidth: Paper.measure)
         .padding(.horizontal, Style.page)
-        .padding(.vertical, 10)
-        .background(Color(.paper))
+        .padding(.bottom, 12)
     }
 
     private func say() {
