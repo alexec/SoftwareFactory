@@ -78,13 +78,25 @@ public enum ACP {
         /// Most permissive first. Matched by id, because the names are prose and the
         /// descriptions are prose about the prose.
         static let permissiveFirst = ["bypassPermissions", "auto", "acceptEdits"]
+        /// The agent judging for itself, which is a different thing from being told yes
+        /// to everything, and every one of these CLIs offers both.
+        static let deciding = ["auto", "acceptEdits"]
 
         /// The modes in a `session/new` or `session/load` answer.
         public static func offered(in result: [String: Any]) -> [String] {
+            listed(in: result).map(\.id)
+        }
+
+        /// The same, with the words the agent uses for them, for a menu a person reads.
+        public static func listed(in result: [String: Any]) -> [AgentDaemon.Mode] {
             guard let modes = result["modes"] as? [String: Any],
                   let available = modes["availableModes"] as? [[String: Any]]
             else { return [] }
-            return available.compactMap { $0["id"] as? String }
+            return available.compactMap { one in
+                guard let id = one["id"] as? String else { return nil }
+                return AgentDaemon.Mode(id: id, name: one["name"] as? String ?? id,
+                                        detail: one["description"] as? String)
+            }
         }
 
         public static func current(in result: [String: Any]) -> String? {
@@ -97,6 +109,8 @@ public enum ACP {
             switch permissions {
             case .allowEverything:
                 return permissiveFirst.first { offered.contains($0) }
+            case .agentDecides:
+                return deciding.first { offered.contains($0) }
             case .askAboutChanges, .askAboutEverything:
                 // Back to asking, so the factory gets to decide each one.
                 return offered.contains("default") ? "default" : nil

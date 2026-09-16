@@ -71,7 +71,11 @@ public struct Throttle: Codable, Sendable, Equatable {
         agentSlots = try c.decodeIfPresent(Int.self, forKey: .agentSlots) ?? fallback.agentSlots
         swapCeiling = try c.decodeIfPresent(Double.self, forKey: .swapCeiling) ?? fallback.swapCeiling
         memoryFloor = try c.decodeIfPresent(Double.self, forKey: .memoryFloor) ?? fallback.memoryFloor
-        permissions = try c.decodeIfPresent(Permissions.self, forKey: .permissions) ?? fallback.permissions
+        // Read as a string and matched, rather than decoded as the enum: a value this
+        // version has never heard of would otherwise fail the whole record, and take the
+        // agent cap and every slot down with it.
+        permissions = (try c.decodeIfPresent(String.self, forKey: .permissions))
+            .flatMap(Permissions.init(rawValue:)) ?? fallback.permissions
     }
 
     /// What an agent may do without stopping to ask.
@@ -85,6 +89,13 @@ public struct Throttle: Codable, Sendable, Equatable {
         /// Say yes to everything, at once, and raise no question. What every agent was
         /// launched with before ACP.
         case allowEverything
+        /// The agent decides for itself. Not the same as saying yes to everything: an
+        /// agent in this mode still refuses what it thinks it should, and the difference
+        /// matters enough that every one of these CLIs offers both. Claude Code calls it
+        /// `auto`, "Claude handles permission decisions". An agent with no such mode is
+        /// told yes by the factory instead, which is the closest thing it has.
+        /// (Alex, 16 Sep 2026.)
+        case agentDecides
         /// Reading and searching go through; editing, deleting, moving and running ask.
         case askAboutChanges
         /// Ask about all of it.
@@ -95,6 +106,7 @@ public struct Throttle: Codable, Sendable, Equatable {
         public var title: String {
             switch self {
             case .allowEverything: "Let them get on with it"
+            case .agentDecides: "Let each agent decide"
             case .askAboutChanges: "Ask before changing anything"
             case .askAboutEverything: "Ask about everything"
             }
@@ -104,6 +116,8 @@ public struct Throttle: Codable, Sendable, Equatable {
             switch self {
             case .allowEverything:
                 "Agents do what they need to and never stop to ask. This is how the factory worked before it spoke ACP."
+            case .agentDecides:
+                "The agent judges each one itself and stops only when it thinks it should. An agent that has no such mode is told yes instead."
             case .askAboutChanges:
                 "Reading and searching go through. Editing a file, deleting one, or running a command becomes a question on the floor."
             case .askAboutEverything:
@@ -116,7 +130,9 @@ public struct Throttle: Codable, Sendable, Equatable {
         /// which is Grok, whose tool calls carry a name and no kind.
         public func allows(_ kind: ACP.ToolCall.Kind?) -> Bool {
             switch self {
-            case .allowEverything: true
+            // An agent in its own auto mode does not ask, so this is for one with no such
+            // mode, and for it the nearest thing to letting it judge is not stopping it.
+            case .allowEverything, .agentDecides: true
             case .askAboutEverything: false
             case .askAboutChanges: !(kind ?? .other).changesAnything
             }

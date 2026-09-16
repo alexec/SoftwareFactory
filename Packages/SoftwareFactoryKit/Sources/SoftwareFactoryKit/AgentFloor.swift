@@ -50,6 +50,10 @@ public final class AgentFloor: @unchecked Sendable {
         /// back into asking or stop it asking when the person changes their mind.
         var modes: [String] = []
         var mode: String?
+        /// Set when a person picked this agent's mode themselves, so the floor's own
+        /// setting stops moving it. One agent in auto and another asking is the ordinary
+        /// case, not a conflict to resolve. (Alex, 16 Sep 2026.)
+        var modeChosenByHand = false
         init(connection: ACPConnection, state: AgentDaemon.Running, kind: LaunchAgent, cwd: String) {
             self.connection = connection
             self.state = state
@@ -85,6 +89,8 @@ public final class AgentFloor: @unchecked Sendable {
             return answer(request)
         case .answer:
             return answerQuestion(request)
+        case .mode:
+            return chooseMode(request)
         case .shutdown:
             for one in everythingHeld() { one.connection.stop() }
             return .yes
@@ -228,6 +234,8 @@ public final class AgentFloor: @unchecked Sendable {
             guarded.sync {
                 self.held[agent]?.modes = offered
                 self.held[agent]?.mode = ACP.Modes.current(in: answered)
+                self.held[agent]?.state.modes = ACP.Modes.listed(in: answered)
+                self.held[agent]?.state.mode = ACP.Modes.current(in: answered)
             }
             setMode(agent, to: store.throttle().permissions)
             if let words = request.text, !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -356,6 +364,24 @@ public final class AgentFloor: @unchecked Sendable {
         return .yes
     }
 
+    /// The person picked this agent's mode themselves. It stops following the floor's
+    /// setting from here: one agent in auto and another asking is the ordinary case.
+    private func chooseMode(_ request: AgentDaemon.Request) -> AgentDaemon.Reply {
+        guard let agent = request.agent, let one = look(agent) else { return .no("Nobody here by that name.") }
+        guard let wanted = request.optionID else { return .no("Which mode?") }
+        guard one.state.modes.contains(where: { $0.id == wanted }) else {
+            return .no("\(wanted) is not one of its modes.")
+        }
+        guard let session = one.state.session else { return .no("It has no session.") }
+        guarded.sync {
+            held[agent]?.mode = wanted
+            held[agent]?.state.mode = wanted
+            held[agent]?.modeChosenByHand = true
+        }
+        one.connection.tell("session/set_mode", ACP.setMode(wanted, session: session))
+        return .yes
+    }
+
     /// Puts an agent into the mode that matches what the person said agents may do, when
     /// it has one to go into. Nothing happens for an agent with no modes, and for those
     /// the factory answers their requests instead.
@@ -366,6 +392,7 @@ public final class AgentFloor: @unchecked Sendable {
                   wanted != held.mode
             else { return nil }
             held.mode = wanted
+            held.state.mode = wanted
             return (wanted, held.connection, session)
         }
         guard let (wanted, connection, session) = want else { return }
@@ -376,7 +403,7 @@ public final class AgentFloor: @unchecked Sendable {
     /// into the one that matches. Called off `list`, which the app runs on its refresh.
     private func followTheStance() {
         let stance = store.throttle().permissions
-        for one in everythingHeld() where one.state.state == .running {
+        for one in everythingHeld() where one.state.state == .running && !one.modeChosenByHand {
             setMode(one.state.agent, to: stance)
         }
     }

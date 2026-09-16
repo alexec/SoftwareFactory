@@ -31,11 +31,20 @@ final class AgentShells {
 
     func has(_ agent: UUID) -> Bool { !(byAgent[agent] ?? []).isEmpty }
 
+    /// Where a shell opens: the project's folder, or your home when the agent is on no
+    /// project or the project has no folder set. A shell always has somewhere to start,
+    /// so clicking the terminal icon is never a dead end. (Alex, 16 Sep 2026.)
+    static func folder(_ wanted: String?) -> String {
+        guard let wanted, !wanted.isEmpty, FileManager.default.fileExists(atPath: wanted)
+        else { return FileManager.default.homeDirectoryForCurrentUser.path }
+        return wanted
+    }
+
     /// Opens one in the agent's folder. The id is the session's, and it is not the
     /// agent's own id: an agent has one session and a person may want three shells.
     @discardableResult
-    func open(for agent: UUID, in folder: String, terminals: TerminalSessions) -> Shell? {
-        guard !folder.isEmpty, FileManager.default.fileExists(atPath: folder) else { return nil }
+    func open(for agent: UUID, in wanted: String?, terminals: TerminalSessions) -> Shell? {
+        let folder = Self.folder(wanted)
         var mine = byAgent[agent] ?? []
         let shell = Shell(id: "shell-\(UUID().uuidString)",
                           number: (mine.map(\.number).max() ?? 0) + 1,
@@ -93,8 +102,14 @@ struct AgentShellsPane: View {
                     .id(session.run)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                empty
+                Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        }
+        // A terminal, not an offer of one. Opening this pane with nothing in it used to
+        // show a button saying Open a shell, which is the pane asking you to confirm the
+        // thing you just asked for. (Alex, 16 Sep 2026.)
+        .task(id: agent.id) {
+            if mine.isEmpty { shells.open(for: agent.id, in: folder, terminals: terminals) }
         }
     }
 
@@ -121,43 +136,19 @@ struct AgentShellsPane: View {
                     .background(isShowing ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
                                 in: .capsule)
                 }
-                if let folder {
-                    Button {
-                        shells.open(for: agent.id, in: folder, terminals: terminals)
-                    } label: {
-                        Image(systemName: "plus").font(.caption)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help("Open another shell in this folder")
+                Button {
+                    shells.open(for: agent.id, in: folder, terminals: terminals)
+                } label: {
+                    Image(systemName: "plus").font(.caption)
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Open another shell in \(Projects.shortPath(AgentShells.folder(folder)))")
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
         }
         .scrollIndicators(.never)
-    }
-
-    private var empty: some View {
-        VStack(spacing: 8) {
-            if let folder {
-                Text("A shell in \(Projects.shortPath(folder))")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Button("Open a shell") {
-                    shells.open(for: agent.id, in: folder, terminals: terminals)
-                }
-                .buttonStyle(.glassProminent)
-                .controlSize(.small)
-            } else {
-                Text("Set the project's folder and a shell can be opened here.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, Style.cardPadding)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

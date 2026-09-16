@@ -78,7 +78,17 @@ struct SettingsView: View {
                 Text(model.throttle.permissions.detail)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if model.throttle.permissions != .allowEverything {
+                if model.throttle.permissions == .agentDecides {
+                    Text("Where an agent has no mode of its own for this, the factory says yes on its behalf, which is the nearest thing it has.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text("This is the floor's setting. An agent's own page can put that one somewhere else, and it stays where you put it.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if model.throttle.permissions != .allowEverything && model.throttle.permissions != .agentDecides {
                     Text("A question stops the agent until it is answered, so one raised while you are away is an agent doing nothing. The factory takes the recommendation after ten minutes and says so.")
                         .font(.callout)
                         .foregroundStyle(.secondary)

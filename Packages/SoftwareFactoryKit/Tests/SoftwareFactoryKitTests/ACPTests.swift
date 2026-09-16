@@ -554,3 +554,54 @@ struct SessionModeTests {
         #expect(asked["modeId"] as? String == "bypassPermissions")
     }
 }
+
+/// Letting the agent judge for itself, which is not the same as being told yes.
+/// (Alex, 16 Sep 2026.)
+struct AgentDecidesTests {
+    static let claudeOffers = ["default", "acceptEdits", "plan", "auto", "bypassPermissions"]
+
+    @Test func itTakesTheModeWhereTheAgentJudges() {
+        // `auto` is "Claude handles permission decisions". `bypassPermissions` is
+        // "Accepts all permissions". They are different things and it matters which.
+        #expect(ACP.Modes.wanted(.agentDecides, from: Self.claudeOffers) == "auto")
+        #expect(ACP.Modes.wanted(.allowEverything, from: Self.claudeOffers) == "bypassPermissions")
+    }
+
+    @Test func withoutAnAutoModeItTakesTheNextNearestThing() {
+        #expect(ACP.Modes.wanted(.agentDecides, from: ["default", "acceptEdits"]) == "acceptEdits")
+        // And with nothing at all, the factory says yes on its behalf rather than
+        // stopping it, which is the nearest thing to letting it judge.
+        #expect(ACP.Modes.wanted(.agentDecides, from: []) == nil)
+        #expect(Throttle.Permissions.agentDecides.allows(.edit))
+        #expect(Throttle.Permissions.agentDecides.allows(.execute))
+    }
+
+    @Test func itIsOfferedAsAChoiceLikeTheRest() {
+        #expect(Throttle.Permissions.allCases.contains(.agentDecides))
+        #expect(Throttle.Permissions.agentDecides.title == "Let each agent decide")
+        #expect(!Throttle.Permissions.agentDecides.detail.isEmpty)
+    }
+
+    @Test func aThrottleWithAnUnknownStanceStillGetsOnWithIt() throws {
+        // A throttle written by a later version, read by this one.
+        let later = Data(#"{"compileSlots":5,"simulatorSlots":4,"agentSlots":8,"swapCeiling":0.75,"memoryFloor":0.15,"permissions":"somethingNew"}"#.utf8)
+        let read = try JSONDecoder().decode(Throttle.self, from: later)
+        #expect(read.permissions == .allowEverything)
+    }
+
+    @Test func theModesComeBackWithTheWordsTheAgentUsesForThem() {
+        let answer: [String: Any] = ["modes": [
+            "currentModeId": "default",
+            "availableModes": [
+                ["id": "default", "name": "Manual", "description": "Always ask before making changes"],
+                ["id": "auto", "name": "Auto", "description": "Claude handles permission decisions"],
+            ],
+        ]]
+        let listed = ACP.Modes.listed(in: answer)
+        #expect(listed.map(\.id) == ["default", "auto"])
+        #expect(listed.map(\.name) == ["Manual", "Auto"])
+        #expect(listed[1].detail == "Claude handles permission decisions")
+        // An agent that offers none gets no menu at all, which is Grok.
+        #expect(ACP.Modes.listed(in: [:]).isEmpty)
+    }
+}

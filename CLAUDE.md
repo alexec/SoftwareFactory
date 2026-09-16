@@ -420,6 +420,19 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     agent for the same reason: one that asks through the protocol is not offered
     `escalation_raise` or `escalation_await`, because it has a better way and the factory
     should not offer a second. (T373.)
+  - `Throttle.permissions` has four positions, and `agentDecides` is the one to know:
+    the agent judges each call itself and stops only when it thinks it should, which is a
+    different thing from being told yes to everything. Every one of these CLIs offers
+    both, and Claude Code's words for them are `auto`, "Claude handles permission
+    decisions", and `bypassPermissions`, "Accepts all permissions". An agent with no such
+    mode is told yes by the factory, which is the nearest thing it has. The stance is read
+    as a string and matched rather than decoded as the enum: a value a later version wrote
+    would otherwise fail the whole record and take the agent cap down with it.
+    **It is the floor's setting, not the last word.** An agent's own page has a menu of
+    exactly the modes that agent offers, in its own words, and picking one there stops that
+    agent following the floor: one on a repo you care about asking while one on a scratch
+    project gets on with it is the ordinary case, not a conflict. Nothing is drawn for an
+    agent that offers no modes, which is Grok. (Alex, 16 Sep 2026.)
   - `Throttle.permissions` also picks the agent's **session mode**, where it has one.
     Claude Code offers `bypassPermissions`, "Accepts all permissions", which is what every
     agent was launched with before ACP; `ACP.Modes.wanted` takes the most permissive on
@@ -589,7 +602,11 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     otherwise. Clicking the terminal icon with none open gives you one, because that is
     what clicking a terminal icon means. A shell is `zsh -il` and nothing is typed into it:
     a terminal that opens with somebody else's instructions in it is a terminal pretending
-    to be an agent. They go when the agent is deleted. (Alex, 16 Sep 2026.)
+    to be an agent. They go when the agent is deleted. Clicking the terminal icon opens
+    one rather than offering to: a pane with a button saying Open a shell is the pane
+    asking you to confirm the thing you just asked for. A shell always has somewhere to
+    start, the project's folder or your home, so the icon is never a dead end.
+    (Alex, 16 Sep 2026.)
   - `Floor` and `App/Sources/AgentTranscriptView.swift`: the app's side of the daemon, and
     what an ACP agent's page is instead of a terminal. `Floor` starts the daemon when
     nothing is answering, asks what it is holding on a clock of its own, and folds

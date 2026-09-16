@@ -463,27 +463,56 @@ struct AgentView: View {
 
     private var sideIcons: some View {
         HStack(spacing: 4) {
+            modePicker
             Spacer(minLength: 0)
             icon(.documents, "doc.richtext",
                  on: hasDocuments ? "Hide what it has written" : "It has not written anything yet",
                  enabled: hasDocuments)
             icon(.shells, shells.has(agent.id) ? "apple.terminal.fill" : "apple.terminal",
                  on: "A shell in this agent's folder, beside it",
-                 enabled: status.project?.path?.isEmpty == false || shells.has(agent.id))
+                 enabled: true)
         }
         .padding(.horizontal, Style.cardPadding)
         .padding(.vertical, 5)
     }
 
+    /// What this agent may do without asking, in its own words.
+    ///
+    /// Per agent rather than only on the floor's setting, because it is per agent in
+    /// practice: one on a repo you care about asks, one on a scratch project gets on with
+    /// it. The menu lists exactly what this agent offers, because the four disagree about
+    /// what the choices even are. Nothing is drawn for an agent that offers none, which is
+    /// Grok. (Alex, 16 Sep 2026.)
+    @ViewBuilder
+    private var modePicker: some View {
+        if let running = floor.running(agent.id), !running.modes.isEmpty {
+            Menu {
+                ForEach(running.modes) { mode in
+                    Button {
+                        _Concurrency.Task { await floor.setMode(agent.id, to: mode.id) }
+                    } label: {
+                        if mode.id == running.mode {
+                            Label(mode.name, systemImage: "checkmark")
+                        } else {
+                            Text(mode.name)
+                        }
+                    }
+                    .help(mode.detail ?? "")
+                }
+            } label: {
+                Text(running.modes.first { $0.id == running.mode }?.name ?? "Mode")
+                    .font(.caption)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("What \(agent.label) may do without asking")
+        }
+    }
+
     private func icon(_ which: Side, _ symbol: String, on help: String, enabled: Bool) -> some View {
         Button {
             withAnimation(.snappy) { chosenSide = chosenSide == which ? nil : which }
-            // Opening the shells with none open gives you one, because that is what
-            // clicking a terminal icon means.
-            if which == .shells, chosenSide == .shells, !shells.has(agent.id),
-               let folder = status.project?.path {
-                shells.open(for: agent.id, in: folder, terminals: terminals)
-            }
+
         } label: {
             Image(systemName: symbol)
                 .font(.callout)

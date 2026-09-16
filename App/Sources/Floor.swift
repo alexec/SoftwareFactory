@@ -129,6 +129,13 @@ final class Floor {
         _ = await ask(AgentDaemon.Request(op: .cancel, agent: agent))
     }
 
+    /// The person picked this agent's mode. From here it stops following the floor's own
+    /// setting: one agent in auto and another asking is the ordinary case.
+    func setMode(_ agent: UUID, to mode: String) async {
+        _ = await ask(AgentDaemon.Request(op: .mode, agent: agent, optionID: mode))
+        await look()
+    }
+
     /// The person answered the agent's own question. It has been blocked on this since
     /// it asked, so the words go back in the shape it asked in.
     func answerQuestion(_ agent: UUID, request: Int, option: String?, words: String) async {
