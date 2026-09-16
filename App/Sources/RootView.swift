@@ -105,6 +105,8 @@ struct RootView: View {
                 }
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 220)
+            .scrollContentBackground(.hidden)
+            .background(Color(.paper))
             .confirmationDialog("Remove \(removing?.name ?? "") from the factory?",
                                  isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
                 Button("Remove", role: .destructive) {
@@ -158,6 +160,12 @@ struct RootView: View {
             DictateButton(lookingAt: lookingAtProject)
                 .padding(20)
         }
+        // The house paper, under the whole window. Liquid Glass keeps its translucency
+        // and sits on this rather than replacing it, so the theme is what shows through
+        // the glass instead of a second idea beside it, and the rust is the app's tint so
+        // every control picks it up. (Alex, 16 Sep 2026: use it everywhere.)
+        .background(Color(.paper))
+        .tint(Color(.mark))
         .safeAreaInset(edge: .top) { writeFailure }
         .navigationTitle(title)
         .toolbar { ToolbarItem(placement: .principal) { waiting } }

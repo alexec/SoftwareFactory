@@ -47,6 +47,8 @@ struct IntroSheet: View {
             .padding(.horizontal, 28)
             .padding(.bottom, 24)
         }
+        .background(Color(.paper))
+        .tint(Color(.mark))
         .frame(width: 440, height: 480)
     }
 

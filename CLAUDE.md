@@ -506,11 +506,13 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     alone. The tests guard what is worth guarding now: every tone is warm, the mark is a
     colour rather than a second black, and dark is its own paper rather than a white page
     dimmed.
-    **It is the theme for reading matter and not for the app.** It goes on a document and
-    on the agent's conversation, which are the two things a person reads; the window, the
-    sidebar and the cards stay on system materials with Liquid Glass over them. Putting
-    the paper under everything was tried and it is not the thing: paper is what a page is
-    made of, not what a window is made of. (Alex, 16 Sep 2026.)
+    **It goes under the whole app**: the window, the sidebar, Settings, the sheets, and
+    the rust is the app's tint so every control picks it up. Liquid Glass keeps its own
+    translucency and sits on the paper rather than replacing it, so the theme is what
+    shows through the glass instead of a second idea beside it. The sidebar and Settings
+    hide their own scroll backgrounds to let it through. (Alex, 16 Sep 2026: use it
+    everywhere. Asked for twice, taken away once in between, and this is the settled
+    answer.)
   - An agent's conversation is set on paper: the warm ground, a serif for everything
     anybody said, the same measure the documents use so a line is one you can read to the
     end of, and no gloss anywhere. A tool call is a block set into the page, like a quote

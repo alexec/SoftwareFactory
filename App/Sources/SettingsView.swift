@@ -188,6 +188,9 @@ struct SettingsView: View {
             #endif
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(Color(.paper))
+        .tint(Color(.mark))
         .frame(width: 720, height: 640)
         .task { await terminals.lookForHeldSessions() }
         .task { await floor.look() }
