@@ -33,6 +33,14 @@ public final class AgentFloor: @unchecked Sendable {
         "\(NSHomeDirectory())/.local/bin", "\(NSHomeDirectory())/.bun/bin",
     ]
 
+    /// One thing to say to an agent: the words, and whatever was dropped on it with them.
+    /// A pair rather than a string, because an attachment queues with the words it came
+    /// with rather than arriving in some later turn on its own. (T427.)
+    struct Said {
+        var words: String
+        var files: [String] = []
+    }
+
     private final class Held {
         let connection: ACPConnection
         var state: AgentDaemon.Running
@@ -41,8 +49,8 @@ public final class AgentFloor: @unchecked Sendable {
         /// What it is doing, folded as the lines go past. Bounded on purpose: the whole
         /// transcript belongs on the page reading it, not in the daemon watching sixteen.
         var headline = ACPHeadline()
-        /// Words waiting for the turn in flight to finish. See `prompt(_:_:)`.
-        var pending: [String] = []
+        /// Things waiting for the turn in flight to finish. See `prompt(_:_:)`.
+        var pending: [Said] = []
         /// The question it is blocked on, as it came off the wire, so the answer can be
         /// put back in the shape the agent asked in.
         var asked: ACP.Elicitation?
@@ -50,6 +58,9 @@ public final class AgentFloor: @unchecked Sendable {
         /// back into asking or stop it asking when the person changes their mind.
         var modes: [String] = []
         var mode: String?
+        /// How this agent says a person logs in, off its handshake. Read when a start
+        /// fails and not before. (T435.)
+        var ways: [ACP.WayIn] = []
         /// Set when a person picked this agent's mode themselves, so the floor's own
         /// setting stops moving it. One agent in auto and another asking is the ordinary
         /// case, not a conflict to resolve. (Alex, 16 Sep 2026.)
@@ -104,7 +115,17 @@ public final class AgentFloor: @unchecked Sendable {
         guard let cwd = request.cwd, !cwd.isEmpty else { return .no("An agent has to stand somewhere.") }
         guard FileManager.default.fileExists(atPath: cwd) else { return .no("There is no folder at \(cwd).") }
         let kind = LaunchAgent.remembered(request.kind)
-        guard let launch = launch(kind) else { return .no("\(kind.title) does not speak ACP.") }
+        // The model the person named, as a flag for the three that take one and in the
+        // environment for the one whose adapter takes no arguments. (T462.)
+        guard var launch = launch(kind) else { return .no("\(kind.title) does not speak ACP.") }
+        // The flag goes on whatever this kind was going to be started with, rather than on
+        // what it would be started with by default: a test hands in a stub that speaks ACP
+        // and nothing else, and rebuilding the launch here threw the stub away.
+        let wanted = (request.model ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !wanted.isEmpty, case .flag(let flag) = kind.howToSayTheModel {
+            launch = LaunchAgent.ACPLaunch(command: launch.command,
+                                           arguments: launch.arguments + [flag, wanted])
+        }
         guard let binary = find(launch.command) else {
             let install = kind.acpInstall.map { " Install it with: \($0)" } ?? ""
             return .no("\(launch.command) is not on this Mac.\(install)")
@@ -132,7 +153,8 @@ public final class AgentFloor: @unchecked Sendable {
 
         let connection = ACPConnection(
             agent: agent, command: binary, arguments: launch.arguments, cwd: cwd,
-            environment: environment(for: cwd), transcript: transcript,
+            environment: environment(for: cwd).merging(kind.environment(model: request.model)) { _, new in new },
+            transcript: transcript,
             complaints: store.complaintsFile(for: agent))
 
         let held = Held(connection: connection,
@@ -147,6 +169,7 @@ public final class AgentFloor: @unchecked Sendable {
                 $0.asking = nil
                 $0.isPrompting = false
                 $0.queued = 0
+                $0.waitingToSay = []
             }
             self?.guarded.sync { self?.held[agent]?.pending = [] }
         }
@@ -155,6 +178,23 @@ public final class AgentFloor: @unchecked Sendable {
                 guard let one = self?.held[agent] else { return }
                 one.headline.apply(line: line)
                 one.state.line = one.headline.line
+                // The mode it is in now, as opposed to the mode we last asked for. An
+                // agent can change its own, and a set_mode can fail to take; either way
+                // the menu on its page was naming the mode we wanted rather than the one
+                // it is in. This is the agent saying so, not a person choosing, so
+                // `modeChosenByHand` is left alone and the floor's stance still applies to
+                // it. (T426.)
+                if case .update(_, let update) = ACP.read(line: line) {
+                    switch update {
+                    case .mode(let id) where !id.isEmpty:
+                        one.mode = id
+                        one.state.mode = id
+                    // What it can be asked to do, which arrives when the session starts
+                    // and again whenever the set changes. (T436.)
+                    case .commands(let listed): one.state.commands = listed
+                    default: break
+                    }
+                }
             }
         }
         // The agent's own question. Blocked on it exactly like a permission request, and
@@ -201,7 +241,21 @@ public final class AgentFloor: @unchecked Sendable {
 
         do {
             try connection.start()
-            _ = try await connection.ask("initialize", ACP.initialize())
+            // What it says it will take in a prompt. Read here and kept, because it is per
+            // agent and not the same twice: Grok takes no image and Cursor takes no
+            // embedded resource. (T427, off the grid in T428.)
+            let hello = try await connection.ask("initialize", ACP.initialize())
+            let handshake = hello.flatMap {
+                (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any]
+            } ?? [:]
+            let takes = ACP.Attachments.read(handshake)
+            // And how it says to log in, kept for the one moment it matters: a start that
+            // fails. (T435.)
+            let ways = ACP.WayIn.read(handshake)
+            guarded.sync {
+                self.held[agent]?.state.takes = takes
+                self.held[agent]?.ways = ways
+            }
             let servers = [ACP.factoryServer(agent: agent)]
             var answered: [String: Any] = [:]
             let session: String
@@ -237,7 +291,22 @@ public final class AgentFloor: @unchecked Sendable {
                 self.held[agent]?.state.modes = ACP.Modes.listed(in: answered)
                 self.held[agent]?.state.mode = ACP.Modes.current(in: answered)
             }
-            setMode(agent, to: store.throttle().permissions)
+            // A mode the person picked as they started it beats the floor's setting, and
+            // goes on beating it: they said what this one agent is for while they were
+            // starting it, which is the same decision as picking one on its page later.
+            // One it turns out not to offer is no mode at all, so the floor's setting
+            // stands rather than the start failing over a menu row. (T466.)
+            let picked = (request.mode ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !picked.isEmpty, offered.contains(picked) {
+                guarded.sync {
+                    self.held[agent]?.mode = picked
+                    self.held[agent]?.state.mode = picked
+                    self.held[agent]?.modeChosenByHand = true
+                }
+                connection.tell("session/set_mode", ACP.setMode(picked, session: session))
+            } else {
+                setMode(agent, to: store.throttle().permissions)
+            }
             if let words = request.text, !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 prompt(agent, words)
             }
@@ -245,7 +314,13 @@ public final class AgentFloor: @unchecked Sendable {
         } catch {
             connection.stop()
             change(agent) { $0.state = .failed }
-            return .no(error.localizedDescription)
+            // An agent that declares a way in and then will not start is almost always one
+            // nobody has logged in. Saying which command to run is the whole of the fix:
+            // the alternative is a failed start with nothing to do about it, and the only
+            // thing that says why is a stderr file nobody opens. (T435.)
+            let ways = guarded.sync { self.held[agent]?.ways ?? [] }
+            return .no(ACP.whyItWouldNotStart(error.localizedDescription,
+                                              kind: kind.title, ways: ways))
         }
     }
 
@@ -264,8 +339,10 @@ public final class AgentFloor: @unchecked Sendable {
     private func say(_ request: AgentDaemon.Request) -> AgentDaemon.Reply {
         guard let agent = request.agent, let one = look(agent) else { return .no("Nobody here by that name.") }
         guard one.state.state == .running else { return .no("It is not running.") }
-        guard let words = request.text, !words.isEmpty else { return .no("Nothing to say.") }
-        prompt(agent, words)
+        let files = request.files ?? []
+        let words = request.text ?? ""
+        guard !words.isEmpty || !files.isEmpty else { return .no("Nothing to say.") }
+        prompt(agent, Said(words: words, files: files))
         return .yes
     }
 
@@ -280,33 +357,48 @@ public final class AgentFloor: @unchecked Sendable {
     /// (T373). So the daemon queues instead, and every agent behaves the way the best of
     /// them does. It is also what the terminal did: a message was delivered only when
     /// something took it.
-    private func prompt(_ agent: UUID, _ words: String) {
+    private func prompt(_ agent: UUID, _ said: Said) {
         let queued: Bool = guarded.sync {
             guard let held = held[agent] else { return true }
             guard held.state.isPrompting else { return false }
-            held.pending.append(words)
+            held.pending.append(said)
             held.state.queued = held.pending.count
+            held.state.waitingToSay = held.pending.map(\.words)
             return true
         }
         if queued { return }
-        say(agent, words)
+        say(agent, said)
+    }
+
+    /// Everything else in here says words and nothing else.
+    private func prompt(_ agent: UUID, _ words: String) {
+        prompt(agent, Said(words: words))
     }
 
     /// The next thing waiting, once a turn has finished. One at a time: they are separate
     /// things to say and each gets its own turn.
     private func sayNext(_ agent: UUID) {
-        let next: String? = guarded.sync {
+        let next: Said? = guarded.sync {
             guard let held = held[agent], !held.pending.isEmpty else { return nil }
-            let words = held.pending.removeFirst()
+            let said = held.pending.removeFirst()
             held.state.queued = held.pending.count
-            return words
+            held.state.waitingToSay = held.pending.map(\.words)
+            return said
         }
         guard let next else { return }
         say(agent, next)
     }
 
-    private func say(_ agent: UUID, _ words: String) {
+    private func say(_ agent: UUID, _ said: Said) {
         guard let one = look(agent), let session = one.state.session else { return }
+        let words = said.words
+        // What was dropped on it, in the shape this agent takes. Reading happens here
+        // rather than in the app because this is the side that knows what it will take,
+        // and a screenshot down a unix socket as base64 is a megabyte of nothing. (T427.)
+        let blocks = said.files.compactMap { path -> [String: Any]? in
+            guard let attachment = Self.attachment(at: path) else { return nil }
+            return ACP.block(for: attachment, takes: one.state.takes).block
+        }
         // Written into the log ourselves, because the agent does not echo what it was
         // told except on a replay, and a page showing only the answers is a page of an
         // agent talking to itself.
@@ -323,7 +415,8 @@ public final class AgentFloor: @unchecked Sendable {
         Task { [weak self] in
             // No patience: a turn takes as long as it takes, and the way to stop waiting
             // on one is to cancel it.
-            _ = try? await one.connection.ask("session/prompt", ACP.prompt(words, session: session), patience: nil)
+            _ = try? await one.connection.ask(
+                "session/prompt", ACP.prompt(words, attaching: blocks, session: session), patience: nil)
             self?.change(agent) { $0.isPrompting = false }
             // And whatever came in while it was working goes now.
             self?.sayNext(agent)
@@ -408,22 +501,59 @@ public final class AgentFloor: @unchecked Sendable {
         }
     }
 
-    /// A permission request nobody has answered inside the hour gets the recommended
-    /// option and a line in the transcript saying the factory took it.
+    /// Two things nobody has answered, and the same clock over both, because in both cases
+    /// the agent is doing nothing at all until it hears back: one raised at half past five
+    /// and not seen is an agent that did nothing all evening. (T373.)
     ///
-    /// There has to be something here. This is not a question sitting in a list: the
-    /// agent is blocked on it, so one raised at half past five and not seen is an agent
-    /// that did nothing all evening. (T373.)
+    /// They end differently, and the difference is the whole of it.
+    ///
+    /// **A permission request** is answered with the recommended option, which is always
+    /// allow once and never allow always. The agent asked whether it may do the thing it
+    /// was already doing, the fallback is the agent's own, and it is undone by stopping it.
+    ///
+    /// **The agent's own question** is declined rather than answered. There is no
+    /// recommendation to take: measured on every elicitation in this store's transcripts,
+    /// not one carries a recommended option, and Claude Code declares `recommendedValue`
+    /// in its handshake capabilities and sends it on permission requests rather than on
+    /// forms. Taking one anyway would mean picking whichever option the agent happened to
+    /// list first and writing it down as a decision Alex made, and the one thing this
+    /// factory has always refused is making the choice for the person. So the agent is
+    /// told nobody answered and is freed to get on with something else, and the question
+    /// stays open on the Needs you strip, on the phone and on the Lock Screen until
+    /// somebody answers it. That is the same shape as raising one and carrying on.
+    /// (T421, off A74's audit.)
     private func answerLateQuestions(now: Date = .now) {
         for one in everythingHeld() {
-            guard let waiting = one.state.waiting,
-                  now.timeIntervalSince(waiting.asked) > AgentDaemon.answerWithin,
-                  let option = waiting.fallback
-            else { continue }
-            one.connection.answerPermission(id: waiting.requestID,
-                                            with: ACP.permissionAnswer(optionID: option.optionID))
-            change(one.state.agent) { $0.waiting = nil }
+            for late in AgentDaemon.late(in: one.state, now: now) {
+                switch late {
+                case .allow(let requestID, let optionID):
+                    one.connection.answerPermission(
+                        id: requestID, with: ACP.permissionAnswer(optionID: optionID))
+                    change(one.state.agent) { $0.waiting = nil }
+                case .decline(let requestID):
+                    one.connection.answerPermission(
+                        id: requestID, with: ACP.Elicitation.declined)
+                    change(one.state.agent) { $0.asking = nil }
+                    guarded.sync { held[one.state.agent]?.asked = nil }
+                }
+            }
         }
+    }
+
+    /// A file on disk as something to send. An image by its type, anything readable as
+    /// words, and nothing at all for a binary nobody can do anything with: sending its
+    /// name would be pretending. (T427.)
+    public static func attachment(at path: String) -> ACP.Attachment? {
+        let name = (path as NSString).lastPathComponent
+        let ext = (path as NSString).pathExtension.lowercased()
+        let images = ["png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                      "gif": "image/gif", "webp": "image/webp", "heic": "image/heic"]
+        if let type = images[ext] {
+            guard let data = FileManager.default.contents(atPath: path) else { return nil }
+            return .image(data: data, mimeType: type, name: name)
+        }
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        return .words(path: path, text: text, name: name)
     }
 
     // MARK: Odds and ends

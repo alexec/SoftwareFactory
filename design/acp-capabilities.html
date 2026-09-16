@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What the four agents declare</title>
+<style>:root { color-scheme: light dark; --paper: #fbfaf6; --ink: #22201c; --quiet: #6d675d; --faint: #968f83; --rule: #e0dbd0; --edge: #cfc8ba; --block: #f1ede4; --mark: #8a5a2b; }
+@media (prefers-color-scheme: dark) { :root { --paper: #1b1a18; --ink: #e6e1d8; --quiet: #9c958a; --faint: #77716a; --rule: #35322d; --edge: #45413a; --block: #26241f; --mark: #d0a271; } }
+html { -webkit-text-size-adjust: 100%; background: var(--paper); }
+body { margin: 0 auto; padding: 30px 32px 56px; max-width: 46em; background: var(--paper); color: var(--ink); font: 15px/1.65 ui-serif, "New York", Georgia, "Times New Roman", serif; -webkit-font-smoothing: antialiased; word-wrap: break-word; }
+h1, h2, h3, h4, h5, h6 { line-height: 1.25; margin: 1.6em 0 0.5em; font-weight: 600; }
+h1 { font-size: 1.7em; margin-top: 0; }
+h2 { font-size: 1.32em; }
+h3 { font-size: 1.12em; }
+h4, h5, h6 { font-size: 1em; }
+body > :first-child { margin-top: 0; }
+p, ul, ol, blockquote, pre, hr, table { margin: 0 0 1em; }
+ul, ol { padding-left: 1.4em; }
+li { margin: 0.25em 0; }
+li > ul, li > ol { margin: 0.25em 0 0.25em; }
+blockquote { margin-left: 0; padding: 0.1em 0 0.1em 1em; border-left: 3px solid var(--edge); color: var(--quiet); font-style: italic; }
+blockquote p { margin: 0.5em 0; }
+a { color: var(--mark); text-decoration: underline; text-underline-offset: 2px; }
+code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.88em; background: var(--block); padding: 0.12em 0.34em; border-radius: 4px; }
+pre { background: var(--block); padding: 12px 14px; border-radius: 8px; overflow-x: auto; }
+pre code { background: none; padding: 0; font-size: 0.85em; line-height: 1.5; }
+hr { border: none; border-top: 1px solid var(--rule); margin: 2em 0; }
+img { max-width: 100%; height: auto; }
+table { border-collapse: collapse; }
+td, th { border: 1px solid var(--rule); padding: 4px 8px; text-align: left; }
+th { font-weight: 600; background: var(--block); }</style>
+</head>
+<body><h1>What the four agents declare</h1>
+<p>A71, 15 September 2026. T428. Measured by handshaking each binary, not read out of the protocol. One <code>initialize</code> down each pipe with the factory's own client capabilities, and the answer written down as it came back.</p>
+<pre><code>python3 /tmp/acp-probe.py   # the script is at the foot of this file</code></pre>
+<p>Versions as measured: <code>@agentclientprotocol/claude-agent-acp</code> 0.78.0, Copilot 1.0.84-9, Grok 1.0.30, Cursor (no version in its handshake).</p>
+<h2>The grid</h2>
+<table><thead><tr><th></th><th>Claude Code</th><th>Copilot</th><th>Grok</th><th>Cursor</th></tr></thead><tbody><tr><td>image in a prompt</td><td>yes</td><td>yes</td><td><strong>no</strong></td><td>yes</td></tr><tr><td>embedded context</td><td>yes</td><td>yes</td><td>yes</td><td><strong>no</strong></td></tr><tr><td>audio</td><td>not said</td><td>no</td><td>no</td><td>no</td></tr><tr><td>MCP over http</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr><tr><td>loadSession declared</td><td>yes</td><td>yes</td><td>yes</td><td>yes, <strong>and it refuses</strong></td></tr><tr><td>session close</td><td>yes</td><td>yes</td><td>yes</td><td>no</td></tr><tr><td>session list</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr><tr><td>session resume</td><td>yes</td><td>no</td><td>yes</td><td>no</td></tr><tr><td>session fork, delete, subagents, extra folders</td><td>yes</td><td>no</td><td>no</td><td>no</td></tr><tr><td>providers (model choice)</td><td>declared, empty</td><td>no</td><td>in <code>_meta</code> instead</td><td>no</td></tr><tr><td>authMethods</td><td>none</td><td><code>copilot-login</code></td><td><code>cached_token</code>, <code>grok.com</code></td><td><code>cursor_login</code></td></tr></tbody></table>
+<p><strong>A declaration is not a measurement.</strong> Every one of the four says <code>loadSession: true</code>, and Cursor answers <code>session/load</code> with &quot;Invalid params&quot;, which is why <code>AgentProfile</code> exists and why its answers are yes, no and not tried rather than yes and no. Read this grid as what they claim; <code>AgentProfile</code> is what they were caught doing.</p>
+<h2>What is worth having</h2>
+<p><strong>Images in a prompt, T427: three of four, but not the one you would want.</strong> Claude Code, Copilot and Cursor take an image; Grok says no outright. <code>embeddedContext</code> is the mirror of it: everyone but Cursor. So a prompt with a screenshot in it works on most of the floor and has to degrade on the rest, and the factory's own field is the place it would go: drag a screenshot onto an agent's page and it goes down as a prompt. That is worth building and the refusal has to be per agent rather than a flag, because two different agents refuse two different halves of it.</p>
+<p><strong>Authentication, and nothing on this floor can do it.</strong> Three of the four declare an auth method and the factory never calls <code>authenticate</code>. Claude Code needs none here, which is why nobody has noticed. A Copilot or Cursor agent that is not logged in fails at <code>session/new</code> with no way in from the app, and Cursor's own note in <code>AgentProfile</code> says its account needs a plan before it will do anything. This is the gap most likely to waste an evening, and the smallest honest fix is not a login flow: it is for the failure to say &quot;Copilot is not logged in, run <code>copilot login</code>&quot;, which is exactly what its handshake hands us in <code>_meta.terminal-auth</code>.</p>
+<p><strong>Model choice, and Grok is the one that offers it.</strong> ACP puts this under <code>providers</code>; Claude Code declares the key and leaves it empty, and Grok puts a whole <code>modelState</code> in <code>_meta</code> instead: <code>grok-4.6</code> and <code>grok-4.5</code>, with context sizes and reasoning efforts. So picking a model per agent is possible on exactly one agent, through a vendor extension. Worth knowing, not worth building until two of them agree.</p>
+<p><strong>Available commands, dropped today.</strong> An agent's own slash commands arrive as <code>available_commands_update</code> and fall to <code>.other</code>, so the floor never shows what an agent can be asked to do. Grok also lists them in <code>_meta.availableCommands</code> at handshake. Cheap to read, and it is the only one of these that makes the app show something new about an agent rather than doing something new to it.</p>
+<p><strong>Session close, and we do not call it.</strong> Three of four offer it. Stopping an agent kills the process, which works and is blunt; <code>session/close</code> is the polite version and would let a CLI write out whatever it keeps. Worth having behind the same Stop.</p>
+<p><strong>What is declared and is not worth taking.</strong> <code>fork</code>, <code>delete</code>, <code>subagents</code> and <code>additionalDirectories</code> are Claude Code alone, which makes them a second way of doing things for one quarter of the floor. Grok's hooks, tool overrides and voice mode are the same argument in x.ai's words. <code>steering</code> (saying something mid-turn without cancelling) is the interesting one and is also Claude Code alone: the queue in <code>AgentFloor</code> exists because two of the four lose a mid-turn prompt, and one agent having a better way does not remove the need for the queue.</p>
+<h2>The probe</h2>
+<p>Kept here because the next person to ask this question should not have to write it again, and because it is the only honest way to answer it: the documentation describes the protocol and these four disagree with it in different places.</p>
+<p>Each agent is started with its own ACP incantation, which is not the same shape twice: <code>claude-agent-acp</code>, <code>copilot --acp</code>, <code>grok agent stdio</code>, <code>cursor-agent acp</code>. One <code>initialize</code> with the client capabilities the factory really sends, one line read back, kill the process. The script is <code>Tools/acp-probe.py</code>.</p></body>
+</html>

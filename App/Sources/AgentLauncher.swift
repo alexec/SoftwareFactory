@@ -97,7 +97,12 @@ enum StartAgent {
         model: AppModel,
         terminals: TerminalSessions,
         floor: Floor,
-        words: String = ""
+        words: String = "",
+        /// What to run it on and how much it may do, as the person set them in the bar
+        /// they started it from. Empty means the floor's own answer: the model Settings
+        /// holds for that CLI, and the mode that matches what agents may do. (T466.)
+        runOn: String? = nil,
+        mode: String = ""
     ) async -> String? {
         let cap = Agents.cap(model.throttle)
         if Agents.atCap(model.snapshot.agents, cap: cap) { return Agents.fullMessage(cap: cap) }
@@ -127,7 +132,8 @@ enum StartAgent {
                     ?? LaunchPrompt.project(project, as: reserved.label))
                 : LaunchPrompt.named(asked, as: reserved.label)
             model.setRuntime(.acp, for: reserved)
-            if let wrong = await floor.start(reserved, kind: agent, cwd: path, words: acpPrompt) {
+            if let wrong = await floor.start(reserved, kind: agent, cwd: path, words: acpPrompt,
+                                             model: runOn ?? model.model(for: agent), mode: mode) {
                 model.setRuntime(.terminal, for: reserved)
                 return wrong
             }
@@ -171,8 +177,8 @@ enum StartAgent {
             guard let path = agent.projectID.flatMap({ model.project(for: $0) })?.path, !path.isEmpty else {
                 return "\(agent.label) has no folder to start in."
             }
-            return await floor.start(agent, kind: kind, cwd: path,
-                                     words: LaunchPrompt.carryOn, resuming: true)
+            return await floor.start(agent, kind: kind, cwd: path, words: LaunchPrompt.carryOn,
+                                     model: model.model(for: kind), resuming: true)
         }
         let command = kind.resumeCommand(session: agent.id)
         guard !AgentLauncher.isSandboxed else {
@@ -237,7 +243,7 @@ enum StartAgent {
                 let acpPrompt = task.map { LaunchPrompt.task($0, in: project, as: agent.label) }
                     ?? LaunchPrompt.project(project, as: agent.label)
                 model.setRuntime(.acp, for: agent)
-                if let wrong = await floor.start(agent, kind: kind, cwd: path, words: acpPrompt) {
+                if let wrong = await floor.start(agent, kind: kind, cwd: path, words: acpPrompt, model: model.model(for: kind)) {
                     model.setRuntime(.terminal, for: agent)
                     model.noteError(wrong)
                 } else {

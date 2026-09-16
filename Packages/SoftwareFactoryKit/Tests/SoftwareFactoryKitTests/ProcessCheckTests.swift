@@ -79,7 +79,7 @@ import Testing
         live.lastSeen = now
         live.pid = me
         live.pidStartedAt = try #require(ProcessCheck.startTime(of: me))
-        #expect(Dashboard.activity(of: live, task: nil, hasOpenQuestion: false, now: now) == .waiting)
+        #expect(Dashboard.activity(of: live, task: nil, hasOpenQuestion: false, now: now) == .working)
 
         // Same agent, same heartbeat a moment ago, but its process has gone.
         var dead = live
@@ -90,7 +90,7 @@ import Testing
         var unknown = live
         unknown.pid = nil
         unknown.pidStartedAt = nil
-        #expect(Dashboard.activity(of: unknown, task: nil, hasOpenQuestion: false, now: now) == .waiting)
+        #expect(Dashboard.activity(of: unknown, task: nil, hasOpenQuestion: false, now: now) == .working)
     }
 
     /// Stopping an agent stops its process, and stops nothing else. A pid whose start
@@ -196,7 +196,7 @@ import Testing
         quiet.lastSeen = now.addingTimeInterval(-700)
         let snapshot = Snapshot(agents: [quiet])
         let status = Dashboard.make(snapshot: snapshot, now: now).agents[0]
-        #expect(status.activity == .idle)
+        #expect(status.activity == .finished)
         #expect(status.canStop)
         #expect(!Dashboard.make(snapshot: Snapshot(agents: [external]), now: now).agents[0].canStop)
     }

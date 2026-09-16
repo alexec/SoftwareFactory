@@ -60,6 +60,122 @@ public enum ACP {
         ["sessionId": session, "prompt": [["type": "text", "text": text]]]
     }
 
+    /// What an agent said it will take in a prompt, off its handshake.
+    ///
+    /// Per agent and not the same twice, which is why this is read rather than assumed:
+    /// measured on 15 Sep 2026, Grok takes no image at all and Cursor takes no embedded
+    /// resource, so the two that refuse something refuse different halves. Text is not in
+    /// here because text is the one thing every agent takes. (T427, off the grid in T428.)
+    public struct Attachments: Codable, Sendable, Equatable {
+        public var image: Bool
+        public var embeddedContext: Bool
+
+        public init(image: Bool = false, embeddedContext: Bool = false) {
+            self.image = image
+            self.embeddedContext = embeddedContext
+        }
+
+        public static func read(_ result: [String: Any]) -> Attachments {
+            let caps = (result["agentCapabilities"] as? [String: Any])?["promptCapabilities"] as? [String: Any]
+            return Attachments(image: caps?["image"] as? Bool ?? false,
+                               embeddedContext: caps?["embeddedContext"] as? Bool ?? false)
+        }
+    }
+
+    /// A way in, as the agent declares it at handshake.
+    ///
+    /// Three of the four declare one and the factory calls `authenticate` for none of
+    /// them, which is fine while they are logged in and useless when they are not: the
+    /// start fails at `session/new` and the app has nothing to say about why. This is not
+    /// a login flow. It is the difference between "it did not start" and "Copilot is not
+    /// logged in, run copilot login". (T435, off the grid in T428.)
+    public struct WayIn: Codable, Sendable, Equatable {
+        public var id: String
+        public var name: String
+        public var detail: String?
+        /// The command the agent says to run, where it says one. Copilot hands this over
+        /// in `_meta.terminal-auth`; the others describe it in words instead.
+        public var command: String?
+
+        public init(id: String, name: String, detail: String? = nil, command: String? = nil) {
+            self.id = id
+            self.name = name
+            self.detail = detail
+            self.command = command
+        }
+
+        public static func read(_ result: [String: Any]) -> [WayIn] {
+            (result["authMethods"] as? [[String: Any]] ?? []).compactMap { one in
+                guard let id = one["id"] as? String else { return nil }
+                let terminal = (one["_meta"] as? [String: Any])?["terminal-auth"] as? [String: Any]
+                let command = (terminal?["command"] as? String).map { binary in
+                    ([binary] + ((terminal?["args"] as? [String]) ?? [])).joined(separator: " ")
+                }
+                return WayIn(id: id, name: one["name"] as? String ?? id,
+                             detail: one["description"] as? String, command: command)
+            }
+        }
+    }
+
+    /// Why a start failed, in words for the person, given what the agent said it needs.
+    ///
+    /// Only where there is a way in to name: an agent that declares none, which is Claude
+    /// Code here, fails for some other reason and this must not claim otherwise.
+    public static func whyItWouldNotStart(_ trouble: String, kind: String, ways: [WayIn]) -> String {
+        guard let way = ways.first else { return trouble }
+        if let command = way.command {
+            return "\(kind) would not start, and it is asking to be logged in. Run: \(command)"
+        }
+        let how = way.detail ?? way.name
+        return "\(kind) would not start, and it is asking to be logged in. \(how)"
+    }
+
+    /// One thing a person has dropped on an agent: a picture, or a file of words.
+    public enum Attachment: Sendable, Equatable {
+        /// An image, as the bytes the agent is given and the type they are in.
+        case image(data: Data, mimeType: String, name: String)
+        /// A file of words: its path, and what is in it.
+        case words(path: String, text: String, name: String)
+    }
+
+    /// What to send, given what this agent takes. Nil when there is no honest way to send
+    /// it, and the second half of the answer is why, in words for the person.
+    ///
+    /// A picture degrades to nothing: an agent that cannot see one cannot be told about it
+    /// in a way that helps, and a filename in its place is a worse answer than saying so.
+    /// A file of words degrades to words, because every agent takes text and a file read
+    /// into the prompt is what an embedded resource is carrying anyway. (T427.)
+    public static func block(for attachment: Attachment, takes: Attachments)
+        -> (block: [String: Any]?, refusal: String?) {
+        switch attachment {
+        case .image(let data, let mimeType, let name):
+            guard takes.image else {
+                return (nil, "This agent does not take images, so \(name) was not sent.")
+            }
+            return (["type": "image", "data": data.base64EncodedString(), "mimeType": mimeType], nil)
+        case .words(let path, let text, let name):
+            guard takes.embeddedContext else {
+                // Every agent takes text, so the file goes in as text rather than not at
+                // all. It says which file it is, because a wall of someone else's code
+                // with no name on it is a puzzle.
+                return (["type": "text", "text": "\(name):\n\n\(text)"], nil)
+            }
+            return (["type": "resource",
+                     "resource": ["uri": "file://\(path)", "text": text, "mimeType": "text/plain"]], nil)
+        }
+    }
+
+    /// A prompt with things attached to it. The words go first, because they are what the
+    /// person is saying and the attachments are what they are saying it about.
+    public static func prompt(_ text: String, attaching blocks: [[String: Any]],
+                              session: String) -> [String: Any] {
+        var prompt: [[String: Any]] = []
+        if !text.isEmpty { prompt.append(["type": "text", "text": text]) }
+        prompt.append(contentsOf: blocks)
+        if prompt.isEmpty { prompt.append(["type": "text", "text": ""]) }
+        return ["sessionId": session, "prompt": prompt]
+    }
+
     /// One way an agent can be told to run: its id, and the words it uses for it.
     ///
     /// Here rather than on the daemon, because a session mode is the protocol's idea and
@@ -251,11 +367,44 @@ public enum ACP {
         case plan([PlanEntry])
         /// How much of its context it has used.
         case usage(used: Int, size: Int)
+        /// What it can be asked to do: its own commands, as it lists them. They arrive
+        /// when a session starts and again whenever the set changes. (T436.)
+        case commands([Command])
+        /// The mode it is in now. The factory sets a mode with `session/set_mode` and used
+        /// to hear nothing back, so an agent that changed its own, or whose set_mode did
+        /// not take, left the menu on its page naming a mode it was not in. (T426.)
+        case mode(String)
         /// Something in the protocol we do not draw: available commands, the mode it is
         /// in, its settings. Carried so the raw log stays honest.
         case other(String)
 
         enum Keys: String, CodingKey { case sessionUpdate }
+    }
+
+    /// One thing an agent can be asked to do in its own words: a slash command, a skill,
+    /// whatever that CLI calls them. The description is the agent's and can run to a
+    /// paragraph, so `brief` is what a menu shows. (T436.)
+    public struct Command: Codable, Sendable, Equatable, Identifiable {
+        public var name: String
+        public var description: String?
+
+        public var id: String { name }
+
+        public init(name: String, description: String? = nil) {
+            self.name = name
+            self.description = description
+        }
+
+        /// The first sentence, which is as much as a row of a menu can hold.
+        public var brief: String? {
+            guard let description, !description.isEmpty else { return nil }
+            let first = description.split(separator: ".", maxSplits: 1,
+                                          omittingEmptySubsequences: true).first
+            return (first.map(String.init) ?? description).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        /// What goes in the field when you pick it.
+        public var typed: String { "/\(name) " }
     }
 
     public struct PlanEntry: Codable, Sendable, Equatable, Identifiable {
@@ -666,6 +815,12 @@ extension ACP.Update: Codable {
             let usage = try decoder.container(keyedBy: Usage.self)
             self = .usage(used: try usage.decodeIfPresent(Int.self, forKey: .used) ?? 0,
                           size: try usage.decodeIfPresent(Int.self, forKey: .size) ?? 0)
+        case "available_commands_update":
+            let listed = try decoder.container(keyedBy: Commands.self)
+            self = .commands(try listed.decodeIfPresent([ACP.Command].self, forKey: .availableCommands) ?? [])
+        case "current_mode_update":
+            let mode = try decoder.container(keyedBy: Mode.self)
+            self = .mode(try mode.decodeIfPresent(String.self, forKey: .currentModeId) ?? "")
         default:
             self = .other(kind)
         }
@@ -680,12 +835,22 @@ extension ACP.Update: Codable {
         case .tool: try box.encode("tool_call", forKey: .sessionUpdate)
         case .plan: try box.encode("plan", forKey: .sessionUpdate)
         case .usage: try box.encode("usage_update", forKey: .sessionUpdate)
+        case .commands(let listed):
+            try box.encode("available_commands_update", forKey: .sessionUpdate)
+            var out = encoder.container(keyedBy: Commands.self)
+            try out.encode(listed, forKey: .availableCommands)
+        case .mode(let id):
+            try box.encode("current_mode_update", forKey: .sessionUpdate)
+            var mode = encoder.container(keyedBy: Mode.self)
+            try mode.encode(id, forKey: .currentModeId)
         case .other(let kind): try box.encode(kind, forKey: .sessionUpdate)
         }
     }
 
     enum Plan: String, CodingKey { case entries }
     enum Usage: String, CodingKey { case used, size }
+    enum Mode: String, CodingKey { case currentModeId }
+    enum Commands: String, CodingKey { case availableCommands }
     enum Content: String, CodingKey { case content }
 
     /// Reaching one level into the message to decode `content` in place. The alternative

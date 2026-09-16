@@ -5,11 +5,35 @@ import SoftwareFactoryKit
 /// reason for the whole rebuild: the factory is told what the agent is doing, so the page
 /// can say "Editing Models.swift, 12 lines" instead of showing a picture of a CLI saying
 /// so. (T373.)
+///
+/// It was set in a serif, which read as a page of a book inside an app that is not one:
+/// one window, two type families, and the seam was wherever the conversation started.
+/// The paper, the measure and the warmth stay, because those are the theme; the letters
+/// are the system's, the same as every other word in the app. A document still opens in a
+/// serif, because that is a page being read rather than a screen being used.
+/// (T447, Alex, 15 Sep 2026.)
 struct AgentTranscriptView: View {
     @Environment(Floor.self) private var floor
+    @Environment(AppModel.self) private var model
     var agent: Agent
-    @State private var words = ""
+    /// What has been typed and not sent. Through Drafts so it is still here when you come
+    /// back from looking something up, which is what view state never was. (T429.)
+    private var words: Binding<String> {
+        Binding(get: { Drafts.shared.text(for: Drafts.agent(agent.id)) },
+                set: { Drafts.shared.keep($0, for: Drafts.agent(agent.id)) })
+    }
     @State private var showsThinking = false
+    /// How tall the floating input actually is, measured rather than guessed. It grows to
+    /// four lines as you type, and the page kept a fixed 78 points for it, so a long thing
+    /// to say sat on top of the last thing the agent said. (T387.)
+    @State private var inputHeight = 0.0
+    /// Files dropped on the field, waiting to go with the next thing said. Paths rather
+    /// than bytes: the daemon reads them, because it is the side that knows what this
+    /// agent takes. (T427.)
+    @State private var attached: [String] = []
+    /// Why something dropped here will not be sent, until the next thing is dropped or
+    /// said. An agent that cannot see an image has to say so when you drop it, not after.
+    @State private var refused: String?
 
     private var transcript: ACPTranscript { floor.transcripts[agent.id] ?? floor.transcript(agent.id) }
     private var running: AgentDaemon.Running? { floor.running(agent.id) }
@@ -43,18 +67,29 @@ struct AgentTranscriptView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     ForEach(shown) { row in
+                        // The page says what it is not showing rather than beginning
+                        // mid-conversation with no explanation. The whole of it is in the
+                        // log, which is the record. (T467.)
+                        if row.earlier > 0 {
+                            Text("\(row.earlier) earlier, in the log")
+                                .font(Style.Text.quiet)
+                                .foregroundStyle(Color(.faint))
+                        }
                         Entry(row: row).id(row.id)
                     }
                     if running?.isPrompting == true {
-                        Working(queued: running?.queued ?? 0).id(Self.bottom)
-                    } else {
-                        Color.clear.frame(height: 1).id(Self.bottom)
+                        Working(waiting: running?.waitingToSay ?? [])
                     }
+                    // The room the input needs, as the last thing on the page rather than
+                    // as padding around it. Scrolling to the bottom puts the bottom of
+                    // this against the bottom of the window, so what the agent said lands
+                    // above the input instead of behind it. As padding it was outside the
+                    // marker being scrolled to, and every scroll parked the last line
+                    // under the glass. (T387.)
+                    Color.clear.frame(height: inputHeight).id(Self.bottom)
                 }
                 .padding(.horizontal, Style.page)
                 .padding(.top, Style.page)
-                // Room for the input that floats over the bottom.
-                .padding(.bottom, 78)
                 // A measure: past about this width the eye loses the start of the next
                 // line. It is the same one the documents are set to. (T311's paper.)
                 .frame(maxWidth: Paper.measure, alignment: .leading)
@@ -64,6 +99,11 @@ struct AgentTranscriptView: View {
             // The newest thing is what you came to read, the same as a terminal always
             // showed you the bottom.
             .onChange(of: shown.last?.id) { _, _ in
+                withAnimation(.snappy) { scroller.scrollTo(Self.bottom, anchor: .bottom) }
+            }
+            // A field growing from one line to four moves the page under it by three
+            // lines, which is exactly the last three lines you were reading.
+            .onChange(of: inputHeight) { _, _ in
                 withAnimation(.snappy) { scroller.scrollTo(Self.bottom, anchor: .bottom) }
             }
             .onAppear { scroller.scrollTo(Self.bottom, anchor: .bottom) }
@@ -94,54 +134,218 @@ struct AgentTranscriptView: View {
 
     /// The field that used to be a terminal you typed into. It is `session/prompt` now,
     /// which is better, but it is the same thing: words to the agent.
+    /// The field, with whatever has been dropped on it above the words, and what this
+    /// agent is underneath: how much it may do on the left, what it is running on the
+    /// right. They were up in the band at the top of the page, two inches from anything
+    /// they affect; here they are attached to the thing you type into, which is the thing
+    /// they are about. (T431, Alex, 15 Sep 2026.)
     private var sayBox: some View {
-        HStack(spacing: 8) {
-            if transcript.entries.contains(where: { if case .thought = $0.kind { return true }; return false }) {
-                Button {
-                    withAnimation(.snappy) { showsThinking.toggle() }
-                } label: {
-                    Image(systemName: showsThinking ? "brain.filled.head.profile" : "brain.head.profile")
-                }
-                .buttonStyle(.borderless)
-                .help(showsThinking ? "Hide what it is thinking" : "Show what it is thinking")
+        VStack(alignment: .leading, spacing: 6) {
+            if !attached.isEmpty || refused != nil { dropped }
+            field
+            HStack(spacing: 8) {
+                modePicker
+                commandPicker
+                thinkingToggle
+                Spacer(minLength: 8)
+                Text(runningWith)
+                    .font(.caption)
+                    .foregroundStyle(Color(.faint))
             }
-            TextField("Say something to \(agent.label)", text: $words, axis: .vertical)
+            .padding(.horizontal, 6)
+        }
+        .frame(maxWidth: Paper.measure)
+        .padding(.horizontal, Style.page)
+        .padding(.bottom, 12)
+        .onGeometryChange(for: Double.self) { $0.size.height } action: { inputHeight = $0 }
+        // A screenshot is the ordinary way to say what is wrong with a screen, so it is
+        // dropped on the agent rather than described to it. What the agent will take is
+        // its own answer, off its handshake, and an agent that cannot see one says so
+        // here rather than swallowing it. (T427.)
+        .dropDestination(for: URL.self) { urls, _ in
+            take(urls)
+            return true
+        }
+    }
+
+    /// What is waiting to go with the next thing said, and what will not go at all.
+    private var dropped: some View {
+        HStack(spacing: 8) {
+            ForEach(attached, id: \.self) { path in
+                Button {
+                    attached.removeAll { $0 == path }
+                } label: {
+                    Label((path as NSString).lastPathComponent, systemImage: "paperclip")
+                        .font(.caption)
+                        .lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .help("Take it off again")
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color(.block), in: .capsule)
+            }
+            if let refused {
+                Text(refused)
+                    .font(.caption)
+                    .foregroundStyle(Color(.alarm))
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 4)
+    }
+
+    /// What this agent will take, as it said at its handshake. Nothing known means nothing
+    /// but words, which is the honest default for an agent the daemon is not holding.
+    private var takes: ACP.Attachments { running?.takes ?? ACP.Attachments() }
+
+    private func take(_ urls: [URL]) {
+        refused = nil
+        for url in urls where url.isFileURL {
+            guard let attachment = AgentFloor.attachment(at: url.path) else {
+                refused = "\(url.lastPathComponent) is not something an agent can read."
+                continue
+            }
+            let (block, why) = ACP.block(for: attachment, takes: takes)
+            if block == nil { refused = why }
+            else { attached.append(url.path) }
+        }
+    }
+
+    /// What this agent may do without asking, in its own words. The menu lists exactly
+    /// what this agent offers, because the four disagree about what the choices even are,
+    /// and nothing is drawn for one that offers none, which is Grok. (Alex, 16 Sep 2026.)
+    @ViewBuilder
+    private var modePicker: some View {
+        if let running, !running.modes.isEmpty {
+            Menu {
+                ForEach(running.modes) { mode in
+                    Button {
+                        Task { await floor.setMode(agent.id, to: mode.id) }
+                    } label: {
+                        if mode.id == running.mode {
+                            Label(mode.name, systemImage: "checkmark")
+                        } else {
+                            Text(mode.name)
+                        }
+                    }
+                    .help(mode.detail ?? "")
+                }
+            } label: {
+                Text(running.modes.first { $0.id == running.mode }?.name ?? "Mode")
+                    .font(.caption)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("What \(agent.label) may do without asking")
+        }
+    }
+
+    /// Thinking, folded away or not. It sat to the left of the field, in front of the
+    /// words, which is a control about the page standing in the way of the thing you type
+    /// into. It belongs with the other two things that are about this agent rather than
+    /// about what you are saying. (T479, Alex, 15 Sep 2026.)
+    @ViewBuilder
+    private var thinkingToggle: some View {
+        if transcript.entries.contains(where: { if case .thought = $0.kind { return true }; return false }) {
+            Button {
+                withAnimation(.snappy) { showsThinking.toggle() }
+            } label: {
+                Label(showsThinking ? "Hide thinking" : "Show thinking",
+                      systemImage: showsThinking ? "brain.filled.head.profile" : "brain.head.profile")
+                    .font(Style.Text.quiet)
+                    .labelStyle(.titleAndIcon)
+            }
+            .buttonStyle(.borderless)
+            .help(showsThinking ? "Hide what it is thinking" : "Show what it is thinking")
+        }
+    }
+
+    /// What this agent can be asked to do, in its own words: its commands, as it listed
+    /// them. Picking one types it into the field rather than sending it, because a command
+    /// usually wants something after it. Nothing is drawn for an agent that lists none.
+    /// (T436.)
+    @ViewBuilder
+    private var commandPicker: some View {
+        if let running, !running.commands.isEmpty {
+            Menu {
+                ForEach(running.commands) { command in
+                    Button {
+                        words.wrappedValue = command.typed + words.wrappedValue
+                    } label: {
+                        Text("/\(command.name)")
+                    }
+                    .help(command.brief ?? "")
+                }
+            } label: {
+                Text("Commands").font(.caption)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("What \(agent.label) can be asked to do")
+        }
+    }
+
+    /// Which CLI is behind this conversation.
+    private var runningWith: String {
+        agent.launchedWith.flatMap(LaunchAgent.init(rawValue:))?.title ?? "Registered from elsewhere"
+    }
+
+    private var field: some View {
+        HStack(spacing: 8) {
+            // What the button will do, said where you are typing: sending while it works
+            // queues rather than interrupts, because nothing is ever put to an agent
+            // mid-turn. (T465.)
+            TextField(running?.isPrompting == true
+                      ? "Queue something for \(agent.label)"
+                      : "Say something to \(agent.label)", text: words, axis: .vertical)
                 .lineLimit(1...4)
                 .textFieldStyle(.plain)
-                .font(.system(.callout, design: .serif))
+                .font(.body)
                 .onSubmit(say)
+            // Say it rather than type it. The words land in the field as they settle, so
+            // what comes out is something you can correct before it goes. (T445.)
+            DictateIntoField(words: words,
+                             about: "Software Factory listens on this Mac and turns what you say into the words you are about to send \(agent.label). Nothing is recorded and nothing leaves the Mac.")
             if running?.isPrompting == true {
+                // An icon, like Send beside it: two buttons an inch apart, one of them
+                // spelling itself out, read as two different kinds of control. (T475.)
                 Button("Stop", systemImage: "stop.fill") {
                     Task { await floor.cancel(agent.id) }
                 }
                 .buttonStyle(.borderless)
+                .labelStyle(.iconOnly)
                 .help("Stop what it is doing, without stopping the agent")
             }
             Button("Send", systemImage: "arrow.up.circle.fill", action: say)
                 .buttonStyle(.borderless)
                 .labelStyle(.iconOnly)
-                .disabled(words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(words.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attached.isEmpty)
         }
         .padding(.leading, 14)
         .padding(.trailing, 8)
         .padding(.vertical, 8)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: Style.card))
         // The same measure as the page, so the field lines up with what it is answering
         // rather than running the width of the window.
-        .frame(maxWidth: Paper.measure)
-        .padding(.horizontal, Style.page)
-        .padding(.bottom, 12)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: Style.card))
     }
 
     private func say() {
-        let said = words.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !said.isEmpty else { return }
-        words = ""
+        let said = words.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !said.isEmpty || !attached.isEmpty else { return }
+        let files = attached
+        Drafts.shared.clear(Drafts.agent(agent.id))
+        attached = []
+        refused = nil
+        // Sent, so the microphone stops: it was listening for this and there is nothing
+        // left for the next words to land in. (T445.)
+        if model.dictation.isListening { Task { _ = await model.dictation.stop() } }
         // Straight to the agent, not through the mailbox. This is a person typing on the
         // agent's own page, which is what the terminal was, and the terminal never
         // queued: the mailbox and its cap of three are for messages from other agents.
         // The daemon writes it into the transcript, so it appears here either way.
-        Task { await floor.say(said, to: agent.id) }
+        Task { await floor.say(said, to: agent.id, files: files) }
     }
 
     // MARK: The pieces
@@ -165,7 +369,9 @@ struct AgentTranscriptView: View {
         var text: String
         var body: some View {
             Text(text)
-                .font(.system(.callout, design: .serif))
+                // What you said, at the size you read it back at. (T432, Alex, 15 Sep
+                // 2026: make the text larger.)
+                .font(.body)
                 .foregroundStyle(Color(.ink))
                 .textSelection(.enabled)
                 .lineSpacing(2)
@@ -184,7 +390,9 @@ struct AgentTranscriptView: View {
         var text: String
         var body: some View {
             MarkdownText(text: text)
-                .font(.system(.body, design: .serif))
+                // The agent's own prose is the thing this page is for, so it is the
+                // largest type on it. (T432.)
+                .font(.title3)
                 .foregroundStyle(Color(.ink))
                 .textSelection(.enabled)
                 .lineSpacing(3)
@@ -196,7 +404,7 @@ struct AgentTranscriptView: View {
         var text: String
         var body: some View {
             Text(text)
-                .font(.system(.callout, design: .serif).italic())
+                .font(.body.italic())
                 .foregroundStyle(Color(.quiet))
                 .textSelection(.enabled)
                 .lineSpacing(2)
@@ -230,11 +438,15 @@ struct AgentTranscriptView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     mark
+                    // A command is set as a command. What the agent ran is the machine
+                    // talking, and drawn in the same medium ink as a sentence it read as a
+                    // heading: nine tenths of a row of somebody's shell. The house rule is
+                    // that a path, a pid or a command is monospaced and quiet. (T407.)
                     Text(call.heading)
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(Color(.ink))
+                        .font(call.kind == .execute ? .caption.monospaced() : .callout.weight(.medium))
+                        .foregroundStyle(call.kind == .execute ? Color(.quiet) : Color(.ink))
                         .lineLimit(1)
-                        .truncationMode(.middle)
+                        .truncationMode(call.kind == .execute ? .middle : .tail)
                     if let alsoRan {
                         Text(alsoRan)
                             .font(.caption)
@@ -312,20 +524,33 @@ struct AgentTranscriptView: View {
     }
 
     private struct Working: View {
-        /// Things said to it while it was busy. Nothing is ever put to an agent mid-turn,
-        /// because two of the four lose it, so they wait here and the page says so rather
-        /// than leaving somebody wondering whether their nudge landed. (T373.)
-        var queued: Int
+        /// Things said to it while it was busy, in the order they will be said. Nothing is
+        /// ever put to an agent mid-turn, because two of the four lose it, so they wait
+        /// here and the page says so rather than leaving somebody wondering whether their
+        /// nudge landed. (T373.) It said how many and not what, which is the one thing you
+        /// want to know before adding a third. (T465.)
+        var waiting: [String]
 
         var body: some View {
+            VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text("Working").font(.callout).foregroundStyle(Color(.quiet))
-                if queued > 0 {
-                    Text(queued == 1 ? "1 waiting to be said" : "\(queued) waiting to be said")
-                        .font(.caption)
+                Text("Working").font(Style.Text.row).foregroundStyle(Color(.quiet))
+                if !waiting.isEmpty {
+                    Text(waiting.count == 1 ? "1 waiting to be said" : "\(waiting.count) waiting to be said")
+                        .font(Style.Text.quiet)
                         .foregroundStyle(Color(.faint))
                 }
+            }
+            // The words themselves, in the order they will be said, set the way anything
+            // you said is set. They go when the turn ends and they are said for real.
+            ForEach(Array(waiting.enumerated()), id: \.offset) { _, line in
+                Text(line)
+                    .font(Style.Text.quiet)
+                    .foregroundStyle(Color(.faint))
+                    .lineLimit(2)
+                    .padding(.leading, 24)
+            }
             }
         }
     }
@@ -386,7 +611,7 @@ private struct PermissionBar: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "hand.raised.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color(.alarm))
             VStack(alignment: .leading, spacing: 1) {
                 Text(waiting.title)
                     .font(.callout.weight(.medium))
@@ -407,6 +632,6 @@ private struct PermissionBar: View {
         }
         .padding(.horizontal, Style.cardPadding)
         .padding(.vertical, 10)
-        .background(.orange.opacity(0.12))
+        .background(Color(.alarm).opacity(0.14))
     }
 }

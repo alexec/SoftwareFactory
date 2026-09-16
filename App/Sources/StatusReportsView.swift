@@ -13,6 +13,10 @@ struct StatusReportsView: View {
     /// Where the project name goes. Nil is the agent on no project, which has a page of
     /// its own rather than a dead label. (T338.)
     var selectProject: (String?) -> Void = { _ in }
+    /// Back to the dashboard, which is the only way here. A page reached from one place
+    /// and highlighted in no sidebar row needs the way out drawn, the same as an agent's
+    /// page does. (T392.)
+    var back: (() -> Void)?
 
     private var rows: [StatusReportBoard.Row] {
         StatusReportBoard.rows(in: model.snapshot, now: .now)
@@ -40,6 +44,14 @@ struct StatusReportsView: View {
             .frame(maxWidth: 900, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .toolbar {
+            if let back {
+                ToolbarItem(placement: .navigation) {
+                    Button("Back", systemImage: "chevron.left", action: back)
+                        .help("Back to the dashboard")
+                }
+            }
+        }
     }
 }
 
@@ -85,7 +97,7 @@ private struct ReportRow: View {
         if let said = row.said {
             Text(said, format: .relative(presentation: .named))
                 .font(.caption)
-                .foregroundStyle(row.isFresh ? Color.secondary : Color.orange)
+                .foregroundStyle(row.isFresh ? Color.secondary : Color(.alarm))
                 .help(row.isFresh
                       ? "Filed within the hour"
                       : "Older than an hour. The factory has asked for another.")

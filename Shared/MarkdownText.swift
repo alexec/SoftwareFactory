@@ -23,7 +23,10 @@ struct MarkdownText: View {
         switch block {
         case .heading(let level, let text):
             inline(text)
-                .font(level <= 1 ? .title3.weight(.semibold) : level == 2 ? .headline : .subheadline.weight(.semibold))
+                // A heading is never smaller than the words under it: the third level was
+                // subheadline, which on the Mac is a step below the body around it, so a
+                // document read as though its own headings were asides. (T459.)
+                .font(level <= 1 ? Style.Text.thing : level == 2 ? Style.Text.rowName : Style.Text.row.weight(.semibold))
                 .padding(.top, 2)
         case .paragraph(let text):
             inline(text)
@@ -55,6 +58,26 @@ struct MarkdownText: View {
             .background(.quaternary, in: .rect(cornerRadius: 8))
         case .rule:
             Divider()
+        case .table(let head, let rows):
+            // A grid rather than a scrolling box: a table filed here is three or four
+            // narrow columns, and the ones that are not are better read on paper, which is
+            // where a document this long is opened anyway.
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 5) {
+                GridRow {
+                    ForEach(Array(head.enumerated()), id: \.offset) { _, cell in
+                        inline(cell).font(.callout.weight(.semibold))
+                    }
+                }
+                Divider()
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    GridRow {
+                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                            inline(cell)
+                        }
+                    }
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 

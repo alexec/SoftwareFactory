@@ -125,7 +125,7 @@ struct AgentShellsPane: View {
                         Button {
                             shells.close(shell, for: agent.id, terminals: terminals)
                         } label: {
-                            Image(systemName: "xmark").font(.system(size: 8))
+                            Image(systemName: "xmark").font(Style.Text.tiny)
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(Color(.faint))

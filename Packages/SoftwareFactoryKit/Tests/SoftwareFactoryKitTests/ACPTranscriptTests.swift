@@ -329,3 +329,29 @@ struct ACPTranscriptPageTests {
         }.count)
     }
 }
+
+/// A conversation is long and what anybody reads is the end of it. (T467.)
+@Suite struct PageLengthTests {
+    private func transcript(saying many: Int) -> ACPTranscript {
+        var t = ACPTranscript()
+        for i in 1...many { t.apply(.message(.text("line \(i)"))) ; t.apply(.userMessage(.text("ask \(i)")) ) }
+        return t
+    }
+
+    @Test func onlyTheEndIsDrawnAndThePageSaysSo() {
+        let t = transcript(saying: 80)
+        let all = t.page(last: 0)
+        let page = t.page()
+        #expect(all.count > ACPTranscript.pageLength)
+        #expect(page.count == ACPTranscript.pageLength)
+        #expect(page.first?.earlier == all.count - ACPTranscript.pageLength)
+        // The end of the page is the end of the conversation, which is what you came for.
+        #expect(page.last?.id == all.last?.id)
+    }
+
+    @Test func aShortConversationSaysNothingAboutEarlierRows() {
+        let page = transcript(saying: 3).page()
+        #expect(page.count == 6)
+        #expect(page.allSatisfy { $0.earlier == 0 })
+    }
+}

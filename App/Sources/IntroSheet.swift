@@ -12,7 +12,7 @@ struct IntroSheet: View {
                 VStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Taktu: Software Factory")
-                            .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                            .font(Style.Text.welcome)
                         Text("A factory where coding agents do the work and you make the calls.")
                     }
 

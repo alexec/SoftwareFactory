@@ -16,6 +16,7 @@ public enum LaunchPrompt {
         "You are agent \"\(name)\". Your session_id is \(session.uuidString), and every "
         + "factory tool takes it: it is how the factory knows you. There is nothing to "
         + "register and nothing to say goodbye to; the factory already has you. Keep it."
+        + " " + askThroughTheFactory
     }
 
     /// The same line for an agent the factory hands its own MCP address to. It does not
@@ -25,7 +26,28 @@ public enum LaunchPrompt {
     static func youAreNamed(_ name: String) -> String {
         "You are agent \"\(name)\". The factory's tools already know it is you, so there "
         + "is nothing to register, nothing to say goodbye to and no id to keep."
+        + " " + askThroughTheFactory
     }
+
+    /// Where a question goes, said in the words an agent starts with.
+    ///
+    /// An agent that asks in its own interface and waits has asked nobody: that question
+    /// is drawn in its terminal, or inside whatever its CLI puts on screen, and it reaches
+    /// only somebody already looking at that one agent. A question raised with
+    /// `escalation_raise` is a record in the store, so it is on the Needs you strip, in a
+    /// banner, on the phone and on the Lock Screen, and it can be answered from a pocket.
+    /// Alex is away from the Mac most of the day, which is the whole argument.
+    ///
+    /// And raising is not waiting. The agent files the question and picks up something
+    /// else; the factory blocks the task on the decision and unblocks it when the answer
+    /// lands. An agent sitting on a question all night is a slot, a terminal and a piece of
+    /// work stopped for nothing. (T422, Alex, 15 Sep 2026.)
+    static let askThroughTheFactory =
+        "When you need the user to decide something, raise it with escalation_raise, "
+        + "giving the options and your recommendation, and carry on with something else. "
+        + "Do not ask in your own interface and wait for a reply: a question asked there "
+        + "reaches nobody unless they are watching you, and the factory's one reaches them "
+        + "wherever they are."
 
     /// An agent reached at its own address needs no session in its words.
     public static func project(_ project: Project, as name: String) -> String {
@@ -68,20 +90,17 @@ public enum LaunchPrompt {
     }
 
     /// Whatever the person wants said, with the line that says who the agent is in
-    /// front of it: an agent on no project, or one launched with the words edited.
+    /// front of it, which is what `project` and `task` are both built on and what an
+    /// agent launched with the words edited gets.
     public static func free(_ prompt: String, as name: String, session: UUID) -> String {
         youAre(name, session) + " \(prompt)"
     }
 
-    /// A poke for an agent that has finished and is sitting waiting. The words are written
-    /// down as a message and typed into its terminal. (T171, 13 Sep 2026.)
-    ///
-    /// It used to name the backlog and the next task nobody is on, which is the factory
-    /// telling an agent how to do its job. The agent already knows: it has the tools, it
-    /// has its instructions, and it may be mid-something the backlog says nothing about.
-    /// What it does not know is that a person just asked it to carry on. (T370, Alex,
-    /// 16 Sep 2026.)
-    public static let nudge = "The user has nudged you to continue your work."
+    // The nudge is gone (T470). Its words were "The user has nudged you to continue your
+    // work", and after T412 took the button off the agent's page the user was neither
+    // sender: what was left was the factory poking an idle agent and one agent poking
+    // another, both of them telling an agent a person had asked when nobody had. What an
+    // agent gets instead is a message, which says who it is from and what they want.
 
     /// What an agent is told when the person starts it back up. Its conversation is on
     /// screen again and the CLI is sitting at a prompt waiting, which from the outside
@@ -96,7 +115,9 @@ public enum LaunchPrompt {
 
     /// The lines the factory types in itself. They say who they are from in their own
     /// words, so they go into the terminal bare rather than wrapped in an attribution.
-    public static let pokes: Set<String> = [nudge, carryOn]
+    /// The lines the factory types in itself. One now: the poke and the nudge were two
+    /// and the nudge went in T470.
+    public static let pokes: Set<String> = [carryOn]
 
     /// What the factory asks an agent that has not said how its work is going for an
     /// hour. It goes in as a message like any other, so it is typed into the terminal

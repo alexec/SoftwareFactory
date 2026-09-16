@@ -161,10 +161,10 @@ import Testing
         #expect(Artifacts.produced(by: agent, in: [report, note]).map(\.id) == [report.id, note.id])
     }
 
-    /// A kilobyte, and the refusal says what to do instead rather than only saying no.
-    /// (T274.)
-    @Test func aDocumentIsAKilobyteAndTheRefusalSaysWhereTheLongOneGoes() throws {
-        #expect(Artifacts.maxBody == 1024)
+    /// Two kilobytes, and the refusal says what to do instead rather than only saying no.
+    /// (T274, then T416: a kilobyte was tight for a status report.)
+    @Test func aDocumentIsTwoKilobytesAndTheRefusalSaysWhereTheLongOneGoes() throws {
+        #expect(Artifacts.maxBody == 2048)
         let atTheLimit = String(repeating: "x", count: Artifacts.maxBody)
         #expect(try Artifacts.add(projectID: "/p", title: "Just fits", body: atTheLimit, in: [])
             .artifact.body.count == Artifacts.maxBody)
@@ -176,7 +176,7 @@ import Testing
         #expect(throws: Artifacts.SetError.bodyTooLong) {
             try Artifacts.set(existing, body: atTheLimit + "x", in: [existing])
         }
-        #expect(Artifacts.tooLongMessage.contains("1024"))
+        #expect(Artifacts.tooLongMessage.contains("\(Artifacts.maxBody)"))
         #expect(Artifacts.tooLongMessage.contains("link"))
     }
 

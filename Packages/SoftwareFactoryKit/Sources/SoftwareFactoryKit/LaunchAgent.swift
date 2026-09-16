@@ -148,6 +148,84 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
 
     public var speaksACP: Bool { acp != nil }
 
+    /// How this agent is told which model to use, measured on each binary on 15 Sep 2026
+    /// rather than read: `copilot --model <model>`, `grok -m, --model <MODEL>` and
+    /// `cursor-agent --model <model>` all take one on the command line. Zed's adapter for
+    /// Claude Code takes no arguments at all and prints no help; the SDK behind it reads
+    /// `ANTHROPIC_MODEL`, so that one is set in the environment instead.
+    ///
+    /// **A model is chosen when an agent starts, not during its conversation.** Only Grok
+    /// says anything about models over the protocol, and it does it in a vendor extension
+    /// rather than in ACP's own `providers`, which Claude Code declares and leaves empty
+    /// (T428). So there is nothing to change mid-session on three of the four, and a
+    /// control that works on one agent is not a control. (T462.)
+    public enum HowToSayTheModel: Sendable, Equatable {
+        case flag(String)
+        case environment(String)
+    }
+
+    public var howToSayTheModel: HowToSayTheModel {
+        switch self {
+        case .claudeCode: .environment("ANTHROPIC_MODEL")
+        case .copilot, .grok, .cursor: .flag("--model")
+        }
+    }
+
+    /// The arguments to start this agent with, given a model the person named. Empty means
+    /// the CLI's own default, which is what nearly every agent should run on.
+    public func acpLaunch(model: String?) -> ACPLaunch? {
+        guard let launch = acp else { return nil }
+        let model = (model ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !model.isEmpty, case .flag(let flag) = howToSayTheModel else { return launch }
+        return ACPLaunch(command: launch.command, arguments: launch.arguments + [flag, model])
+    }
+
+    /// What to put in the environment for it, for the one whose adapter takes no arguments.
+    public func environment(model: String?) -> [String: String] {
+        let model = (model ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !model.isEmpty, case .environment(let name) = howToSayTheModel else { return [:] }
+        return [name: model]
+    }
+
+    /// The modes this agent offers, as it named them, measured by handshaking each binary
+    /// and reading `availableModes` off its `session/new` answer on 15 Sep 2026.
+    /// `Tools/acp-modes.py` is what measured them and is how to measure them again.
+    ///
+    /// They are written down because the person picks a mode **before** the agent starts,
+    /// and until it has handshaken nobody knows what it offers. What comes back at
+    /// `session/new` is still the truth: a mode named here that the agent no longer offers
+    /// is refused by `AgentFloor` and the agent follows the floor's setting instead, which
+    /// is what it did before there was a choice at all. So a stale list here costs a menu
+    /// row, not a wrong mode.
+    ///
+    /// The four do not mean the same things by them. Claude Code's are about how much it
+    /// may do; Copilot's are about how it converses, and its ids are URLs; Cursor's are
+    /// two thirds about that too, with Ask meaning it changes nothing. Grok offers none,
+    /// which is why nothing is drawn for it. (T466.)
+    public var modesOffered: [ACP.Mode] {
+        switch self {
+        case .claudeCode:
+            [ACP.Mode(id: "default", name: "Manual", detail: "Always ask before making changes"),
+             ACP.Mode(id: "acceptEdits", name: "Accept edits", detail: "Automatically accept all file edits"),
+             ACP.Mode(id: "plan", name: "Plan", detail: "Create a plan before making changes"),
+             ACP.Mode(id: "auto", name: "Auto", detail: "Claude handles permission decisions"),
+             ACP.Mode(id: "bypassPermissions", name: "Bypass permissions", detail: "Accepts all permissions")]
+        case .copilot:
+            [ACP.Mode(id: "https://agentclientprotocol.com/protocol/session-modes#agent",
+                      name: "Agent", detail: "Default agent mode for conversational interactions"),
+             ACP.Mode(id: "https://agentclientprotocol.com/protocol/session-modes#plan",
+                      name: "Plan", detail: "Plan mode for creating and executing multi-step plans"),
+             ACP.Mode(id: "https://agentclientprotocol.com/protocol/session-modes#autopilot",
+                      name: "Autopilot", detail: "Allows everything and runs to the end without stopping to ask (experimental)")]
+        case .grok:
+            []
+        case .cursor:
+            [ACP.Mode(id: "agent", name: "Agent", detail: "Full agent capabilities with tool access"),
+             ACP.Mode(id: "plan", name: "Plan", detail: "Read-only mode for planning and designing before implementation"),
+             ACP.Mode(id: "ask", name: "Ask", detail: "Q&A mode - no edits or command execution")]
+        }
+    }
+
     /// How to get the ACP half of this agent, for the agent that has not got it.
     public var acpInstall: String? {
         switch self {

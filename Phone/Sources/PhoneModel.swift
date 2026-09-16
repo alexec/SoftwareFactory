@@ -7,7 +7,7 @@ import SoftwareFactoryKit
 /// reads the store through the factory's API every few seconds, and posts decisions.
 @Observable
 @MainActor
-final class PhoneModel {
+final class PhoneModel: Deciding {
     enum Link: Equatable {
         case notYetAsked
         case looking
@@ -206,6 +206,17 @@ final class PhoneModel {
         var e = escalation
         guard (try? e.decide(option, note: note, by: "alex, phone")) != nil else { return }
         await send(e, body: ["escalationID": escalation.id.uuidString, "optionID": option.id.uuidString, "note": note, "by": "alex, phone"])
+    }
+
+    /// What the question's card says back. The card is drawn once for both apps and does
+    /// not know that answering here is a round trip, so the waiting happens on this side
+    /// of it. (T394.)
+    func chose(_ escalation: Escalation, _ option: Escalation.Option, note: String) {
+        _Concurrency.Task { await decide(escalation, option, note: note) }
+    }
+
+    func answered(_ escalation: Escalation, with words: String) {
+        _Concurrency.Task { await answer(escalation, words) }
     }
 
     /// The answer in the person's own words, none of the options.

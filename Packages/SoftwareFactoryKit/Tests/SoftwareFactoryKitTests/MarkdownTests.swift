@@ -163,4 +163,68 @@ import Testing
             .bullet(text: "Embedded", indent: 1),
         ])
     }
+
+    /// A table is a table, so a palette or a scale in a brief reads as a grid rather than
+    /// as a run of pipes. (T391.)
+    @Test func aPipeTableIsATable() {
+        let blocks = Markdown.blocks("""
+        | Tone | Light | For |
+        | --- | :---: | --- |
+        | `paper` | fbfaf6 | the ground |
+        | `ink` | 22201c | what is written |
+        """)
+        #expect(blocks == [.table(head: ["Tone", "Light", "For"], rows: [
+            ["`paper`", "fbfaf6", "the ground"],
+            ["`ink`", "22201c", "what is written"],
+        ])])
+    }
+
+    /// Without the dashes it is not a table. A line quoting a shell pipe would otherwise
+    /// come out as a one-cell grid with a border around it.
+    @Test func aPipeLineOnItsOwnIsProse() {
+        let blocks = Markdown.blocks("| head -1 is not a table")
+        #expect(blocks == [.paragraph("| head -1 is not a table")])
+    }
+
+    /// A row short of a cell is made up to the heading's width, so what is there still
+    /// lines up with the column above it.
+    @Test func aShortRowIsMadeUpToTheHeading() {
+        let blocks = Markdown.blocks("""
+        | One | Two | Three |
+        | --- | --- | --- |
+        | a | b |
+        """)
+        #expect(blocks == [.table(head: ["One", "Two", "Three"], rows: [["a", "b", ""]])])
+    }
+
+    /// What is written round a table keeps its place either side of it.
+    @Test func aTableSitsBetweenWhatWasWrittenAroundIt() {
+        let blocks = Markdown.blocks("""
+        The scale:
+
+        | Name | Points |
+        | --- | --- |
+        | card | 18 |
+
+        Everything else names one of these.
+        """)
+        #expect(blocks == [
+            .paragraph("The scale:"),
+            .table(head: ["Name", "Points"], rows: [["card", "18"]]),
+            .paragraph("Everything else names one of these."),
+        ])
+    }
+
+    /// A card shows what a document says, and a grid squeezed into one line says how it
+    /// was laid out instead.
+    @Test func aSummarySkipsTheTable() {
+        let text = """
+        The house palette.
+
+        | Tone | Light |
+        | --- | --- |
+        | paper | fbfaf6 |
+        """
+        #expect(Markdown.summary(text) == "The house palette.")
+    }
 }

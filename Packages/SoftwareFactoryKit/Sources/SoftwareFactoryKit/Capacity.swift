@@ -9,6 +9,9 @@ public struct MachineReading: Codable, Sendable, Equatable {
     public var memoryFree: UInt64
     public var swapUsed: UInt64
     public var swapTotal: UInt64
+    /// What the kernel itself says about memory, which is the signal Activity Monitor
+    /// draws. Asked rather than computed. (T430.)
+    public var pressure: Pressure
     /// The one-minute load average.
     public var load: Double
     public var cores: Int
@@ -19,11 +22,13 @@ public struct MachineReading: Codable, Sendable, Equatable {
     public var taken: Date
 
     public init(memoryTotal: UInt64, memoryFree: UInt64, swapUsed: UInt64, swapTotal: UInt64,
+                pressure: Pressure = .normal,
                 load: Double, cores: Int, compiles: Int, simulators: Int, taken: Date = .now) {
         self.memoryTotal = memoryTotal
         self.memoryFree = memoryFree
         self.swapUsed = swapUsed
         self.swapTotal = swapTotal
+        self.pressure = pressure
         self.load = load
         self.cores = cores
         self.compiles = compiles
@@ -32,8 +37,53 @@ public struct MachineReading: Codable, Sendable, Equatable {
     }
 
     public var memoryFreeFraction: Double { memoryTotal == 0 ? 0 : Double(memoryFree) / Double(memoryTotal) }
-    public var swapFraction: Double { swapTotal == 0 ? 0 : Double(swapUsed) / Double(swapTotal) }
     public var loadPerCore: Double { cores == 0 ? 0 : load / Double(cores) }
+
+    /// Swap used against the size of the swapfiles macOS has made. Worth showing and not
+    /// worth deciding on, which is the whole of T430: the denominator is not a capacity.
+    /// macOS makes swapfiles on demand and sizes them to roughly what is in use, so this
+    /// sits high whatever is happening, and when pressure rises and the kernel adds a
+    /// file the fraction **falls**, which is the factory reporting things improving at
+    /// the moment they got worse. A ratio whose denominator tracks its numerator is not a
+    /// measurement. Measured on Alex's Mac, 15 Sep 2026: 2.4G of 3G used, 78 percent,
+    /// over the 75 percent ceiling and refusing builds, with the kernel saying pressure
+    /// normal, 71 percent of memory free and not one page swapped out in five seconds.
+    public var swapFraction: Double { swapTotal == 0 ? 0 : Double(swapUsed) / Double(swapTotal) }
+
+    /// The kernel's own verdict on memory, `kern.memorystatus_vm_pressure_level`.
+    ///
+    /// One sysctl, no arithmetic, and the same thing every other tool on the Mac reads.
+    /// The values are the kernel's: 1 normal, 2 warning, 4 critical, and anything else is
+    /// read as normal rather than failing the whole reading.
+    public enum Pressure: Int, Codable, Sendable, Equatable, CaseIterable {
+        case normal = 1
+        case warning = 2
+        case critical = 4
+
+        public var word: String {
+            switch self {
+            case .normal: "normal"
+            case .warning: "warning"
+            case .critical: "critical"
+            }
+        }
+    }
+
+    /// A reading written down before the kernel was asked keeps everything else it said.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        memoryTotal = try c.decode(UInt64.self, forKey: .memoryTotal)
+        memoryFree = try c.decode(UInt64.self, forKey: .memoryFree)
+        swapUsed = try c.decode(UInt64.self, forKey: .swapUsed)
+        swapTotal = try c.decode(UInt64.self, forKey: .swapTotal)
+        pressure = (try c.decodeIfPresent(Int.self, forKey: .pressure))
+            .flatMap(Pressure.init(rawValue:)) ?? .normal
+        load = try c.decode(Double.self, forKey: .load)
+        cores = try c.decode(Int.self, forKey: .cores)
+        compiles = try c.decode(Int.self, forKey: .compiles)
+        simulators = try c.decode(Int.self, forKey: .simulators)
+        taken = try c.decode(Date.self, forKey: .taken)
+    }
 }
 
 /// The limits the person sets. Only the app writes this; agents read it.
@@ -171,18 +221,27 @@ public enum Capacity {
         }
     }
 
+    /// Memory is the kernel's call, not ours.
+    ///
+    /// This used to divide swap used by swap total and refuse everything above three
+    /// quarters, and on a Mac that was not swapping at all it said no to four compiles in
+    /// a row: macOS makes swapfiles on demand, so the fraction is high whatever is
+    /// happening. `memoryFreeFraction` went the same way, reading 19 percent free while
+    /// the system said 61: free, inactive and purgeable pages are not what a Mac with
+    /// memory compression has left. Both are still worth looking at on the Capacity page
+    /// and neither decides anything now. What decides is
+    /// `kern.memorystatus_vm_pressure_level`, which is one number, from the kernel, and
+    /// the one Activity Monitor draws. (T430, Alex, 15 Sep 2026.)
     public static func verdict(_ r: MachineReading, throttle t: Throttle) -> Verdict {
-        if r.swapFraction >= t.swapCeiling || r.memoryFreeFraction <= t.memoryFloor { return .over }
-        if r.swapFraction >= t.swapCeiling * 0.66 || r.memoryFreeFraction <= t.memoryFloor * 2
-            || r.compiles >= t.compileSlots || r.loadPerCore >= 0.9 { return .tight }
+        if r.pressure == .critical { return .over }
+        if r.pressure == .warning || r.compiles >= t.compileSlots || r.loadPerCore >= 0.9 { return .tight }
         return .under
     }
 
     /// One line on why the verdict is what it is.
     public static func reason(_ r: MachineReading, throttle t: Throttle) -> String {
         var parts: [String] = []
-        if r.swapFraction >= t.swapCeiling * 0.66 { parts.append("swap \(Self.percent(r.swapFraction)) of \(Self.gigabytes(r.swapTotal))") }
-        if r.memoryFreeFraction <= t.memoryFloor * 2 { parts.append("\(Self.percent(r.memoryFreeFraction)) memory free") }
+        if r.pressure != .normal { parts.append("memory pressure \(r.pressure.word)") }
         if r.compiles >= t.compileSlots { parts.append("\(r.compiles) of \(t.compileSlots) compile slots in use") }
         if r.loadPerCore >= 0.9 { parts.append("load \(String(format: "%.1f", r.load)) on \(r.cores) cores") }
         return parts.isEmpty ? "Room to spare." : parts.joined(separator: "; ") + "."
@@ -261,6 +320,12 @@ extension MachineReading {
         var swapSize = MemoryLayout<xsw_usage>.size
         sysctlbyname("vm.swapusage", &swap, &swapSize, nil, 0)
 
+        // The kernel's own judgement, rather than a ratio of ours. (T430.)
+        var level: Int32 = 1
+        var levelSize = MemoryLayout<Int32>.size
+        sysctlbyname("kern.memorystatus_vm_pressure_level", &level, &levelSize, nil, 0)
+        let pressure = Pressure(rawValue: Int(level)) ?? .normal
+
         var loads = [Double](repeating: 0, count: 3)
         getloadavg(&loads, 3)
 
@@ -273,7 +338,7 @@ extension MachineReading {
         let simulators = names.filter { $0 == "launchd_sim" }.count
 
         return MachineReading(memoryTotal: memoryTotal, memoryFree: min(free, memoryTotal),
-                              swapUsed: swap.xsu_used, swapTotal: swap.xsu_total,
+                              swapUsed: swap.xsu_used, swapTotal: swap.xsu_total, pressure: pressure,
                               load: loads[0], cores: Int(cores), compiles: compiles, simulators: simulators, taken: now)
     }
 

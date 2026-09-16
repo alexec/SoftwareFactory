@@ -19,18 +19,27 @@ enum OpenFolder {
     }
 }
 
-/// The same button in both places it appears. Nothing is drawn for a project with no
-/// folder set: a button that cannot do anything is worse than no button, and the
-/// project's header already says how to set one.
+/// Nothing is drawn for a project with no folder set: a button that cannot do anything is
+/// worse than no button, and the project's header already says how to set one.
+///
+/// It sits in the row of small icons above an agent's side column, beside the one that
+/// opens a shell. It was up in the header next to the project's name, where it was a
+/// word and an icon among words: the Finder, a shell and the agent's own documents are
+/// three ways into the same folder, so they are one set of icons in one place rather than
+/// one of them sitting apart from the other two. (Alex, 15 Sep 2026.)
 struct OpenFolderButton: View {
     var project: Project?
 
     var body: some View {
         if let url = OpenFolder.url(for: project) {
-            Button("Folder", systemImage: "folder") { OpenFolder.open(url) }
-                .buttonStyle(.borderless)
-                .controlSize(.small)
-                .help("Show \(Projects.shortPath(url.path)) in the Finder")
+            Button { OpenFolder.open(url) } label: {
+                Image(systemName: "folder")
+                    .font(.callout)
+                    .frame(width: 26, height: 22)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Show \(Projects.shortPath(url.path)) in the Finder")
         }
     }
 }

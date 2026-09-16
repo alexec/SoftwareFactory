@@ -77,7 +77,9 @@ public struct ACPTranscript: Sendable, Equatable {
         case .usage(let used, let size):
             self.used = used
             self.size = size
-        case .other: break
+        // Neither is anything a page of the conversation draws. The mode is state
+        // rather than something said, and it lands on the agent's own record.
+        case .mode, .commands, .other: break
         }
     }
 
@@ -139,7 +141,13 @@ public struct ACPTranscript: Sendable, Equatable {
     ///
     /// Thinking is dropped before the grouping rather than after, or a thought between two
     /// tool calls would split one run into two. (Alex, 16 Sep 2026.)
-    public func page(thinking: Bool = false) -> [Shown] {
+    /// How much of a conversation is a page. A day's work is thousands of rows, and a view
+    /// that draws all of them redraws all of them every time a word arrives; what anybody
+    /// reads is the end of it. Older rows are still in the log, which is the record.
+    /// (T467, Alex, 15 Sep 2026.)
+    public static let pageLength = 60
+
+    public func page(thinking: Bool = false, last: Int = ACPTranscript.pageLength) -> [Shown] {
         let kept = thinking ? entries : entries.filter {
             if case .thought = $0.kind { return false }
             return true
@@ -157,7 +165,12 @@ public struct ACPTranscript: Sendable, Equatable {
                 out.append(Shown(entry: entry, before: 0))
             }
         }
-        return out
+        // The end of it, and how much was left behind, so the page says there is more
+        // rather than quietly beginning mid-conversation.
+        guard last > 0, out.count > last else { return out }
+        var shown = Array(out.suffix(last))
+        shown[0].earlier = out.count - last
+        return shown
     }
 
     /// One row of the page: the entry, and how many tool calls ran before it in the same
@@ -165,6 +178,8 @@ public struct ACPTranscript: Sendable, Equatable {
     public struct Shown: Identifiable, Sendable, Equatable {
         public var entry: Entry
         public var before: Int
+        /// Rows before this one that the page is not drawing, on the first row only.
+        public var earlier = 0
         public var id: Int { entry.id }
 
         public init(entry: Entry, before: Int) {
@@ -290,7 +305,7 @@ public struct ACPHeadline: Sendable, Equatable {
         case .userMessage:
             startedSaying = false
             said = nil
-        case .thought, .plan, .usage, .other:
+        case .thought, .plan, .usage, .mode, .commands, .other:
             break
         }
     }

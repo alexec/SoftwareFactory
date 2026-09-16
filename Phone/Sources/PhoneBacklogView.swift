@@ -33,7 +33,7 @@ struct PhoneBacklogView: View {
             }
             if !questions.open.isEmpty || !questions.decided.isEmpty {
                 Section("Questions") {
-                    ForEach(questions.open) { PhoneEscalationCard(escalation: $0) }
+                    ForEach(questions.open) { EscalationCard(escalation: $0, model: model) }
                     ForEach(questions.decided) { PhoneDecidedRow(escalation: $0) }
                 }
             }
@@ -100,7 +100,7 @@ struct PhoneBacklogView: View {
                 }
                 if task.state == .blocked, !task.blockers.isEmpty {
                     Text(task.blockedWhy)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Color(.alarm))
                 }
                 Button("Edit") {
                     selectedTask = nil
@@ -148,7 +148,7 @@ struct PhoneBacklogView: View {
                     .lineLimit(2)
             }
             if task.state == .blocked, !task.blockers.isEmpty {
-                Text(task.blockedWhy).font(.caption).foregroundStyle(.orange).lineLimit(2)
+                Text(task.blockedWhy).font(.caption).foregroundStyle(Color(.alarm)).lineLimit(2)
             }
         }
         .padding(.vertical, 2)
@@ -164,7 +164,7 @@ struct PhoneBacklogView: View {
                 Button("Park") {
                     _Concurrency.Task { await model.set(task, to: .parked) }
                 }
-                .tint(.orange)
+                .tint(Color(.alarm))
             }
         }
     }
@@ -219,11 +219,12 @@ struct PhoneBacklogView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Circle()
-                    .fill(project.onHold ? Color.secondary.opacity(0.4)
-                          : (status?.activity == .working ? Color.green
-                             : (status?.activity == .waiting ? Color.orange : Color.secondary.opacity(0.4))))
-                    .frame(width: 8, height: 8)
+                // The shared dot, so a project is the same colour here as on the Mac. This
+                // row drew its own with two of the four colours in it, which is how a
+                // vocabulary comes apart. (T423.)
+                ActivityDot(activity: status?.activity ?? .finished,
+                            isEmpty: status?.isEmpty ?? true,
+                            onHold: project.onHold)
                 if project.onHold {
                     Text("On hold")
                         .font(.headline)
@@ -279,12 +280,13 @@ private struct PhoneTaskEditor: View {
 /// card again. (Alex, 12 Sep 2026: the phone's project page gets its own Questions
 /// section, matching the Mac's.)
 struct PhoneDecidedRow: View {
+    @Environment(PhoneModel.self) private var model
     var escalation: Escalation
     @State private var isOpen = false
 
     var body: some View {
         DisclosureGroup(isExpanded: $isOpen) {
-            PhoneEscalationCard(escalation: escalation)
+            EscalationCard(escalation: escalation, model: model)
                 .padding(.vertical, 6)
         } label: {
             HStack(spacing: 8) {
@@ -292,7 +294,7 @@ struct PhoneDecidedRow: View {
                     .foregroundStyle(Color(.quiet))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(escalation.chosen?.title ?? escalation.decision?.note ?? "Decided")
-                        .font(.subheadline.weight(.medium))
+                        .font(Style.Text.row.weight(.medium))
                         .lineLimit(1)
                     Text(escalation.question)
                         .font(.caption)

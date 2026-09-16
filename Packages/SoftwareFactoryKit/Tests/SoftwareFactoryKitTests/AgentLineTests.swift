@@ -77,4 +77,39 @@ import Testing
             tasks: [task("   ", 1, .inProgress)], report: nil, title: "✳ Something")
         #expect(lines.map(\.words) == ["✳ Something"])
     }
+
+    /// A tmux pane's title is the last command it ran, and four of the eight rows on the
+    /// floor read that way the first time the app was looked at. (T407.)
+    @Test func aShellCommandIsNotSomethingToSay() {
+        for command in [
+            "SLOT=~/.claude/skills/simulator-testing/assets/sim-slot.sh status 2>&1 | tail -1",
+            "gh run view 3491 --log-failed 2>&1 | tail -60",
+            "U=EC265A7E-FBA8 xcrun simctl status_bar $U override --wifiBars 3",
+            "swift test && echo done",
+            "~/SoftwareFactory/build/DerivedData",
+        ] {
+            #expect(!AgentLine.worthSaying(command), "\(command) is the machine talking")
+        }
+    }
+
+    @Test func whatAnAgentSaysInWordsIsSaid() {
+        for words in [
+            "Six commits pushed, one waiting on review",
+            "Reading the backlog",
+            "✳ Wrangling tmux",
+            "Waiting on Alex for the name",
+            "Fixed the off-by-one in Backlog.place",
+        ] {
+            #expect(AgentLine.worthSaying(words), "\(words) is a person's line")
+        }
+    }
+
+    /// Holding nothing, having filed nothing, and with only a command in its terminal
+    /// title, an agent says nothing rather than saying its own shell history.
+    @Test func aCommandInTheTitleLeavesTheRowQuiet() {
+        #expect(AgentLine.linesUnderTheName(
+            tasks: [], report: nil, title: "gh run view 3491 --log-failed 2>&1 | tail -60").isEmpty)
+        #expect(AgentLine.underTheName(
+            task: nil, report: nil, title: "make build 2>&1 | tee log").isEmpty)
+    }
 }

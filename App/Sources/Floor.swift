@@ -103,10 +103,13 @@ final class Floor {
 
     /// Starts an agent, or picks its conversation back up. Answers what went wrong, or
     /// nil when it started.
-    func start(_ agent: Agent, kind: LaunchAgent, cwd: String, words: String, resuming: Bool = false) async -> String? {
+    func start(_ agent: Agent, kind: LaunchAgent, cwd: String, words: String,
+               model: String = "", mode: String = "", resuming: Bool = false) async -> String? {
         guard await ensureDaemon() else { return trouble ?? "The agent daemon would not start." }
         let request = AgentDaemon.Request(op: resuming ? .resume : .start, agent: agent.id,
-                                          kind: kind.rawValue, cwd: cwd, text: words)
+                                          kind: kind.rawValue, cwd: cwd, text: words,
+                                          model: model.isEmpty ? nil : model,
+                                          mode: mode.isEmpty ? nil : mode)
         let reply = await ask(request, patience: 180)
         guard reply.ok else { return reply.error }
         await look()
@@ -116,8 +119,9 @@ final class Floor {
     /// Words for an agent: a nudge, a message, the status report ask. The same call for
     /// all of them, which is what the typed line was.
     @discardableResult
-    func say(_ words: String, to agent: UUID) async -> Bool {
-        await ask(AgentDaemon.Request(op: .say, agent: agent, text: words)).ok
+    func say(_ words: String, to agent: UUID, files: [String] = []) async -> Bool {
+        await ask(AgentDaemon.Request(op: .say, agent: agent, text: words,
+                                      files: files.isEmpty ? nil : files)).ok
     }
 
     func stop(_ agent: UUID) async {

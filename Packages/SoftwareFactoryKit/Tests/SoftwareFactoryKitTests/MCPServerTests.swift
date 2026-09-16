@@ -262,6 +262,17 @@ private final class ResultBox: @unchecked Sendable {
         #expect(snap.tasks.first { $0.number == 1 }?.agentID == newborn.id)
     }
 
+    /// Every agent works a project. An agent that has none, which since T411 means one
+    /// started before the rule, cannot spawn another into the same nowhere.
+    @Test func agentCreateRefusesWhenThereIsNoProjectToName() throws {
+        let s = try server()
+        let lonely = try startAgent(s).label
+        let created = call(s, "agent_create", ["agent_id": lonely])
+        #expect(created.isError)
+        #expect(created.text.contains("Name a project"))
+        #expect(try s.store.load().agents.filter(\.wantsLaunch).isEmpty)
+    }
+
     @Test func agentCreateRefusesANinthOnTheFloor() throws {
         let s = try server()
         _ = call(s, "project_add", ["name": "Packed", "folder": "/tmp/Packed"])
@@ -300,25 +311,11 @@ private final class ResultBox: @unchecked Sendable {
         #expect(call(s, "agent_create", ["agent_id": onIt]).text.contains("folder"))
     }
 
-    @Test func agentNudgeWritesTheNudgeDownForTheAppToType() throws {
-        let s = try server()
-        let lead = try startAgent(s, project: "Mail").label
-        let worker = try startAgent(s, project: "Mail").label
-        let poked = call(s, "agent_nudge", ["agent_id": lead, "to_agent_id": worker])
-        #expect(!poked.isError)
-        #expect(poked.text == "Nudged \(worker).")
-        let workerID = try #require(try s.store.load().agents.first { $0.label == worker }?.id)
-        let waiting = try #require(try s.store.messages(for: workerID).last)
-        #expect(waiting.subject == "Nudge")
-        #expect(waiting.from == lead)
-        #expect(waiting.contents == LaunchPrompt.nudge)
-        // Undelivered is what the app looks for, and a nudge is typed in bare: it is the
-        // line agents already read.
-        #expect(waiting.delivered == nil)
-        #expect(waiting.isNudge)
-        #expect(waiting.promptLine == LaunchPrompt.nudge)
-        #expect(call(s, "agent_nudge", ["agent_id": lead, "to_agent_id": lead]).isError)
-        #expect(call(s, "agent_nudge", ["agent_id": lead, "to_agent_id": "A99"]).isError)
+    /// There is no nudge to send. One agent reaching another says who it is from and what
+    /// it wants, which is `message_send`. (T470.)
+    @Test func thereIsNoNudgeTool() {
+        #expect(!MCPServer.Tool.all.contains { $0.name == "agent_nudge" })
+        #expect(MCPServer.Tool.all.contains { $0.name == "message_send" })
     }
 
     @Test func thereIsNoToolForReadingMessages() throws {
@@ -347,9 +344,9 @@ private final class ResultBox: @unchecked Sendable {
         let waiting = try #require(try s.store.messages(for: workerID).last)
         #expect(waiting.from == lead && waiting.subject == "Please review")
         #expect(waiting.delivered == nil)
-        // Not a nudge, so the typed line says who it is from: the agent cannot tell a
-        // typed line from the person at the keyboard.
-        #expect(!waiting.isNudge)
+        // It says who it is from: the agent cannot tell a typed line from the person at
+        // the keyboard, so every message that is not the factory's own poke is attributed.
+        #expect(!waiting.isPoke)
         #expect(waiting.promptLine == "Message from \(lead), Please review: Start with the MCP server.")
         #expect(call(s, "agent_message_send", [
             "agent_id": lead, "to_agent_id": lead, "subject": "No", "contents": "No",
@@ -388,8 +385,10 @@ private final class ResultBox: @unchecked Sendable {
     @Test func aMessageIsTypedAsOneLineWhateverItCarries() throws {
         let plain = AgentMessage(recipientID: UUID(), from: "A2", subject: "", contents: "Look at T12.")
         #expect(plain.promptLine == "Message from A2: Look at T12.")
-        let nudge = AgentMessage(recipientID: UUID(), from: "A2", subject: "Nudge", contents: LaunchPrompt.nudge)
-        #expect(nudge.promptLine == LaunchPrompt.nudge)
+        // The factory's own poke goes in bare, because it already says a person asked.
+        let poke = AgentMessage(recipientID: UUID(), from: "Alex", subject: "Started",
+                                contents: LaunchPrompt.carryOn)
+        #expect(poke.promptLine == LaunchPrompt.carryOn)
     }
 
     @Test func aNearMissProjectNameIsRefusedRatherThanMadeTwice() throws {
@@ -587,7 +586,7 @@ private final class ResultBox: @unchecked Sendable {
         #expect(names.contains("artifact_list"))
         #expect(names.contains("artifact_read"))
         #expect(names.contains("agent_create"))
-        #expect(names.contains("agent_nudge"))
+        #expect(names.contains("message_send"))
         // Registering and deregistering are gone: the factory makes the agent and the
         // kernel says when it stops. (T-session, 13 Sep 2026.)
         #expect(!names.contains("agent_register"))
@@ -1002,7 +1001,11 @@ private final class ResultBox: @unchecked Sendable {
 
     @Test func factoryStatusAndAsk() throws {
         let gb: UInt64 = 1_073_741_824
-        let busy = MachineReading(memoryTotal: 32 * gb, memoryFree: 6 * gb, swapUsed: 3 * gb, swapTotal: 4 * gb, load: 2, cores: 10, compiles: 1, simulators: 0)
+        // Over because the kernel says memory is critical, not because the swapfiles are
+        // full: a Mac that is not swapping builds whatever vm.swapusage adds up to. (T430.)
+        let busy = MachineReading(memoryTotal: 32 * gb, memoryFree: 6 * gb, swapUsed: 3 * gb,
+                                  swapTotal: 4 * gb, pressure: .critical,
+                                  load: 2, cores: 10, compiles: 1, simulators: 0)
         let s = MCPServer(store: try temporaryStore(), pollInterval: 0.01, machine: { busy })
         let status = call(s, "factory_status").text
         #expect(status.hasPrefix("Over capacity."))
@@ -1010,9 +1013,15 @@ private final class ResultBox: @unchecked Sendable {
         #expect(call(s, "factory_ask", ["work": "compile"]).text.hasPrefix("No:"))
         #expect(call(s, "factory_ask", ["work": "nothing"]).isError)
 
-        try s.store.save(Throttle(compileSlots: 1, swapCeiling: 0.9, memoryFloor: 0.05))
-        #expect(call(s, "factory_ask", ["work": "compile"]).text.hasPrefix("Wait: 1 of 1 compile slots"))
-        #expect(call(s, "factory_ask", ["work": "simulator"]).text == "Yes.")
+        // The slots are still the person's to set, and they still hold work back. What no
+        // longer lets a build through is loosening a swap or memory number, because
+        // neither decides anything now: the kernel does. (T430.)
+        let easy = MachineReading(memoryTotal: 32 * gb, memoryFree: 6 * gb, swapUsed: 3 * gb,
+                                  swapTotal: 4 * gb, load: 2, cores: 10, compiles: 1, simulators: 0)
+        let calm = MCPServer(store: try temporaryStore(), pollInterval: 0.01, machine: { easy })
+        try calm.store.save(Throttle(compileSlots: 1))
+        #expect(call(calm, "factory_ask", ["work": "compile"]).text.hasPrefix("Wait: 1 of 1 compile slots"))
+        #expect(call(calm, "factory_ask", ["work": "simulator"]).text == "Yes.")
 
         let blind = MCPServer(store: try temporaryStore(), pollInterval: 0.01, machine: { nil })
         #expect(call(blind, "factory_status").isError)

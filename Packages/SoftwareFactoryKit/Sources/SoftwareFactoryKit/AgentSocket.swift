@@ -105,15 +105,26 @@ public enum AgentSocket {
         write(connection, AgentDaemon.encode(request))
         // Half close, so the daemon's read ends without needing a length.
         shutdown(connection, SHUT_WR)
-        guard let line = readLine(from: connection),
-              let reply = AgentDaemon.decode(AgentDaemon.Reply.self, from: line)
-        else { return .no("The daemon did not answer.") }
+        guard let line = readLine(from: connection) else { return .no("The daemon did not answer.") }
+        // It answered and the answer would not read. Said apart from silence on purpose:
+        // the two look identical from here and want opposite things done about them, and
+        // an app that says "no answer" about a daemon happily talking to five agents is
+        // the wrong place to start looking.
+        guard let reply = AgentDaemon.decode(AgentDaemon.Reply.self, from: line) else {
+            return .no(Self.cannotRead)
+        }
         return reply
     }
 
     /// What the app says when nothing is listening. Not an error: the daemon not running
     /// is the ordinary state on a Mac that has not started an agent yet.
     public static let floorIsDown = "The agent daemon is not running."
+
+    /// The daemon is there and this build cannot read what it said. An older daemon left
+    /// over from before a rebuild, which is the ordinary way this happens: it outlives the
+    /// app on purpose. Restarting it ends the agents it is holding, so it says what is
+    /// wrong rather than doing it.
+    public static let cannotRead = "The agent daemon is running an older build than this app and answered with something it could not read. Restart the daemon when its agents can be spared."
 
     public static func isUp(at path: String = AgentDaemon.socketPath) -> Bool {
         ask(AgentDaemon.Request(op: .ping), at: path, patience: 2).ok

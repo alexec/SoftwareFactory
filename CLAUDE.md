@@ -80,25 +80,35 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     How many may be on the floor is the person's to set, `Throttle.agentSlots` read
     through `Agents.cap(_:)`, eight by default and one to sixteen on the Capacity page:
     agents are slots handed out like any other resource (T209). On the floor means
-    registered and not known to have exited. `agent_create` asks the factory to start
+    registered, not known to have exited, and not archived. **Archiving** is the third
+    thing you can do to an agent, between Stop and Delete (T415, Alex, 15 Sep 2026: "the
+    agents are stopped and hidden"): `Agent.archivedAt`, `Agents.mayArchive` and
+    `mayUnarchive`, and `AppModel.archive` stops the process first, because an archived
+    agent still running is one doing work nobody can see. It keeps everything that says
+    what it did, its conversation, its documents and the tasks with its name on them, and
+    loses its row, its slot and its line in every count: `Dashboard.agents` drops it, which
+    takes it off the sidebar, the floor count and the status board in one move, and
+    `Dashboard.archived` is where it is still seen from. That is an Archived section at the
+    foot of the sidebar, drawn only when it has something in it and folded shut, because
+    hidden with nowhere to be seen from is what T392 had to fix. `agent_list` does not
+    offer one, and a message or nudge to one is refused: nothing would reach it. `agent_create` asks the factory to start
     another, which sets `wantsLaunch`; the app starts it. The one over the cap is
     refused. `agent_nudge` pokes another agent, sets
-    `wantsNudge`, and the app types the same line as the person's Nudge),
+    `wantsNudge`, and the app types the same line the factory's own poke does),
     `AgentMessage` (recipient, from, subject, contents, sent, and `delivered` for records
-    written before delivery existed; there is no inbox to read, `terminalLine` is
-    what gets typed, and a nudge is simply a message whose contents are
-    `LaunchPrompt.nudge`, so one path carries both. A nudge says "The user has nudged you
-    to continue your work" and nothing about how to do the job: it used to name the
-    backlog and the next task nobody is on, which is the factory instructing an agent that
-    already has its own instructions and may be mid-something the backlog says nothing
-    about (T370). `LaunchPrompt.pokes` are the lines the factory types in itself, the
-    nudge and `carryOn`; `AgentMessage.isPoke` is what puts them in bare, because they
-    already say a person asked. Everything else is attributed. Once the app has typed one into the
-    recipient's terminal it deletes the record: arrived is arrived, and a copy of what has
-    landed is a pile rather than an inbox. `Mailbox` caps what is still waiting at three,
-    and `message_send` and `agent_nudge` answer "Mailbox full" for the fourth; the
-    person's own Nudge is never refused, and the person can throw any message away from
-    the Messages panel. Alex, 14 Sep 2026),
+    written before delivery existed; there is no inbox to read, and `promptLine` is what
+    gets said to the agent. **There is no nudge** (T470): its words were "The user has
+    nudged you to continue your work", and once T412 took the button off the agent's page
+    the user was neither sender, so what was left was the factory poking an idle agent and
+    one agent poking another, both telling an agent a person had asked when nobody had.
+    `agent_nudge` and `Sweep.agentsToPoke` went with it. What reaches an agent now is a
+    message, which says who it is from and what they want; `LaunchPrompt.pokes` is the one
+    line the factory still types in itself, `carryOn`, and `AgentMessage.isPoke` is what
+    puts it in bare. Everything else is attributed. Once the app has said one to its agent
+    it deletes the record: arrived is arrived, and a copy of what has landed is a pile
+    rather than an inbox. `Mailbox` caps what is still waiting at three, and `message_send`
+    answers "Mailbox full" for the fourth; the person can throw any message away, though
+    not from the agent's page any more (T452). Alex, 14 Sep 2026),
     `Escalation` (options, one recommended; optional `link` to a document to review,
     filed as an artifact; optional `artifactID`; `decide(_:by:)` records a `Decision`),
     `Artifact` (a document on a project: title, body, optional link, and a `kind`.
@@ -132,7 +142,8 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     smaller with one line of preview rather than three, and an unread one carries a dot,
     on the project's cards and on the agent's tabs alike. Not greyed: greying and
     shrinking say the same thing twice, and grey also says you cannot have it (T335).
-    A body is a kilobyte, `Artifacts.maxBody`: an artifact is read on a
+    A body is two kilobytes, `Artifacts.maxBody`, raised from one in T416 because a
+    status report reached the old limit: an artifact is read on a
     card while deciding what to do, not somewhere to put a transcript, and the refusal
     says to put the long one in the repo and file a link (T274). The factory asks an agent for one when an hour has gone by without
     it: `Sweep.statusReportsWanted` writes the message, `Agent.statusAskedAt` is how it
@@ -171,8 +182,9 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     never gives its number back. `FileStore.takeAgentNumber()` seeds a store written
     before the folder existed from the numbers its agents already carry.
   - `LaunchPrompt`: the words an agent starts with, in one place: `project` (work the
-    backlog), `task` (one task, already in its name, to claim), `free` (no project,
-    the person says what for).
+    backlog), `task` (one task, already in its name, to claim), and `free`, which is the
+    other two with the identity line in front of them and is what a launch with the words
+    edited sends. It started the agent on no project until T411.
   - `LaunchAgent`: Claude Code, GitHub Copilot, Grok or Cursor, chosen at launch. A plain
     shell used to be a fifth and never was one: it registered with nothing, was told
     nothing, held no task and had no conversation to resume, so every question asked of
@@ -309,15 +321,12 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     it. Otherwise it reads the list, likes the look of something, claims that too, and
     the task it forgot sits in progress with nobody on it until a person notices. Not
     when it asked for its own list with `mine`: it is looking at them. (T270.)
-  - `Waiting`: what the factory is holding that has not reached anybody, the two counts
-    beside its own name in the title bar: documents nobody has opened
-    (`unreadDocuments`) and messages not yet typed into a terminal (`messages`). Both are
-    quiet by nature, a document landing on a project you are not looking at and a message
-    waiting for an agent whose terminal is off screen, so neither has a page of its own
-    to say so from. Only live things count: a document on a removed project and a message
-    to a deleted agent are never going to reach anybody, and a number that can only go up
-    is one people learn to ignore. Nothing is drawn when nothing is waiting, the way the
-    bell is nothing until an agent rings it. (T373.)
+  - There is no `Waiting` any more (T473). It counted what the factory was holding that
+    had not reached anybody, documents nobody had opened and messages not yet delivered,
+    for the two chips beside the factory's name in the title bar; T434 took those off,
+    because what is waiting was being reported at three altitudes, and the rule was left
+    computing for nobody. If the counts come back, where they go is a decision rather than
+    a restoration.
   - `Escalations.visible`: open questions in full, the newest three answered ones.
   - `Artifacts`: live (not removed) documents on a project, newest first; `notes` and
     `statusReports` split them by kind, and `statusReport(by:on:)` is the one an agent
@@ -403,6 +412,22 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     verdict, the reason, and `ask(work:)` for compile, simulator, model.
   - `Dashboard.make(snapshot:now:)`: counts, one `ProjectStatus` per project, one
     `AgentStatus` per agent on the floor.
+    **An agent is one of four things** (T423, T425, Alex, 15 Sep 2026): working (green),
+    asking you (the alarm orange), finished (blue), or stopped (a hollow circle, which is
+    what a black dot was asking for: filled black is invisible on dark paper and filled
+    white would be the loudest thing on the row). It was five, and two of them were
+    guesses. Working meant "called the factory in the last ten minutes", which is a proxy
+    for a turn in flight and a poor one: a polling agent looked busy and an agent thinking
+    hard about one file looked idle. Idle and waiting were one state told apart by whether
+    it held a task. `Agent.isPrompting` is the daemon's own answer, written onto the record
+    beside the title so the phone reads the same dot as the Mac, and it is only consulted
+    for an ACP agent; a terminal or external one still falls back to `isWorking(now:)`,
+    because nobody holds it to ask. Asking you means a question open, a permission waiting,
+    or a task blocked **on a person**: a block on another task or on a decision is not
+    yours to clear. `Dashboard.busiest` is one dot for a group, and wanting you beats
+    working there for the same reason. `ActivityDot` moved to `Shared` with
+    `AgentActivityDot`, because the phone was drawing its own with two of the four colours
+    in it.
   - `MCPServer`: JSON-RPC 2.0, `handle(_:)` is pure per request; `Tool.all` is the
     table; `call(_:_:)` does the work. `escalation_await` polls the store.
     `agent_create` writes the agent down and sets `wantsLaunch`; the person's own cap,
@@ -418,8 +443,16 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     agent's address needs no `Mcp-Session-Id` either: the address is the identity, and a
     transport session is something any caller can ask for. The tool list can differ per
     agent for the same reason: one that asks through the protocol is not offered
-    `escalation_raise` or `escalation_await`, because it has a better way and the factory
-    should not offer a second. (T373.)
+    `escalation_await`, because raising is not waiting. **`escalation_raise` is offered to
+    everybody** (T422). It was withheld from Claude Code on the argument that
+    `elicitation/create` files the same record, which it does when the agent uses it; what
+    happened instead was an agent asking inside its own CLI, where the question is drawn in
+    its own interface and reaches nobody who is not already watching that one agent: no
+    Needs you strip, no banner, no phone, no Lock Screen, no record of the answer. The words
+    every agent starts with, `LaunchPrompt.askThroughTheFactory`, say to raise it and carry
+    on with something else: the factory blocks the task on the decision and unblocks it when
+    the answer lands, and an agent sitting on a question overnight is a slot and a terminal
+    stopped for nothing. (T373, then T422, Alex, 15 Sep 2026.)
   - `Throttle.permissions` has four positions, and `agentDecides` is the one to know:
     the agent judges each call itself and stops only when it thinks it should, which is a
     different thing from being told yes to everything. Every one of these CLIs offers
@@ -513,9 +546,13 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     hide their own scroll backgrounds to let it through. (Alex, 16 Sep 2026: use it
     everywhere. Asked for twice, taken away once in between, and this is the settled
     answer.)
-  - An agent's conversation is set on paper: the warm ground, a serif for everything
-    anybody said, the same measure the documents use so a line is one you can read to the
-    end of, and no gloss anywhere. A tool call is a block set into the page, like a quote
+  - An agent's conversation is set on paper: the warm ground, the same measure the documents
+    use so a line is one you can read to the end of, and no gloss anywhere. **Not a serif**
+    (T447, Alex, 15 Sep 2026): it was, and it read as a page of a book inside an app that is
+    not one, so the window held two type families with the seam wherever the conversation
+    started. The letters are the system's everywhere in both apps now. A document opens in
+    a serif still, because `ArtifactPaper` is a page being read rather than a screen being
+    used. A tool call is a block set into the page, like a quote
     or a piece of code, rather than a card sitting on top of it. What the agent is doing
     stays plain, because the paper is for the words.
   - `Paper` in the kit, and `App/Sources/ArtifactPaper.swift`: a document to read, as a
@@ -543,7 +580,8 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     then the projects, each with the agents on it hanging underneath, working ones first and
     stopped ones after (`Dashboard.agents(on:)`, T359). They were a flat Agents section and
     a Stopped one, which meant reading every row's project name to find the two on the
-    thing you came for; an agent belongs to the work it is doing. Agents on no project hang
+    thing you came for; an agent belongs to the work it is doing. The agents that predate
+    T411 and have no project hang
     under the No project row the same way. A project row is its name, how many tasks
     are on its backlog in grey, and a count in orange when it has a question waiting. The
     dot and the counts of blocked and in progress came off in T358: a sidebar is a list of
@@ -559,15 +597,25 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     (T362). An agent holding nothing says what it can for itself instead: the first line
     of its status report, else the line it set with an OSC title
     (`AgentLine.underTheName`, T295). Its bell goes in front when it rang. The row opens that agent's page from anywhere, and opening the
-    page clears the bell however you got there; right click to Nudge, Stop or Delete it.
-    Stop is on the agent's page too, beside Nudge, and asks nothing
+    page clears the bell however you got there; right click to Stop or Delete it.
+    **There is no Nudge button** (T412, Alex, 15 Sep 2026): the field at the foot of an
+    agent's page says anything you like to it, including carry on, and a control that can
+    only ever say one canned sentence sat in front of that at the same weight as Stop. The
+    nudge itself stays, as the factory's own poke when work lands on an idle project
+    (`Sweep.agentsToPoke`) and as `agent_nudge` between agents.
+    **Stop and Archive are not on the agent's page** (T460): both end an agent, both are
+    one click, and both sat on the page you go to in order to watch one work and talk to
+    it. They are on the right-click of its row and of its card, where ending a thing
+    belongs, because you go looking for it. Start stays, because it begins something rather
+    than ending it and because a stopped agent's page is where you notice it has stopped.
+    Stop asks nothing
     before it acts: it used to, on the argument that one click ends an agent mid-thought,
     but Start picks the conversation back up, the pane keeps what it said and what it held
     goes back on its own, so the question was in front of something that undoes itself.
     (T261, then T294.)
     T222, T225, and Alex, 14 Sep 2026), `DashboardView` (stat tiles, Needs you as a horizontal strip,
     the agents on the floor as cards; `AgentCard` is one of them and `AgentView` is the
-    page behind it; an agent that is not stopped has Nudge, its messages and terminal.
+    page behind it; an agent that is not stopped has its messages and its terminal.
     That page is a band and two columns. The band sits under the agent's name, full
     width, and says what it is on, what it holds, its messages and what it is running
     with; not its pid and not its session id, which look useful and are not (T331). It
@@ -578,13 +626,22 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     report and its notes, one on paper at a time, chosen from tabs across the top that
     scroll and scroll the current one into view (`DocumentTabs`, T330); a menu showed one
     name and hid the rest. It is not drawn at all for an agent that has written nothing,
-    and the band and the column each have a toolbar toggle. They were rows behind a
-    triangle, which is a fine way to list documents and no way to read one, T311),
-    `AgentsView` and `StatusReportsView` (every agent registered; everybody's
-    report on one page). Both came off the sidebar in T360 and neither has another way in
-    yet, so they are pages with no door: say whether they should go or get one. Starting
-    an agent on no project did not go with them, `FreeAgentCard` moved to the No project
-    page, which was the only other place such an agent could have come from. The In
+    and the column is chosen with the icons above it. They were rows behind a
+    triangle, which is a fine way to list documents and no way to read one, T311.
+    The band has no toggle: it was a Details button in the toolbar drawing
+    `rectangle.bottomthird.inset.filled`, which is not a glyph anybody reads as "what it
+    is on and holding", and the band is two lines of the thing you came to the page for.
+    A control nobody can name, in front of something nobody wants hidden, is two costs
+    for no benefit. Always open now. (Alex, 16 Sep 2026.)),
+    `StatusReportsView` (everybody's report on one page). It and an `AgentsView` beside it
+    came off the sidebar in T360 with no other way in, which made them pages with no door.
+    T392 settled it: the agents tile on the Dashboard is the status board's door, orange
+    with the count when somebody has gone quiet, and `AgentsView` is deleted, because it
+    was a grid of the same cards the sidebar and each project page already draw.
+    **Every agent works a project** (T411): the Launch card that started one on nothing is
+    gone with `FreeAgentCard`, `agent_create` already refused without one, and the No
+    project row and page are drawn only while the agents started before that rule are still
+    on the floor. They go when the last one does. The In
     progress page went further in T365 and is gone altogether, the view, `WorkInProgress`
     and its tests: the floor says who is here and a project's backlog says what is left,
     which between them is the whole of what that page answered,
@@ -608,6 +665,12 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     columns (T342, T349). They were cards in a grid opening a sheet, and before that
     disclosure rows down the middle of the backlog (T297); reading matter does not belong
     in the same scroller as a list of work.
+    **No list of agents on it** (T413): the sidebar hangs every agent under the project it
+    is on with the tasks in its name under that, so a grid of the same cards halfway down
+    this page drew the same fact twice and pushed the backlog below the fold. What is left
+    is the way to start one, which is an action rather than a list, and a card for a
+    terminal started here that has not registered yet, which is the one thing the sidebar
+    cannot show because there is no agent to hang there until it does.
     And Start an agent on this,
     on a backlog row: it reserves an agent, puts the task in its name and starts it on
     that one task), `AgentLauncher` and `StartAgent` (reserve, assign, launch: one path
@@ -619,6 +682,27 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     and `taskWork` are what that field starts as, and the line naming the agent and its
     session goes in front of whatever it says, T260), `IntroSheet`, `SettingsView`
     (How it works on top, in-app vs Terminal, iCloud, the store, Developer in DEBUG).
+  - `StartAgentBar` and `AgentStart`: **what an agent is started as is decided as it is
+    started.** The bar under a project's backlog is the same shape as the field on an
+    agent's page, and the row beneath it holds the three things that make this agent this
+    agent: how much it may do, what to run it on, and which CLI. The mode menu lists the
+    modes of the CLI picked beside it, in that agent's own words, off
+    `LaunchAgent.modesOffered`: measured by handshaking each binary with
+    `Tools/acp-modes.py` and written down, because nothing knows an agent's modes until it
+    has made a session and this choice is made before that. Claude Code's five are about
+    how much it may do, Copilot's three are about how it converses and are named by URL,
+    Cursor's three are half of each, and Grok offers none, so for Grok the menu is the
+    floor's own stances and nothing else. The first row is Follow Settings, which names the
+    stance the Asking section holds, and that is the ordinary case. A mode picked here
+    beats the floor and goes on beating it, the same as picking one on the agent's page:
+    `AgentFloor` sets it after `session/new` and marks it chosen by hand. One the agent
+    turns out not to offer is ignored and the floor's setting stands, so a list here that
+    has gone stale costs a menu row rather than a start. The model is a field rather than a
+    menu, seeded from what Settings holds for that CLI and editable for this launch alone,
+    because only Grok says what models it has and then in a vendor extension: there is no
+    list to offer and a name typed is the honest control. Both follow the CLI: changing it
+    reseeds the model and drops the mode, because a mode id belongs to the agent that named
+    it. (T462, T464, T466, Alex, 15 Sep 2026.)
   - `AgentShells` and `App/Sources/AgentShells.swift`: the terminals a person has opened
     beside an agent, in that agent's folder, as tabs. Two small icons sit above the
     agent's columns, one for what it has written and one for a shell, and they choose what
@@ -799,10 +883,20 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
 - Nothing in the app asks the daemon from the main thread, for the same reason nothing
   asks tmux from it: the answer takes as long as spawning a child takes.
 - Every string a person reads follows `alex-writing-voice`; no em dashes.
-- Measurements come from `App/Sources/Style.swift`: `card` 18, `panel` 12, `page` 24,
+- Measurements come from `Shared/Style.swift`: `card` 18, `panel` 12, `page` 24,
   `cardPadding` 16, `sheetPadding` 20, and a chip is a capsule. They were written where
   they were used and the same thing came out at four sizes (T343). A new corner names one
   of these or it is a decision worth arguing for.
+  **The type is in there too**, `Style.Text` (T459): `page` names a screen, `thing` names
+  something on it, `row` is what a row says, `rowName` is the name of one, `quiet` is a
+  date or a count, `machine` is a path or a command, `gauge` is a number read across the
+  room on the Capacity page, `welcome` is the one word at the top of a first-run sheet, and
+  `tiny` is the smallest thing that is still a control. Every one is a Dynamic Type style
+  rather than a number, so all of it grows when the person's text does; the two hard-coded
+  pixel sizes that did not were the only text in either app that could not. The same rule
+  as the corners: a new piece of text names one of these or it is a decision worth arguing
+  for. The sweep that wrote them down also stopped the phone drawing five rows a step
+  smaller than the same row on the Mac.
 - First-run: the sheet shows once (`hasSeenIntro`) and again from Settings. Reset with the
   Developer row or `defaults delete com.alexecollins.softwarefactory hasSeenIntro`.
 - Rebuild and restart the Debug Mac app at the end of every task. The factory on 4747 is

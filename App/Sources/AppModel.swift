@@ -6,7 +6,7 @@ import SoftwareFactoryKit
 /// the plumbing that keeps the window current.
 @Observable
 @MainActor
-final class AppModel {
+final class AppModel: Deciding {
     private(set) var snapshot = Snapshot()
     private(set) var dashboard = Dashboard.empty
     /// Every message sent to each agent, newest last. Kept beside the snapshot because
@@ -131,10 +131,6 @@ final class AppModel {
         // toggle here, or project_set from an agent. Start picks each of them back up
         // when the project comes off hold. (T309.)
         for agent in Sweep.agentsHeld(before: before, after: snapshot) { signalStop(agent) }
-        // Work landing on a project where nobody is working pokes the first agent, so
-        // filing a task and then going to find somebody to tell is one step rather than
-        // two. Every route into the backlog comes through here: the add row, dictation,
-        // an agent's own task_add, the phone. (T352.)
         // An agent with nothing to do and nothing coming costs a slot, a terminal and
         // whatever its CLI holds open. Stop picks back up, so this is safe to do without
         // asking. (T357.)
@@ -143,11 +139,6 @@ final class AppModel {
                                             working: busyAgents,
                                             now: .now) {
             signalStop(agent)
-        }
-        for agent in Sweep.agentsToPoke(before: before, after: snapshot,
-                                        messages: messagesByAgent.values.flatMap { $0 },
-                                        now: .now) {
-            nudge(agent)
         }
         numberOldArtifacts()
         let gone = Sweep.stoppedAgents(in: snapshot, now: .now)
@@ -288,16 +279,6 @@ final class AppModel {
         messages(for: agentID).filter { $0.delivered == nil }.sorted { $0.sent < $1.sent }
     }
 
-    /// Documents nobody has opened yet, across every project that is still here. (T373.)
-    var unreadDocuments: Int {
-        Waiting.unreadDocuments(snapshot.artifacts, on: snapshot.projects)
-    }
-
-    /// Messages still waiting to be typed into a terminal, for agents still on the
-    /// floor. (T373.)
-    var messagesWaiting: Int {
-        Waiting.messages(messagesByAgent.values.flatMap { $0 }, to: snapshot.agents)
-    }
 
     /// Throws one message away. The agent has already had it, or was never going to:
     /// either way the copy in the inbox is the person's to clear. (Alex, 14 Sep 2026.)
@@ -377,6 +358,32 @@ final class AppModel {
         }
     }
 
+    /// Put an agent away: stopped, and off every list.
+    ///
+    /// What it keeps is everything that says what it did: its conversation, its documents,
+    /// the tasks with its name on them. What it loses is a row, a slot on the floor and a
+    /// line in every count. It is stopped first, because an archived agent still running
+    /// is one doing work nobody can see, and its leases go back the way they do when any
+    /// agent stops. (T415, Alex, 15 Sep 2026: "the agents are stopped and hidden".)
+    func archive(_ agent: Agent) {
+        stop(agent)
+        persist { store in
+            guard var found = try store.load().agents.first(where: { $0.id == agent.id }) else { return }
+            found.archivedAt = .now
+            try store.save(found)
+        }
+    }
+
+    /// Back out again, where it was. Its conversation is still under its session id, so
+    /// one whose CLI can pick a session back up is offered Start the moment it reappears.
+    func unarchive(_ agent: Agent) {
+        persist { store in
+            guard var found = try store.load().agents.first(where: { $0.id == agent.id }) else { return }
+            found.archivedAt = nil
+            try store.save(found)
+        }
+    }
+
     /// The agent's terminal set a title. That line is what the card shows.
     func setTitle(session: String, title: String) {
         guard let id = UUID(uuidString: session),
@@ -403,11 +410,6 @@ final class AppModel {
         persist { try $0.save(agent) }
     }
 
-    /// A poke for an agent sitting waiting. It is a message like any other, and the app
-    /// types every undelivered message into its agent's terminal.
-    func nudge(_ agent: Agent) {
-        sendMessage(to: agent.id, subject: "Nudge", contents: LaunchPrompt.nudge)
-    }
 
     /// A message for an agent, written down so the app can type it into that agent's
     /// terminal.
@@ -458,7 +460,10 @@ final class AppModel {
     /// Writes the agent down before anything launches. Its id is its session: the name
     /// of the terminal it will run in, the `--session-id` its CLI is started with, and
     /// what it says on every call it makes. (T-session, 13 Sep 2026.)
-    func reserveAgent(for project: Project?) -> Agent? {
+    ///
+    /// A project, not an optional one: every agent works a project now, and the one path
+    /// that passed nil was the Launch card on the No project page. (T411.)
+    func reserveAgent(for project: Project) -> Agent? {
         guard let store else { return nil }
         if Agents.atCap(snapshot.agents, cap: Agents.cap(throttle)) {
             storeError = Agents.fullMessage(cap: Agents.cap(throttle))
@@ -468,7 +473,7 @@ final class AppModel {
             // The number comes off the factory's counter on disk, so the agent that
             // turns up in this session is the one on this card.
             let agent = Agents.reserve(number: try store.takeAgentNumber(),
-                                       projectID: project?.id)
+                                       projectID: project.id)
             try store.save(agent)
             refresh()
             return agent
@@ -553,12 +558,17 @@ final class AppModel {
             let newPID = one.pid != nil && agent.pid != one.pid
             let newLine = !line.isEmpty && agent.title != line
             let newSession = one.session != nil && agent.acpSession != one.session
-            guard newPID || newLine || newSession else { continue }
+            // Mid-turn or not, written down so the dot means the same thing here and on
+            // the phone, which has no daemon to ask. Only on a change, like the rest of
+            // this. (T425.)
+            let newTurn = agent.isPrompting != one.isPrompting
+            guard newPID || newLine || newSession || newTurn else { continue }
             let started = newPID ? one.pid.flatMap { ProcessCheck.startTime(of: $0) } : nil
             persist { store in
                 guard var found = try store.load().agents.first(where: { $0.id == one.agent }) else { return }
                 if newLine { found.title = line }
                 if newSession { found.acpSession = one.session }
+                found.isPrompting = one.isPrompting
                 if let started, let pid = one.pid {
                     found.pid = pid
                     found.pidStartedAt = started
@@ -660,11 +670,18 @@ final class AppModel {
         // A question whose agent has stopped waiting, because the daemon ran out of
         // patience or because it was answered on the agent's own page, is closed rather
         // than left on the strip saying somebody has to do something.
+        // Only a permission closes itself, and only onto the option the agent marked. A
+        // question of the agent's own carries no recommendation, so this used to write down
+        // whichever option it happened to list first as a decision made "by the factory":
+        // a false answer in the history, on the strip and on the phone, to a question
+        // nobody had read. It stays open instead. The agent is no longer sitting on it
+        // either way, because the daemon declines it after the same ten minutes. (T421.)
         for var question in snapshot.escalations where question.isOpen {
             guard let reference = question.reference,
-                  reference.hasPrefix(Self.permissionPrefix) || reference.hasPrefix(Self.questionPrefix),
-                  !waiting.contains(reference), !question.options.isEmpty else { continue }
-            try? question.decide(question.recommended ?? question.options[0], by: "the factory")
+                  reference.hasPrefix(Self.permissionPrefix),
+                  !waiting.contains(reference),
+                  let fallback = question.recommended else { continue }
+            try? question.decide(fallback, by: "the factory")
             try? store.save(question)
             wrote = true
         }
@@ -688,6 +705,21 @@ final class AppModel {
         guard let first = title.first else { return title }
         return first.lowercased() + title.dropFirst()
     }
+
+    /// The model to start a given CLI on, as the person set it, or empty for the CLI's
+    /// own default. One per kind rather than one for the floor: the four do not share a
+    /// vocabulary of model names, and opus means nothing to Grok. (T462.)
+    func model(for kind: LaunchAgent) -> String {
+        UserDefaults.standard.string(forKey: Self.modelKey(kind)) ?? ""
+    }
+
+    func setModel(_ model: String, for kind: LaunchAgent) {
+        let model = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if model.isEmpty { UserDefaults.standard.removeObject(forKey: Self.modelKey(kind)) }
+        else { UserDefaults.standard.set(model, forKey: Self.modelKey(kind)) }
+    }
+
+    static func modelKey(_ kind: LaunchAgent) -> String { "model.\(kind.rawValue)" }
 
     /// Writes down which CLI started an agent. Its conversation lives in that one, under
     /// the session id the factory gave it, so a restart has to use the same. (T262.)
@@ -897,6 +929,18 @@ final class AppModel {
         guard (try? e.answer(words, by: by)) != nil else { return }
         persist { try $0.save(e) }
         notifier.withdraw(e.id)
+    }
+
+    // MARK: What the question's card says back
+
+    /// The card is drawn once for both apps, so what it does is said in its own words
+    /// rather than in either model's. Here that is one call each way. (T394.)
+    func chose(_ escalation: Escalation, _ option: Escalation.Option, note: String) {
+        decide(escalation, option, note: note)
+    }
+
+    func answered(_ escalation: Escalation, with words: String) {
+        answer(escalation, words)
     }
 
     // MARK: Resources

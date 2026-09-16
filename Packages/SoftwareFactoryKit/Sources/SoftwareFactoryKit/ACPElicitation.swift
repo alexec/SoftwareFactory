@@ -140,7 +140,13 @@ public extension ACP {
         }
 
         /// Nobody is going to answer. The agent stops asking rather than waiting for ever.
-        public var declined: [String: Any] { ["action": "decline"] }
+        ///
+        /// It needs no form, which is why it is also available without one: the daemon
+        /// gives up on a question nobody has read in ten minutes and has only the request
+        /// id to hand. (T421.)
+        public var declined: [String: Any] { Self.declined }
+
+        public static var declined: [String: Any] { ["action": "decline"] }
     }
 
     /// What the factory tells an agent it can do. Elicitation is declared, so an agent

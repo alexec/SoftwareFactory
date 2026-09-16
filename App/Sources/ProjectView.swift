@@ -10,7 +10,12 @@ struct ProjectView: View {
     var project: Project
     var selectAgent: (UUID) -> Void = { _ in }
 
-    @State private var newTitle = ""
+    /// The same keeping as the chat box: a task typed and not added survives leaving the
+    /// page. (T429.)
+    private var newTitle: Binding<String> {
+        Binding(get: { Drafts.shared.text(for: Drafts.adding(to: project.id)) },
+                set: { Drafts.shared.keep($0, for: Drafts.adding(to: project.id)) })
+    }
     @State private var newParkedTitle = ""
     @State private var launchError: String?
     @State private var showingAllDone = false
@@ -72,9 +77,13 @@ struct ProjectView: View {
                     .listRowBackground(Color.clear)
             }
 
-            // The same cards as the Agents page, filtered to this project.
-            Section("Agents") {
-                agents
+            // No list of agents here. The sidebar hangs every agent under the project it
+            // is on, with the tasks in its name under that, so a grid of the same cards
+            // halfway down this page was the same fact drawn twice and pushed the backlog,
+            // which is what the page is for, below the fold. What is left is the way to
+            // start one, which is an action rather than a list. (T413, Alex, 15 Sep 2026.)
+            Section {
+                launcher
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 8, trailing: 0))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -83,7 +92,7 @@ struct ProjectView: View {
             if !questions.open.isEmpty || !questions.decided.isEmpty {
                 Section("Questions") {
                     ForEach(questions.open) { e in
-                        EscalationCard(escalation: e, showsProject: false)
+                        EscalationCard(escalation: e, model: model)
                             .listRowSeparator(.hidden)
                             .padding(.vertical, 4)
                     }
@@ -171,7 +180,7 @@ struct ProjectView: View {
 
     private var addRow: some View {
         HStack(alignment: .top, spacing: 8) {
-            WorkField(prompt: "Add a task", text: $newTitle)
+            WorkField(prompt: "Add a task", text: newTitle)
             Menu {
                 Button("Add to the top") { add(at: .top) }
                 Button("Add to the bottom") { add(at: .bottom) }
@@ -210,9 +219,10 @@ struct ProjectView: View {
         let status = model.status(for: project.id)
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                ActivityDot(activity: status?.activity ?? .idle, isEmpty: status?.isEmpty ?? true, onHold: project.onHold)
-                Text(project.name)
-                    .font(.title3.weight(.semibold))
+                // No name here: the window's own title says which project this is, and
+                // saying it twice, eight points apart and in two sizes, reads as two
+                // headings rather than one. (T476, Alex, 15 Sep 2026.)
+                ActivityDot(activity: status?.activity ?? .finished, isEmpty: status?.isEmpty ?? true, onHold: project.onHold)
                 if project.onHold {
                     Text("on hold")
                         .font(.callout)
@@ -262,45 +272,41 @@ struct ProjectView: View {
         return terminals.starting(for: project.id, claimed: claimed)
     }
 
-    private var agents: some View {
-        let onIt = model.dashboard.agents.filter { $0.project?.id == project.id }
-        // The last card in the grid starts another one, so it sits with the agents it
-        // is about rather than up in the header.
-        return GlassEffectContainer(spacing: 16) {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 16)], spacing: 16) {
-                ForEach(onIt) { status in
-                    AgentCard(status: status, select: selectAgent)
+    /// The way to start an agent on this project, and a card for one that has been
+    /// started here and has not registered yet, which is the one thing the sidebar cannot
+    /// show because there is no agent to hang there until it does.
+    private var launcher: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // A card that has not registered yet still sits in the grid it came from; the
+            // field takes the width, because it is a field. It was in the grid too and
+            // came out a third of the page wide, which is a sentence in a letterbox.
+            // (T444, Alex, 15 Sep 2026.)
+            if !starting.isEmpty {
+                GlassEffectContainer(spacing: 16) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 16)], spacing: 16) {
+                        ForEach(starting) { session in
+                            StartingAgentCard(started: session.started, ended: session.ended)
+                        }
+                    }
                 }
-                ForEach(starting) { session in
-                    StartingAgentCard(started: session.started, ended: session.ended)
-                }
-                LaunchAgentCard(
-                    title: AgentLauncher.isSandboxed ? "Copy the launch command" : "Launch an agent",
-                    detail: AgentLauncher.isSandboxed ? "The command goes on the clipboard." : model.launchStyle.detail,
-                    help: launchHelp,
-                    isReady: project.path != nil,
-                    defaultWords: LaunchPrompt.projectWork(project),
-                    launch: { launchAgent($0, agent: $1, words: $2) })
             }
+            StartAgentBar(project: project,
+                          words: LaunchPrompt.projectWork(project),
+                          launch: { launchAgent($0) })
+                .frame(maxWidth: .infinity)
         }
-    }
-
-    private var launchHelp: String {
-        if project.path == nil { return "Set the project folder before launching an agent" }
-        if AgentLauncher.isSandboxed {
-            return "This build is sandboxed, so an agent it started could not reach your own environment. The command goes on the clipboard instead."
-        }
-        return "Claude Code, GitHub Copilot or Grok, in the project's folder."
     }
 
     /// In the app, where its page shows it working and you can type to it, or in
     /// Terminal, where it outlives the app.
-    private func launchAgent(_ style: AppModel.LaunchStyle, agent: LaunchAgent, words: String) {
+    private func launchAgent(_ started: AgentStart) {
         // The agent is written down first, so it has a name before it starts and the
         // card, the transcript and the prompt all say the same thing.
         Task {
-            launchError = await StartAgent.run(project: project, agent: agent, style: style, model: model,
-                                               terminals: terminals, floor: floor, words: words)
+            launchError = await StartAgent.run(project: project, agent: started.kind, style: started.style,
+                                               model: model, terminals: terminals, floor: floor,
+                                               words: started.words,
+                                               runOn: started.model, mode: started.mode)
         }
     }
 
@@ -332,8 +338,8 @@ struct ProjectView: View {
     }
 
     private func add(at position: Backlog.Position) {
-        let text = newTitle
-        newTitle = ""
+        let text = newTitle.wrappedValue
+        Drafts.shared.clear(Drafts.adding(to: project.id))
         _Concurrency.Task { await model.addTask(to: project.id, from: text, at: position) }
     }
 
@@ -381,78 +387,15 @@ struct StartingAgentCard: View {
     }
 }
 
-/// The card that starts another agent on this project, shaped like the agents beside it.
-private struct LaunchAgentCard: View {
-    @Environment(AppModel.self) private var model
-    var title: String
-    var detail: String
-    var help: String
-    var isReady: Bool
-    /// The words the factory would use, which the person may edit before launching.
-    var defaultWords: String
-    var launch: (AppModel.LaunchStyle, LaunchAgent, String) -> Void
-
-    @State private var choosing = false
-    @State private var styleForThisLaunch: AppModel.LaunchStyle?
-    @State private var words = ""
-
-    var body: some View {
-        Button { choosing = true } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Image(systemName: "plus.circle")
-                    Text(title)
-                        .font(.headline)
-                }
-                Text(isReady ? detail : "Set the project's folder first.")
-                    .font(.callout)
-                    .foregroundStyle(Color(.quiet))
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .frame(height: AgentCard.height, alignment: .topLeading)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .disabled(!isReady)
-        .foregroundStyle(isReady ? .primary : .tertiary)
-        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
-        .help(help)
-        .popover(isPresented: $choosing, arrowEdge: .bottom) {
-            LaunchChooser(onLaunch: start, onCancel: { choosing = false }) {
-                LaunchWords(words: $words, defaultWords: defaultWords)
-            }
-        }
-        .onChange(of: choosing) { _, open in if open { words = defaultWords } }
-        // Either way, whichever the settings say by default, then pick the agent.
-        .contextMenu {
-            ForEach(AppModel.LaunchStyle.allCases) { style in
-                Button(style.title) {
-                    styleForThisLaunch = style
-                    choosing = true
-                }
-            }
-        }
-    }
-
-    private func start(_ agent: LaunchAgent) {
-        choosing = false
-        let style = styleForThisLaunch ?? model.launchStyle
-        styleForThisLaunch = nil
-        launch(style, agent, words)
-    }
-}
-
 /// An answered question, folded to one line. Open it to see the whole card again.
 struct DecidedRow: View {
+    @Environment(AppModel.self) private var model
     var escalation: Escalation
     @State private var isOpen = false
 
     var body: some View {
         DisclosureGroup(isExpanded: $isOpen) {
-            EscalationCard(escalation: escalation, showsProject: false)
+            EscalationCard(escalation: escalation, model: model)
                 .padding(.vertical, 6)
         } label: {
             HStack(spacing: 8) {
@@ -485,6 +428,8 @@ struct TaskRow: View {
     var selectAgent: (UUID) -> Void = { _ in }
     @State private var launchError: String?
     @State private var editing = false
+    /// Editing the title in the row itself, which is where a double-click leaves you.
+    @State private var editingInline = false
     @State private var title = ""
     @State private var note = ""
     @State private var showingText = false
@@ -516,9 +461,23 @@ struct TaskRow: View {
                     .help("The task's number: say it, type it, or give it to an agent")
             }
             VStack(alignment: .leading, spacing: 2) {
+                // Editing happens where the task is, rather than in a popover over the top
+                // of it. A double-click puts a field in the row with the words already in
+                // it: return saves, escape leaves it alone, and the list does not move
+                // under you while you type. The popover is still there behind Edit… in the
+                // menu, because the note wants more room than a row has. (T466, Alex,
+                // 15 Sep 2026.)
+                if editingInline {
+                    TextField("Task", text: $title)
+                        .textFieldStyle(.plain)
+                        .onSubmit { saveInline() }
+                        .onExitCommand { editingInline = false }
+                        .onAppear { title = task.title }
+                } else {
                 Text(task.title)
                     .strikethrough(task.state == .done)
                     .foregroundStyle(task.state == .done || task.state == .parked ? .secondary : .primary)
+                }
                 if task.work != .implement && !task.work.isPrefix(of: task.title) {
                     Text(task.work.word)
                         .font(.caption.weight(.medium))
@@ -536,20 +495,21 @@ struct TaskRow: View {
                 if task.state == .blocked, !task.blockers.isEmpty {
                     Text(task.blockedWhy)
                         .font(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Color(.alarm))
                         .lineLimit(2)
                 }
             }
             .contentShape(.rect)
             .onTapGesture(count: 2) {
                 showingText = false
-                beginEditing()
+                title = task.title
+                editingInline = true
             }
             .onTapGesture {
                 guard !editing else { return }
                 showingText = true
             }
-            .help("Double-click to edit")
+            .help("Double-click to edit it here")
             .popover(isPresented: $showingText) {
                 taskText
             }
@@ -661,6 +621,15 @@ struct TaskRow: View {
         editing = true
     }
 
+    /// The title as typed in the row. Only the title: the note is what the popover is for,
+    /// and a row is not the place to write a paragraph.
+    private func saveInline() {
+        editingInline = false
+        let typed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !typed.isEmpty, typed != task.title else { return }
+        model.edit(task, title: typed, note: task.note)
+    }
+
     private func saveEdit() {
         model.edit(task, title: title, note: note)
         editing = false
@@ -708,7 +677,7 @@ struct TaskRow: View {
             if task.state == .blocked, !task.blockers.isEmpty {
                 Text(task.blockedWhy)
                     .font(.callout)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Color(.alarm))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

@@ -89,7 +89,7 @@ struct PhoneRootView: View {
                 .padding(.vertical, 8)
         } else {
             ForEach(open) { escalation in
-                PhoneEscalationCard(escalation: escalation)
+                EscalationCard(escalation: escalation, showsProject: true, model: model)
             }
         }
     }
@@ -116,13 +116,13 @@ struct PhoneRootView: View {
                                     .font(.headline)
                                     .foregroundStyle(status.project.onHold ? Color(.quiet) : Color(.ink))
                                 if status.project.onHold {
-                                    Text("On hold").font(.subheadline).foregroundStyle(Color(.quiet))
+                                    Text("On hold").font(Style.Text.row).foregroundStyle(Color(.quiet))
                                 }
                             }
                             Spacer(minLength: 4)
                             if status.backlogCount > 0 {
                                 Text(status.backlogCount, format: .number)
-                                    .font(.subheadline)
+                                    .font(Style.Text.row)
                                     .foregroundStyle(Color(.quiet))
                                     .monospacedDigit()
                             }
@@ -132,7 +132,8 @@ struct PhoneRootView: View {
                                     .monospacedDigit()
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
-                                    .background(.orange.opacity(0.25), in: .capsule)
+                                    .foregroundStyle(Color(.paper))
+                                    .background(Color(.alarm), in: .capsule)
                             }
                             Image(systemName: "chevron.right")
                                 .font(.caption.weight(.semibold))
@@ -176,7 +177,7 @@ struct PhoneRootView: View {
                             HStack(spacing: 6) {
                                 Text(status.agent.label).font(.headline)
                                 if status.agent.bel {
-                                    Image(systemName: "bell.fill").foregroundStyle(.orange)
+                                    Image(systemName: "bell.fill").foregroundStyle(Color(.alarm))
                                 }
                                 if let project = status.project {
                                     Text(project.name).font(.caption).foregroundStyle(Color(.quiet))
@@ -195,7 +196,7 @@ struct PhoneRootView: View {
                                             .foregroundStyle(Color(.faint))
                                     }
                                     Text(line.words)
-                                        .font(.subheadline)
+                                        .font(Style.Text.row)
                                         .foregroundStyle(Color(.quiet))
                                         .lineLimit(1)
                                         .truncationMode(.tail)
@@ -250,101 +251,5 @@ struct NetworkPrimer: View {
         }
         .padding(Style.cardPadding)
         .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
-    }
-}
-
-struct PhoneEscalationCard: View {
-    @Environment(PhoneModel.self) private var model
-    var escalation: Escalation
-    @State private var words = ""
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                if let project = model.project(for: escalation.projectID) {
-                    Text(project.name)
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(.quaternary, in: .capsule)
-                }
-                Text("\(escalation.raisedBy) · \(escalation.raised, format: .relative(presentation: .named))")
-                    .font(.caption)
-                    .foregroundStyle(Color(.quiet))
-                    .lineLimit(1)
-            }
-            Text(escalation.question)
-                .font(.headline)
-                .fixedSize(horizontal: false, vertical: true)
-            if !escalation.context.isEmpty {
-                Text(escalation.context)
-                    .font(.subheadline)
-                    .foregroundStyle(Color(.quiet))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if let artifact = escalation.artifactID.flatMap({ id in model.snapshot.artifacts.first { $0.id == id } }) {
-                ArtifactCard(artifact: artifact)
-            } else if !escalation.link.isEmpty {
-                ReviewLink(link: escalation.link)
-            }
-            GlassEffectContainer(spacing: 8) {
-                VStack(spacing: 8) {
-                    ForEach(escalation.options) { option in
-                        Button {
-                            let note = words
-                            words = ""
-                            _Concurrency.Task { await model.decide(escalation, option, note: note) }
-                        } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    HStack(spacing: 8) {
-                                        Text(option.title).font(.body.weight(.medium))
-                                        if option.recommended {
-                                            Text("Recommended")
-                                                .font(.caption2.weight(.semibold))
-                                                .padding(.horizontal, 6)
-                                                .padding(.vertical, 2)
-                                                .background(.tint.opacity(0.18), in: .capsule)
-                                        }
-                                    }
-                                    if !option.detail.isEmpty {
-                                        Text(option.detail)
-                                            .font(.subheadline)
-                                            .foregroundStyle(Color(.quiet))
-                                            .fixedSize(horizontal: false, vertical: true)
-                                    }
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 12)
-                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                            .contentShape(.rect)
-                        }
-                        .buttonStyle(.plain)
-                        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: Style.panel))
-                    }
-                }
-            }
-            // Typed before tapping an option it rides along as a note; sent on its own
-            // it is the answer, none of the options.
-            HStack(alignment: .bottom, spacing: 8) {
-                TextField("A note for the agent, or your own answer", text: $words, axis: .vertical)
-                    .lineLimit(1...4)
-                    .font(.subheadline)
-                Button("Answer") {
-                    let text = words
-                    words = ""
-                    _Concurrency.Task { await model.answer(escalation, text) }
-                }
-                .buttonStyle(.glass)
-                .disabled(words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: Style.panel))
-        }
-        .padding(Style.cardPadding)
-        .glassEffect(.regular.tint(.orange.opacity(0.12)), in: .rect(cornerRadius: Style.card))
     }
 }

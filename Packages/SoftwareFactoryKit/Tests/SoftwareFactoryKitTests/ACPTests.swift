@@ -120,12 +120,21 @@ struct ACPTests {
         #expect(method == "_auth/status_update")
     }
 
-    @Test func anUpdateWeDoNotDrawIsKeptRatherThanDropped() {
-        let kinds = Self.recording.compactMap { line -> String? in
-            guard case .update(_, .other(let kind)) = ACP.read(line: line) else { return nil }
-            return kind
+    /// The recording carries an `available_commands_update`, which is read as commands
+    /// now rather than kept as an unknown (T436). Anything we still do not draw goes
+    /// through as itself, so the raw log stays honest.
+    @Test func whatWeDoNotDrawIsKeptRatherThanDropped() {
+        let commands = Self.recording.compactMap { line -> [ACP.Command]? in
+            guard case .update(_, .commands(let listed)) = ACP.read(line: line) else { return nil }
+            return listed
         }
-        #expect(kinds.contains("available_commands_update"))
+        #expect(!commands.isEmpty)
+        guard case .update(_, .other(let kind)) = ACP.read(
+            line: #"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"something_later"}}}"#
+        ) else {
+            Issue.record("An update we have never seen is still an update."); return
+        }
+        #expect(kind == "something_later")
     }
 
     @Test func aLaterUpdateDoesNotWipeWhatTheFirstOneSaid() {
@@ -489,14 +498,26 @@ struct OwnAddressTests {
         #expect(result["isError"] as? Bool == false)
     }
 
-    @Test func theOneWithAQuestionOfItsOwnIsNotOfferedOurs() {
-        // Claude Code asks with `elicitation/create`, so it does not need the tool.
+    /// Every agent can raise a question; nobody with a pipe of its own is offered a way to
+    /// sit and wait for the answer. Raising was withheld from Claude Code until an agent
+    /// was measured asking inside its own CLI instead, where the question reaches nobody
+    /// who is not watching that one agent. (T373, then T422.)
+    @Test func everyAgentCanRaiseAndOnlyTheOnesWithoutAPipeMayWait() {
         let asking = MCPServer.Tool.all(asking: true).map(\.name)
-        #expect(!asking.contains("escalation_raise"))
-        #expect(!asking.contains("escalation_await"))
+        #expect(asking.contains("escalation_raise"))
+        #expect(!asking.contains("escalation_await"), "Raise and carry on; the task blocks itself.")
         #expect(asking.contains("escalation_list"), "It can still read what it asked.")
-        // Everyone else keeps it, because prose is not a question the floor can see.
-        #expect(MCPServer.Tool.all(asking: false).map(\.name).contains("escalation_raise"))
+        let rest = MCPServer.Tool.all(asking: false).map(\.name)
+        #expect(rest.contains("escalation_raise"))
+        #expect(rest.contains("escalation_await"))
+    }
+
+    /// The words every agent starts with say where a question goes, because an agent that
+    /// has the tool and does not know to prefer it will still ask its own interface.
+    @Test func theWordsSayToRaiseRatherThanToWait() {
+        let named = LaunchPrompt.project(Project(name: "Demo"), as: "A7")
+        #expect(named.contains("escalation_raise"))
+        #expect(named.contains("carry on with something else"))
     }
 
     @Test func theWordsStopTellingAnAgentAnIdItNeverUses() {
@@ -603,5 +624,158 @@ struct AgentDecidesTests {
         #expect(listed[1].detail == "Claude handles permission decisions")
         // An agent that offers none gets no menu at all, which is Grok.
         #expect(ACP.Modes.listed(in: [:]).isEmpty)
+    }
+}
+
+/// The mode the agent is in, as opposed to the one we asked for. (T426.)
+@Suite struct ModeUpdateTests {
+    @Test func aModeUpdateIsReadRatherThanDropped() {
+        let line = #"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"current_mode_update","currentModeId":"bypassPermissions"}}}"#
+        guard case .update(let session, let update) = ACP.read(line: line) else {
+            Issue.record("not an update"); return
+        }
+        #expect(session == "s1")
+        #expect(update == .mode("bypassPermissions"))
+    }
+
+    /// It is state rather than something said, so no page of the conversation draws it.
+    @Test func itIsNotSomethingTheConversationShows() {
+        var transcript = ACPTranscript()
+        transcript.apply(.mode("default"))
+        #expect(transcript.entries.isEmpty)
+        var headline = ACPHeadline()
+        headline.apply(.message(.text("Reading Models.swift")))
+        headline.apply(.mode("default"))
+        #expect(headline.line == "Reading Models.swift")
+    }
+
+    /// An update we have never seen still goes through as itself, so the raw log stays
+    /// honest and nothing crashes on a word a later version invents.
+    @Test func anUnknownUpdateIsStillCarried() {
+        let line = #"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"something_new"}}}"#
+        guard case .update(_, let update) = ACP.read(line: line) else {
+            Issue.record("not an update"); return
+        }
+        #expect(update == .other("something_new"))
+    }
+}
+
+/// What a person can hand an agent, and what happens when that agent cannot take it.
+/// The capabilities are per agent and were measured rather than read. (T427, T428.)
+@Suite struct AttachmentTests {
+    private let picture = ACP.Attachment.image(data: Data([0x89, 0x50]), mimeType: "image/png",
+                                               name: "screenshot.png")
+    private let file = ACP.Attachment.words(path: "/tmp/notes.md", text: "The plan.",
+                                            name: "notes.md")
+
+    @Test func whatAnAgentTakesIsReadOffItsHandshake() {
+        let claude: [String: Any] = ["agentCapabilities": ["promptCapabilities": ["image": true, "embeddedContext": true]]]
+        #expect(ACP.Attachments.read(claude) == ACP.Attachments(image: true, embeddedContext: true))
+        let grok: [String: Any] = ["agentCapabilities": ["promptCapabilities": ["image": false, "embeddedContext": true]]]
+        #expect(ACP.Attachments.read(grok) == ACP.Attachments(image: false, embeddedContext: true))
+        // An agent that says nothing takes nothing but words.
+        #expect(ACP.Attachments.read([:]) == ACP.Attachments())
+    }
+
+    @Test func aPictureGoesAsAPicture() throws {
+        let (block, refusal) = ACP.block(for: picture, takes: .init(image: true))
+        let sent = try #require(block)
+        #expect(refusal == nil)
+        #expect(sent["type"] as? String == "image")
+        #expect(sent["mimeType"] as? String == "image/png")
+        #expect(sent["data"] as? String == Data([0x89, 0x50]).base64EncodedString())
+    }
+
+    /// Grok takes no image. There is no honest smaller version of a screenshot, so it is
+    /// refused in words rather than sent as a filename.
+    @Test func anAgentThatCannotSeeIsToldSoRatherThanSentAName() {
+        let (block, refusal) = ACP.block(for: picture, takes: .init(image: false))
+        #expect(block == nil)
+        #expect(refusal?.contains("screenshot.png") == true)
+    }
+
+    @Test func aFileOfWordsGoesAsAResourceWhereItCan() throws {
+        let (block, refusal) = ACP.block(for: file, takes: .init(embeddedContext: true))
+        let sent = try #require(block)
+        #expect(refusal == nil)
+        #expect(sent["type"] as? String == "resource")
+        let resource = try #require(sent["resource"] as? [String: Any])
+        #expect(resource["uri"] as? String == "file:///tmp/notes.md")
+        #expect(resource["text"] as? String == "The plan.")
+    }
+
+    /// Cursor takes no embedded resource, and every agent takes text, so the file goes in
+    /// as text with its name on it rather than not at all.
+    @Test func aFileOfWordsDegradesToWords() throws {
+        let (block, refusal) = ACP.block(for: file, takes: .init(embeddedContext: false))
+        let sent = try #require(block)
+        #expect(refusal == nil)
+        #expect(sent["type"] as? String == "text")
+        #expect((sent["text"] as? String)?.contains("notes.md") == true)
+        #expect((sent["text"] as? String)?.contains("The plan.") == true)
+    }
+
+    @Test func theWordsComeFirstAndTheAttachmentsFollow() throws {
+        let (block, _) = ACP.block(for: picture, takes: .init(image: true))
+        let sent = ACP.prompt("What is wrong with this?", attaching: [block!], session: "s1")
+        let prompt = try #require(sent["prompt"] as? [[String: Any]])
+        #expect(prompt.count == 2)
+        #expect(prompt[0]["type"] as? String == "text")
+        #expect(prompt[1]["type"] as? String == "image")
+        // Nothing said, one thing attached: still a prompt, with no empty line in front.
+        let bare = ACP.prompt("", attaching: [block!], session: "s1")
+        #expect((bare["prompt"] as? [[String: Any]])?.count == 1)
+    }
+}
+
+/// What to say when an agent will not start. (T435, off the handshakes in T428.)
+@Suite struct WayInTests {
+    /// Copilot hands over the command to run, in its own handshake.
+    @Test func theCommandIsReadWhereTheAgentGivesOne() throws {
+        let hello: [String: Any] = ["authMethods": [[
+            "id": "copilot-login", "name": "Log in with Copilot CLI",
+            "description": "Run `copilot login` in the terminal",
+            "_meta": ["terminal-auth": ["command": "/opt/homebrew/bin/copilot", "args": ["login"]]],
+        ]]]
+        let ways = ACP.WayIn.read(hello)
+        #expect(ways.count == 1)
+        #expect(ways[0].command == "/opt/homebrew/bin/copilot login")
+        let why = ACP.whyItWouldNotStart("it made no session", kind: "GitHub Copilot", ways: ways)
+        #expect(why.contains("logged in"))
+        #expect(why.contains("/opt/homebrew/bin/copilot login"))
+    }
+
+    /// Cursor describes it in words instead, so the words are what is said.
+    @Test func theDescriptionStandsInWhereThereIsNoCommand() {
+        let hello: [String: Any] = ["authMethods": [[
+            "id": "cursor_login", "name": "Cursor Login",
+            "description": "Authenticate using existing Cursor login credentials. Run 'agent login' first if not logged in.",
+        ]]]
+        let why = ACP.whyItWouldNotStart("it made no session", kind: "Cursor", ways: ACP.WayIn.read(hello))
+        #expect(why.contains("agent login"))
+    }
+
+    /// Claude Code declares no way in, so a failure there is some other failure and this
+    /// must not claim otherwise.
+    @Test func anAgentWithNoWayInKeepsItsOwnError() {
+        let why = ACP.whyItWouldNotStart("claude-agent-acp is not on this Mac.",
+                                          kind: "Claude Code", ways: ACP.WayIn.read([:]))
+        #expect(why == "claude-agent-acp is not on this Mac.")
+    }
+}
+
+/// What an agent can be asked to do. Read off a real line: this one was recorded from
+/// this factory's own transcripts. (T436.)
+@Suite struct AvailableCommandTests {
+    @Test func commandsAreReadRatherThanDropped() throws {
+        let line = #"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"ship-it","description":"Ship an Xcode app end to end. Use whenever Alex says ship it."},{"name":"init"}]}}}"#
+        guard case .update(_, let update) = ACP.read(line: line), case .commands(let listed) = update else {
+            Issue.record("not commands"); return
+        }
+        #expect(listed.map(\.name) == ["ship-it", "init"])
+        #expect(listed[0].typed == "/ship-it ")
+        // A description runs to a paragraph, and a menu row holds a sentence.
+        #expect(listed[0].brief == "Ship an Xcode app end to end")
+        #expect(listed[1].brief == nil)
     }
 }

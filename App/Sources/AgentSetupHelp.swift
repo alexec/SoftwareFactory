@@ -21,7 +21,7 @@ struct AgentSetupHelp: View {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(Self.title)
-                        .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                        .font(Style.Text.welcome)
                     Text("The factory starts an agent in the project's folder, in your own environment. It does not install anything for you, so each one is set up once, here, and then it is there every time you launch it.")
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -43,7 +43,7 @@ struct AgentSetupHelp: View {
                         .font(.headline)
                     Text("Claude Code and GitHub Copilot speak ACP, a protocol for coding agents. The factory hands them their tools as they start, and their page shows the work itself: what they are reading, what they are changing, and the plan they are following. They are held by a daemon of their own, so they keep working while this app is rebuilt.")
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("Grok and Cursor do not speak it yet, so they run in a terminal on their page, which you can also type into by hand. Both kinds work the same way everywhere else: the same backlog, the same questions, the same nudges.")
+                    Text("Grok and Cursor do not speak it yet, so they run in a terminal on their page, which you can also type into by hand. Both kinds work the same way everywhere else: the same backlog, the same questions, the same messages.")
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .foregroundStyle(Color(.quiet))

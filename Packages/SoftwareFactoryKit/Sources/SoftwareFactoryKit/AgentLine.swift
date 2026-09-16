@@ -15,7 +15,42 @@ public enum AgentLine {
             if !work.isEmpty { return work }
         }
         if let report, let said = news(in: report) { return said }
-        return title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let said = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return worthSaying(said) ? said : ""
+    }
+
+    /// Whether a terminal's title is something to say to a person.
+    ///
+    /// A tmux pane's title is the last command it ran, so an agent holding no task and
+    /// having filed no report said things like `SLOT=~/.claude/...sim-slot.sh 2>&1 | tail -1`
+    /// on its sidebar row, in the same grey at the same size as a task title. Four of the
+    /// eight rows on the floor read that way the first time anybody looked at the app.
+    /// A command is not news: it is the machine talking, and the honest line is nothing at
+    /// all. (T407, off T395.)
+    ///
+    /// The test is for the punctuation a sentence does not have: a pipe, a redirect, a
+    /// chain, a flag, or a variable set in front of it. A bare path with no spaces is the
+    /// same thing said shorter. Anything else is taken as words, because the cost of being
+    /// wrong runs one way: a row that says nothing is quiet, and a row that says
+    /// `2>&1 | tail -60` is noise drawn at the weight of news.
+    public static func worthSaying(_ title: String) -> Bool {
+        let line = title.trimmingCharacters(in: .whitespaces)
+        guard !line.isEmpty else { return false }
+        for mark in ["|", "&&", "2>&1", ">>", ";", "`", "$("] where line.contains(mark) {
+            return false
+        }
+        // A flag: " -x" or " --x". Not a dash between words, which is an ordinary dash.
+        if let dash = line.range(of: " -"), dash.upperBound < line.endIndex {
+            let next = line[dash.upperBound]
+            if next == "-" || next.isLetter { return false }
+        }
+        // VAR=something in front of the command.
+        if let first = line.split(separator: " ").first, first.contains("="), !first.hasSuffix("=") {
+            return false
+        }
+        // A path and nothing else.
+        if !line.contains(" "), line.contains("/") { return false }
+        return true
     }
 
     /// One line for every task in an agent's name, or, holding none, the one line it can

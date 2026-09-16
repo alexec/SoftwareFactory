@@ -512,89 +512,10 @@ func wholeSecond() -> Date {
     }
 }
 
-/// Work landing on a project where nobody is working pokes the first agent. (T352.)
-@Suite struct PokeOnNewWorkTests {
-    private func agent(_ number: Int, on projectID: String?) -> Agent {
-        var a = Agent(number: number, projectID: projectID, registered: Date())
-        a.lastSeen = Date()
-        return a
-    }
-
-    private func task(_ title: String, on projectID: String, state: FactoryTask.State = .backlog,
-                      agentID: UUID? = nil) -> FactoryTask {
-        var t = FactoryTask(projectID: projectID, title: title, state: state, rank: 0)
-        t.agentID = agentID
-        return t
-    }
-
-    @Test func theFirstIdleAgentIsPoked() {
-        let project = Project(name: "Sleeper Train")
-        let second = agent(2, on: project.id)
-        let first = agent(1, on: project.id)
-        let before = Snapshot(projects: [project], tasks: [task("Old", on: project.id)],
-                              agents: [second, first])
-        let after = Snapshot(projects: [project],
-                             tasks: before.tasks + [task("New", on: project.id)],
-                             agents: [second, first])
-        #expect(Sweep.agentsToPoke(before: before, after: after, messages: [], now: .now)
-                .map(\.id) == [first.id])
-    }
-
-    /// One of them is on a task, so it will read the backlog when it finishes. Poking it
-    /// now interrupts the work to tell it about work.
-    @Test func nobodyIsPokedWhileSomebodyIsWorking() {
-        let project = Project(name: "Sleeper Train")
-        let busy = agent(1, on: project.id)
-        let idle = agent(2, on: project.id)
-        let onIt = task("Underway", on: project.id, state: .inProgress, agentID: busy.id)
-        let before = Snapshot(projects: [project], tasks: [onIt], agents: [busy, idle])
-        let after = Snapshot(projects: [project], tasks: [onIt, task("New", on: project.id)],
-                             agents: [busy, idle])
-        #expect(Sweep.agentsToPoke(before: before, after: after, messages: [], now: .now).isEmpty)
-    }
-
-    @Test func aProjectWithNobodyOnItPokesNobody() {
-        let project = Project(name: "Sleeper Train")
-        let elsewhere = agent(1, on: "another")
-        let before = Snapshot(projects: [project], tasks: [task("Old", on: project.id)],
-                              agents: [elsewhere])
-        let after = Snapshot(projects: [project],
-                             tasks: before.tasks + [task("New", on: project.id)],
-                             agents: [elsewhere])
-        #expect(Sweep.agentsToPoke(before: before, after: after, messages: [], now: .now).isEmpty)
-    }
-
-    /// At launch there is no before, and every backlog would read as work just landed.
-    @Test func theFirstLookIsNoTransition() {
-        let project = Project(name: "Sleeper Train")
-        let only = agent(1, on: project.id)
-        let after = Snapshot(projects: [project], tasks: [task("New", on: project.id)], agents: [only])
-        #expect(Sweep.agentsToPoke(before: Snapshot(), after: after, messages: [], now: .now).isEmpty)
-    }
-
-    @Test func aTaskThatWasAlreadyThereIsNotNews() {
-        let project = Project(name: "Sleeper Train")
-        let only = agent(1, on: project.id)
-        let snapshot = Snapshot(projects: [project], tasks: [task("Old", on: project.id)], agents: [only])
-        #expect(Sweep.agentsToPoke(before: snapshot, after: snapshot, messages: [], now: .now).isEmpty)
-    }
-
-    /// Another line in the queue is not another poke.
-    @Test func anAgentWithMailWaitingIsLeftAlone() {
-        let project = Project(name: "Sleeper Train")
-        let first = agent(1, on: project.id)
-        let second = agent(2, on: project.id)
-        let waiting = AgentMessage(recipientID: first.id, from: "the factory",
-                                   subject: "Nudge", contents: "x", sent: .now)
-        let before = Snapshot(projects: [project], tasks: [task("Old", on: project.id)],
-                              agents: [first, second])
-        let after = Snapshot(projects: [project],
-                             tasks: before.tasks + [task("New", on: project.id)],
-                             agents: [first, second])
-        #expect(Sweep.agentsToPoke(before: before, after: after, messages: [waiting], now: .now)
-                .map(\.id) == [second.id])
-    }
-}
+// The poking suite went with the nudge (T470). Work landing on a project whose agents were
+// all idle used to send the first of them the nudge line, which told it a person had asked
+// when nobody had. What carries it now is the person: filing a task and starting an agent
+// are an inch apart on the same page since T431.
 
 /// An agent with nothing to do and nothing coming is stopped. Each test here is a way of
 /// being busy that looks like silence. (T357.)

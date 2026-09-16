@@ -60,12 +60,6 @@ import Testing
         #expect(LaunchPrompt.taskWork(task, in: project).contains("T136, \"Move the add row\""))
     }
 
-    @Test func aNudgeTellsItToTakeTheNextTask() {
-        // It says a person asked, and nothing about how to do the job: the agent has its
-        // own instructions and may be mid-something the backlog says nothing about.
-        #expect(LaunchPrompt.nudge.contains("nudged"))
-        #expect(!LaunchPrompt.nudge.contains("backlog"))
-    }
 }
 
 @Suite struct PokeTests {
@@ -74,8 +68,10 @@ import Testing
         #expect(LaunchPrompt.carryOn.contains("Carry on"))
     }
 
+    /// Carrying on is the only line the factory types in itself now: the nudge went in
+    /// T470, because it told an agent a person had asked when nobody had.
     @Test func theFactorysOwnPokesGoInBare() {
-        for poke in [LaunchPrompt.nudge, LaunchPrompt.carryOn] {
+        for poke in [LaunchPrompt.carryOn] {
             let message = AgentMessage(recipientID: UUID(), from: "Alex",
                                        subject: "Started", contents: poke)
             #expect(message.isPoke)
@@ -90,10 +86,11 @@ import Testing
         #expect(message.promptLine == "Message from A2, The build: It is red again.")
     }
 
-    @Test func onlyANudgeIsANudge() {
-        let started = AgentMessage(recipientID: UUID(), from: "Alex",
-                                   subject: "Started", contents: LaunchPrompt.carryOn)
-        #expect(!started.isNudge)
-        #expect(started.isPoke)
+    /// Words that look like a poke but are not one still say who they are from.
+    @Test func aMessageThatMerelyMentionsCarryingOnIsNotAPoke() {
+        let message = AgentMessage(recipientID: UUID(), from: "A2",
+                                   subject: "Carry on", contents: "Carry on with the build.")
+        #expect(!message.isPoke)
+        #expect(message.promptLine.hasPrefix("Message from A2"))
     }
 }

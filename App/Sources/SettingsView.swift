@@ -96,6 +96,31 @@ struct SettingsView: View {
                 }
             }
 
+            // Which model each CLI starts on, or its own default.
+            //
+            // At launch rather than mid-conversation, because that is where it is possible:
+            // only Grok says anything about models over the protocol and it does it in a
+            // vendor extension, while Claude Code declares ACP's own `providers` and leaves
+            // it empty. Measured on each binary: copilot, grok and cursor-agent all take
+            // --model, and Zed's adapter for Claude Code takes no arguments at all, so that
+            // one is set through ANTHROPIC_MODEL. One field per CLI, because the four do
+            // not share a vocabulary and opus means nothing to Grok. (T462.)
+            Section("Models") {
+                ForEach(LaunchAgent.allCases.filter(\.speaksACP)) { kind in
+                    LabeledContent(kind.title) {
+                        TextField("Its own default", text: Binding(
+                            get: { model.model(for: kind) },
+                            set: { model.setModel($0, for: kind) }))
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 220)
+                    }
+                }
+                Text("Left empty, each CLI starts on whatever it would start on by itself. A model named here is used the next time an agent of that kind starts; it does not change one already running.")
+                    .font(Style.Text.quiet)
+                    .foregroundStyle(Color(.quiet))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             // The daemon that holds the ACP agents. It is the reason an agent survives a
             // rebuild, so what it is holding is worth being able to see. (T373.)
             Section("Agents that speak ACP") {

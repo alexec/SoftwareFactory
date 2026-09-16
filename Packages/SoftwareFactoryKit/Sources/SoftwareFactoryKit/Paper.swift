@@ -60,6 +60,9 @@ public enum Paper {
             case .rule:
                 endLists()
                 out.append("<hr>")
+            case .table(let head, let rows):
+                endLists()
+                out.append(table(head: head, rows: rows))
             }
         }
         endLists()
@@ -113,6 +116,15 @@ public enum Paper {
             index += 1
         }
         return "<ul>\(items.joined())</ul>"
+    }
+
+    /// A table, with what is inside each cell read the way a line is read anywhere else.
+    static func table(head: [String], rows: [[String]]) -> String {
+        let heading = "<tr>" + head.map { "<th>\(inline($0))</th>" }.joined() + "</tr>"
+        let body = rows.map { row in
+            "<tr>" + row.map { "<td>\(inline($0))</td>" }.joined() + "</tr>"
+        }
+        return "<table><thead>\(heading)</thead><tbody>\(body.joined())</tbody></table>"
     }
 
     /// What is inside a line: bold, italic, `code` and links. Everything else is text,
@@ -246,6 +258,16 @@ public enum Paper {
         case block
         /// The one colour on the page, for a link or a mark.
         case mark
+        /// A person is needed. Not a second mark and not a shade of the ground: it is the
+        /// loudest thing the app has, and it is spent only on a question waiting, a task
+        /// blocked, a report gone stale and an agent asking permission.
+        ///
+        /// It was `Color.orange` in thirty-three places and in the palette in none, so
+        /// nobody was managing it. On dark paper the system's orange washed at 12 percent
+        /// sampled `#6F5A43`, which is a warm brown a shade off the ground: the one signal
+        /// in the app, drawn so that it read as more paper. This is saturated enough to
+        /// survive being a small mark on either ground. (T408, off T395.)
+        case alarm
 
         /// Light, then dark. Six digits, no hash.
         public var hex: (light: String, dark: String) {
@@ -258,6 +280,7 @@ public enum Paper {
             case .edge: ("cfc8ba", "45413a")
             case .block: ("f1ede4", "26241f")
             case .mark: ("8a5a2b", "d0a271")
+            case .alarm: ("c2410c", "fb923c")
             }
         }
     }
@@ -289,7 +312,7 @@ public enum Paper {
     h3 { font-size: 1.12em; }
     h4, h5, h6 { font-size: 1em; }
     body > :first-child { margin-top: 0; }
-    p, ul, ol, blockquote, pre, hr { margin: 0 0 1em; }
+    p, ul, ol, blockquote, pre, hr, table { margin: 0 0 1em; }
     ul, ol { padding-left: 1.4em; }
     li { margin: 0.25em 0; }
     li > ul, li > ol { margin: 0.25em 0 0.25em; }
@@ -305,6 +328,7 @@ public enum Paper {
     img { max-width: 100%; height: auto; }
     table { border-collapse: collapse; }
     td, th { border: 1px solid var(--rule); padding: 4px 8px; text-align: left; }
+    th { font-weight: 600; background: var(--block); }
     """
     }
 }

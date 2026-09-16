@@ -37,7 +37,7 @@ struct DictateField<Submit: View>: View {
                 .fill(dictation.isListening ? Color.red : Color.secondary.opacity(0.15))
                 .frame(width: 36, height: 36)
             Image(systemName: "mic.fill")
-                .font(.system(size: 15, weight: .semibold))
+                .font(Style.Text.rowName)
                 .foregroundStyle(dictation.isListening ? .white : .secondary)
                 .symbolEffect(.pulse, isActive: dictation.isListening)
         }

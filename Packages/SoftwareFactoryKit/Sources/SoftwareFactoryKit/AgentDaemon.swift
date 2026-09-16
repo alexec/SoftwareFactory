@@ -52,10 +52,22 @@ public enum AgentDaemon {
         /// Answering a question in the person's own words, when the agent offered a place
         /// for them.
         public var words: String?
+        /// Files dropped on the agent, as paths rather than as bytes. The daemon reads
+        /// them: it is the side that knows what this agent will take, and a screenshot
+        /// down a unix socket as base64 is a megabyte of nothing. (T427.)
+        public var files: [String]?
+        /// Which model to start it on, where the person has named one. Empty is the CLI's
+        /// own default, which is what nearly every agent runs on. (T462.)
+        public var model: String?
+        /// Which mode to start it in, where the person picked one at launch instead of
+        /// letting it follow the floor's setting. A mode the agent turns out not to offer
+        /// is ignored and the floor's setting stands. (T466.)
+        public var mode: String?
 
         public init(op: Op, agent: UUID? = nil, kind: String? = nil, cwd: String? = nil,
                     text: String? = nil, requestID: Int? = nil, optionID: String? = nil,
-                    words: String? = nil) {
+                    words: String? = nil, files: [String]? = nil, model: String? = nil,
+                    mode: String? = nil) {
             self.op = op
             self.agent = agent
             self.kind = kind
@@ -64,6 +76,9 @@ public enum AgentDaemon {
             self.requestID = requestID
             self.optionID = optionID
             self.words = words
+            self.files = files
+            self.model = model
+            self.mode = mode
         }
 
         public enum Op: String, Codable, Sendable {
@@ -129,6 +144,14 @@ public enum AgentDaemon {
         /// A question the agent has put to the person, `elicitation/create`. Blocked on
         /// it exactly like a permission request, and put in front of a person the same
         /// way. Only Claude Code sends these. (T373.)
+        /// What it will take in a prompt, off its own handshake. (T427.)
+        public var takes = ACP.Attachments()
+        /// What it can be asked to do, as it lists them. (T436.)
+        public var commands: [ACP.Command] = []
+        /// What is waiting to be said to it when this turn ends, in the order it will be
+        /// said. A count said how many and not what, which is the one thing you want to
+        /// know before adding a third. (T465.)
+        public var waitingToSay: [String] = []
         public var asking: Question?
         /// A question it is blocked on. Until this is answered the agent does nothing,
         /// which is what makes it different from every other question on the floor.
@@ -171,6 +194,32 @@ public enum AgentDaemon {
             self.asking = asking
             self.modes = modes
             self.mode = mode
+        }
+
+        /// Read from whatever the daemon on this Mac happens to be. The daemon outlives
+        /// the app: it is the reason an agent survives a rebuild, so every rebuild that
+        /// adds a field here is a new app reading an old daemon's words. The synthesised
+        /// decoder throws on a missing key even where the property has a default, which
+        /// took the whole `list` reply down and left the app with no agents at all: no
+        /// mode, no commands, no line, on a floor that was working. A field nobody sent
+        /// is its default. (Alex, 15 Sep 2026; the same rule as `Records.version`.)
+        public init(from decoder: any Decoder) throws {
+            let box = try decoder.container(keyedBy: CodingKeys.self)
+            agent = try box.decode(UUID.self, forKey: .agent)
+            state = try box.decode(State.self, forKey: .state)
+            pid = try box.decodeIfPresent(Int32.self, forKey: .pid)
+            session = try box.decodeIfPresent(String.self, forKey: .session)
+            startedAt = try box.decodeIfPresent(Date.self, forKey: .startedAt) ?? .now
+            exit = try box.decodeIfPresent(Int32.self, forKey: .exit)
+            takes = try box.decodeIfPresent(ACP.Attachments.self, forKey: .takes) ?? ACP.Attachments()
+            commands = try box.decodeIfPresent([ACP.Command].self, forKey: .commands) ?? []
+            asking = try box.decodeIfPresent(Question.self, forKey: .asking)
+            waiting = try box.decodeIfPresent(Pending.self, forKey: .waiting)
+            isPrompting = try box.decodeIfPresent(Bool.self, forKey: .isPrompting) ?? false
+            line = try box.decodeIfPresent(String.self, forKey: .line)
+            queued = try box.decodeIfPresent(Int.self, forKey: .queued) ?? 0
+            modes = try box.decodeIfPresent([ACP.Mode].self, forKey: .modes) ?? []
+            mode = try box.decodeIfPresent(String.self, forKey: .mode)
         }
 
         public enum State: String, Codable, Sendable {
@@ -253,6 +302,36 @@ public enum AgentDaemon {
     /// enough for somebody at the Mac to see the banner and short enough that nobody
     /// comes back to a floor that has been standing still. (T373.)
     public static let answerWithin: TimeInterval = 10 * 60
+
+    /// What the factory sends for something nobody answered in time.
+    public enum Late: Sendable, Equatable {
+        /// A permission request, answered with the option the agent marked. Always allow
+        /// once, never allow always: a standing decision is not one to make for somebody
+        /// because they were away from the Mac.
+        case allow(requestID: Int, optionID: String)
+        /// The agent's own question, given up on rather than answered. Nothing on the
+        /// wire says which option the agent would recommend, so there is nothing to take,
+        /// and picking whichever it listed first would be the factory deciding for the
+        /// person. The agent carries on; the question stays open for whoever it was for.
+        case decline(requestID: Int)
+    }
+
+    /// Everything this agent has been waiting on for longer than `answerWithin`.
+    ///
+    /// A rule rather than a loop inside the floor, so the difference between the two cases
+    /// can be read and tested without a pipe on the other end of it. (T421.)
+    public static func late(in running: Running, now: Date = .now) -> [Late] {
+        var out: [Late] = []
+        if let waiting = running.waiting,
+           now.timeIntervalSince(waiting.asked) > answerWithin,
+           let option = waiting.fallback {
+            out.append(.allow(requestID: waiting.requestID, optionID: option.optionID))
+        }
+        if let asking = running.asking, now.timeIntervalSince(asking.asked) > answerWithin {
+            out.append(.decline(requestID: asking.requestID))
+        }
+        return out
+    }
 
     // MARK: Reading and writing the wire
 

@@ -11,7 +11,7 @@ struct PhoneIntroSheet: View {
                 VStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Taktu: Software Factory")
-                            .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                            .font(Style.Text.welcome)
                         Text("The factory in your pocket. Agents on your Mac ask; you answer from wherever you are.")
                     }
                     VStack(alignment: .leading, spacing: 8) {

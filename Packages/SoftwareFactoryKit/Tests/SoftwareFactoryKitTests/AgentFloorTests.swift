@@ -27,9 +27,10 @@ struct AgentFloorTests {
         })
     }
 
-    static func start(_ floor: AgentFloor, agent: UUID, cwd: URL, words: String = "hello there") async -> AgentDaemon.Reply {
+    static func start(_ floor: AgentFloor, agent: UUID, cwd: URL, words: String = "hello there",
+                      mode: String? = nil) async -> AgentDaemon.Reply {
         await floor.handle(AgentDaemon.Request(op: .start, agent: agent, kind: "copilot",
-                                               cwd: cwd.path, text: words))
+                                               cwd: cwd.path, text: words, mode: mode))
     }
 
     /// Turns the questions on, for a test about what happens when one is asked.
@@ -366,6 +367,51 @@ struct AgentFloorTests {
         #expect(floor.everything().first?.isPrompting == false)
     }
 
+    /// The floor's setting is what an agent gets when nobody said otherwise. Left alone,
+    /// with agents allowed to get on with it, this one goes into the most permissive mode
+    /// it offers rather than the one it started in.
+    @Test func anAgentWithNothingPickedFollowsTheFloor() async throws {
+        let (store, root) = try Self.scratch()
+        let floor = Self.floor(store, mode: "modes")
+        let agent = UUID()
+        #expect(await Self.start(floor, agent: agent, cwd: root).ok)
+        await Self.until("the mode to be set") {
+            floor.everything().first?.mode == "bypassPermissions"
+        }
+    }
+
+    /// A mode picked as the agent is started beats the floor's setting, and goes on
+    /// beating it: the person said what this one agent is for while starting it. Plan is
+    /// the case worth testing, because it is not what the floor would ever ask for.
+    /// (T466.)
+    @Test func aModePickedAtTheStartBeatsTheFloor() async throws {
+        let (store, root) = try Self.scratch()
+        let floor = Self.floor(store, mode: "modes")
+        let agent = UUID()
+        #expect(await Self.start(floor, agent: agent, cwd: root, mode: "plan").ok)
+        await Self.until("the picked mode to be set") {
+            floor.everything().first?.mode == "plan"
+        }
+        // And it stays there. The floor puts every agent back into the mode that matches
+        // Settings on each `list`, which is the app's own refresh, and this one is not its
+        // to move.
+        _ = await floor.handle(AgentDaemon.Request(op: .list))
+        #expect(floor.everything().first?.mode == "plan")
+    }
+
+    /// A mode this agent turns out not to offer is no mode at all. The written-down list
+    /// in `LaunchAgent.modesOffered` can go stale when a CLI updates, and a stale menu row
+    /// must cost a menu row rather than a start.
+    @Test func aModeTheAgentDoesNotOfferLeavesTheFloorsSettingStanding() async throws {
+        let (store, root) = try Self.scratch()
+        let floor = Self.floor(store, mode: "modes")
+        let agent = UUID()
+        #expect(await Self.start(floor, agent: agent, cwd: root, mode: "yolo").ok)
+        await Self.until("the floor's own mode to be set") {
+            floor.everything().first?.mode == "bypassPermissions"
+        }
+    }
+
     @Test func aPingAnswersBeforeAnythingIsTouched() async throws {
         let (store, _) = try Self.scratch()
         let reply = await Self.floor(store).handle(AgentDaemon.Request(op: .ping))
@@ -390,6 +436,29 @@ struct AgentDaemonWireTests {
         let back = try #require(AgentDaemon.decode(AgentDaemon.Reply.self, from: AgentDaemon.encode(sent)))
         #expect(back == sent)
         #expect(back.agents?.first?.startedAt == running.startedAt)
+    }
+
+    /// The daemon outlives the app, so a rebuilt app reads a daemon started hours ago. A
+    /// field that daemon has never heard of is its default, not the end of the reply: the
+    /// strict decoder threw on the whole `list` and the app drew a floor with nobody on
+    /// it, while the agents were working the whole time. This is a real reply, off the
+    /// socket, from a daemon that predates `takes` and `commands`.
+    @Test func anOlderDaemonsReplyStillReads() throws {
+        let line = """
+        {"ok":true,"agents":[{"agent":"730B34A8-6555-4E8B-AB61-98B658A9FE66","state":"running",\
+        "startedAt":"2026-09-15T17:46:48Z","isPrompting":true,"queued":0,"line":"Editing Models.swift",\
+        "mode":"bypassPermissions","modes":[{"id":"bypassPermissions","name":"Bypass permissions",\
+        "detail":"Accepts all permissions"}]}]}
+        """
+        let reply = try #require(AgentDaemon.decode(AgentDaemon.Reply.self, from: Data(line.utf8)))
+        let one = try #require(reply.agents?.first)
+        #expect(one.state == .running)
+        #expect(one.modes.count == 1)
+        #expect(one.mode == "bypassPermissions")
+        #expect(one.line == "Editing Models.swift")
+        // The ones it has never heard of, as their defaults rather than as a thrown reply.
+        #expect(one.commands.isEmpty)
+        #expect(one.takes == ACP.Attachments())
     }
 
     @Test func rubbishIsRefusedRatherThanCrashing() {
@@ -425,3 +494,61 @@ struct AgentDaemonWireTests {
     }
 }
 #endif
+
+/// What the factory does about something nobody answered. The two cases end differently
+/// and the difference is the point. (T421.)
+@Suite struct LateAnswerTests {
+    private func running(waiting: AgentDaemon.Pending? = nil,
+                         asking: AgentDaemon.Question? = nil) -> AgentDaemon.Running {
+        var one = AgentDaemon.Running(agent: UUID(), state: .running)
+        one.waiting = waiting
+        one.asking = asking
+        return one
+    }
+
+    private let long = Date().addingTimeInterval(-(AgentDaemon.answerWithin + 60))
+
+    @Test func nothingIsDoneInsideTheTenMinutes() {
+        let fresh = running(
+            waiting: AgentDaemon.Pending(requestID: 1, title: "Write notes.md",
+                                         options: [.init(optionID: "once", name: "Allow once", kind: .allowOnce)],
+                                         asked: .now),
+            asking: AgentDaemon.Question(requestID: 2, question: "Which way?",
+                                         options: [.init(value: "a", title: "A", detail: "")],
+                                         takesWords: true, asked: .now))
+        #expect(AgentDaemon.late(in: fresh).isEmpty)
+    }
+
+    /// A permission takes the option the agent marked, which is always allow once.
+    @Test func aPermissionNobodyAnsweredTakesTheRecommendation() {
+        let one = running(waiting: AgentDaemon.Pending(
+            requestID: 7, title: "Write notes.md",
+            options: [.init(optionID: "once", name: "Allow once", kind: .allowOnce),
+                      .init(optionID: "always", name: "Allow always", kind: .allowAlways)],
+            asked: long))
+        #expect(AgentDaemon.late(in: one) == [.allow(requestID: 7, optionID: "once")])
+    }
+
+    /// The agent's own question is given up on rather than answered. Nothing on the wire
+    /// says which option it recommends, and picking the first one it listed would be the
+    /// factory deciding for the person.
+    @Test func aQuestionNobodyAnsweredIsDeclinedRatherThanDecided() {
+        let one = running(asking: AgentDaemon.Question(
+            requestID: 9, question: "Should the pages get a door or go?",
+            options: [.init(value: "door", title: "Give them a door", detail: ""),
+                      .init(value: "go", title: "Delete both", detail: "")],
+            takesWords: true, asked: long))
+        #expect(AgentDaemon.late(in: one) == [.decline(requestID: 9)])
+    }
+
+    @Test func bothAtOnceAreBothDealtWith() {
+        let one = running(
+            waiting: AgentDaemon.Pending(requestID: 1, title: "Write notes.md",
+                                         options: [.init(optionID: "once", name: "Allow once", kind: .allowOnce)],
+                                         asked: long),
+            asking: AgentDaemon.Question(requestID: 2, question: "Which way?",
+                                         options: [.init(value: "a", title: "A", detail: "")],
+                                         takesWords: true, asked: long))
+        #expect(AgentDaemon.late(in: one) == [.allow(requestID: 1, optionID: "once"), .decline(requestID: 2)])
+    }
+}

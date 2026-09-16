@@ -49,9 +49,10 @@ final class TerminalSessions {
         return start(id: session, command: command, folder: path, projectID: project.id, agentID: agentID)
     }
 
-    /// An agent on no project: a browser owner, a reviewer, anything that works across
-    /// the factory. It starts in your home folder unless it is given one, which is what a
-    /// shell opened beside an agent does. (Alex, 16 Sep 2026.)
+    /// A terminal that is not an agent on a project's folder: a shell opened beside an
+    /// agent, in that agent's folder. It starts in your home folder unless it is given
+    /// one. (Alex, 16 Sep 2026. It also started the agent on no project, until T411 made
+    /// a project required.)
     @discardableResult
     func start(prompt: String, session: String, agentID: UUID? = nil, folder: String? = nil,
                command: (String) -> String) -> Session {

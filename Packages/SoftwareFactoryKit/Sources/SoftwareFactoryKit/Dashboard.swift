@@ -30,21 +30,29 @@ public struct Dashboard: Sendable, Equatable {
         }
     }
 
-    /// What an agent is doing, as one word and one colour.
+    /// What an agent is doing, as one word and one colour. Four, because there are four
+    /// things worth telling apart on a floor: it is working, it wants you, it has
+    /// finished, or it is not there. (T423, Alex, 15 Sep 2026.)
+    ///
+    /// It used to be five and two of them were guesses. `working` meant "said something
+    /// to the factory in the last ten minutes", which is a proxy for a turn in flight and
+    /// a poor one: an agent polling the backlog looked busy and an agent thinking hard
+    /// about one file looked idle. `idle` and `waiting` were the same state told apart by
+    /// whether it held a task. The daemon knows which agents have a turn in flight, so
+    /// the guess is gone for every agent it holds.
     public enum AgentActivity: String, Sendable {
-        /// On a task and checked in moments ago.
+        /// A turn in flight. The daemon's own answer for an ACP agent; for a terminal or
+        /// external one, still the ten-minute proxy, because there is nobody to ask.
         case working
-        /// Its task is blocked, on a decision, another task, or a person.
-        case blocked
-        /// Registered with nothing in hand: waiting for a task, for mail, or for
-        /// you to answer its question.
-        case waiting
-        /// Nothing said for ten minutes, and no connection open.
-        case idle
-        /// Its process has gone. The one state silence could never tell you: a crashed
-        /// agent and a thinking one both say nothing, and this asks the kernel instead
-        /// of waiting an hour to assume. Only for an agent that told us its process.
-        /// (Alex, 13 Sep 2026.)
+        /// It wants you: a question open, a permission waiting, or its task blocked on a
+        /// person. The one state that is about you rather than about it.
+        case askingYou
+        /// Nothing in flight and nothing wanted. Finished, or between turns.
+        case finished
+        /// Its process has gone, or it has been put away. The one state silence could
+        /// never tell you: a crashed agent and a thinking one both say nothing, and this
+        /// asks the kernel instead of waiting an hour to assume. Only for an agent that
+        /// told us its process. (Alex, 13 Sep 2026; archived agents joined it in T415.)
         case stopped
     }
 
@@ -59,10 +67,6 @@ public struct Dashboard: Sendable, Equatable {
 
         public var isWorking: Bool { activity == .working }
 
-        /// Nudge is there unless the agent has stopped: a working one, a blocked
-        /// one, a waiting one and a quiet one can all be poked. A process that has
-        /// gone cannot. (T197, 13 Sep 2026.)
-        public var canNudge: Bool { activity != .stopped }
 
         /// Stop is there only for an agent whose process the factory knows and which is
         /// still running. Everything else has nothing to stop. (T261.)
@@ -75,19 +79,28 @@ public struct Dashboard: Sendable, Equatable {
         public var whyNoResume: String? { Agents.whyNoResume(agent) }
     }
 
-    /// The one rule behind an agent's dot. An agent that has gone quiet is idle
-    /// whatever it was holding; a blocked task beats waiting, because the block is
-    /// the thing to clear.
+    /// The one rule behind an agent's dot.
+    ///
+    /// Order matters and is the argument. Gone beats everything, whatever the agent last
+    /// said. Then what it wants from you, because that is the only one you can act on.
+    /// Then whether it is mid-turn: `Agent.isPrompting` is the daemon's answer, written
+    /// onto the record so the phone reads the same dot as the Mac, and it is only a guess
+    /// for an agent nobody holds. (T423 and T425.)
     public static func activity(
         of agent: Agent, task: FactoryTask?, hasOpenQuestion: Bool, now: Date
     ) -> AgentActivity {
-        // Gone beats everything, and beats it whatever the agent last said: an agent
-        // whose process has exited is not working, not waiting and not merely quiet.
-        if agent.hasExited { return .stopped }
-        guard agent.isWorking(now: now) else { return .idle }
-        if task?.state == .blocked { return .blocked }
-        if hasOpenQuestion || task == nil { return .waiting }
-        return .working
+        if agent.isArchived || agent.hasExited { return .stopped }
+        // A question of its own, or a task it cannot move until you say something. A
+        // block on another task or on a decision is not yours to clear, so it is not this.
+        if hasOpenQuestion { return .askingYou }
+        if task?.state == .blocked, task?.blockers.contains(where: { $0.kind == .person }) == true {
+            return .askingYou
+        }
+        // The daemon holds ACP agents and says which have a turn in flight. For a terminal
+        // or external agent there is nobody to ask, so a call in the last ten minutes is
+        // still the best available answer.
+        if agent.runtime == .acp { return agent.isPrompting ? .working : .finished }
+        return agent.isWorking(now: now) ? .working : .finished
     }
 
     public struct Holding: Identifiable, Sendable, Equatable {
@@ -114,6 +127,9 @@ public struct Dashboard: Sendable, Equatable {
     public var openEscalations: [Escalation]
     public var projects: [ProjectStatus]
     public var agents: [AgentStatus]
+    /// Put away: the agents that are stopped and hidden. Not on the floor, not in any
+    /// count, and drawn in one place so there is a way to take one back out. (T415.)
+    public var archived: [Agent] = []
     public var resources: [ResourceStatus]
 
     public static let empty = Dashboard(inProgress: 0, openEscalations: [], projects: [], agents: [], resources: [])
@@ -147,16 +163,26 @@ public struct Dashboard: Sendable, Equatable {
     }
 
     /// Agents on no project: the sidebar's No project row. (T176, 13 Sep 2026.)
+    ///
+    /// Nothing makes one any more. Every launch names a project since T411, so this is the
+    /// agents started before that rule, and the row and the page are drawn only while it
+    /// is not empty. It stays because they are still working, not because the state is
+    /// still reachable.
     public var unassignedAgents: [AgentStatus] { agents.filter { $0.project == nil } }
 
     public var unassignedIsEmpty: Bool { unassignedAgents.isEmpty }
 
     public var unassignedActivity: AgentActivity {
-        let doing = unassignedAgents.map(\.activity)
+        Self.busiest(unassignedAgents.map(\.activity))
+    }
+
+    /// One dot for a group of agents: what the loudest of them is doing. Wanting you
+    /// beats working, because it is the one you can act on. (T423.)
+    public static func busiest(_ doing: [AgentActivity], whenNone: AgentActivity = .stopped) -> AgentActivity {
+        if doing.contains(.askingYou) { return .askingYou }
         if doing.contains(.working) { return .working }
-        if doing.contains(.blocked) { return .blocked }
-        if doing.contains(.waiting) { return .waiting }
-        return .idle
+        if doing.contains(.finished) { return .finished }
+        return whenNone
     }
 
     /// Projects come from the store and from any project a registered agent names.
@@ -168,9 +194,14 @@ public struct Dashboard: Sendable, Equatable {
         }
         // In the order they registered, A1 first. Sorting by who spoke last made the
         // cards swap places every couple of seconds. (Alex, 12 Sep 2026.)
-        let registered = snapshot.agents.filter(\.isRegistered).sorted {
+        // Archived agents are off this list, which is what puts them off the sidebar, the
+        // floor count and the status board in one move. They are still in the store and
+        // `archived` below is where they are seen from. (T415.)
+        let byNumber: (Agent, Agent) -> Bool = {
             ($0.number ?? .max, $0.label) < ($1.number ?? .max, $1.label)
         }
+        let registered = snapshot.agents.filter { $0.isRegistered && !$0.isArchived }.sorted(by: byNumber)
+        let putAway = snapshot.agents.filter { $0.isRegistered && $0.isArchived }.sorted(by: byNumber)
         let open = snapshot.escalations.filter(\.isOpen)
 
         let onHold = Set(projects.values.filter(\.onHold).map(\.id))
@@ -182,7 +213,7 @@ public struct Dashboard: Sendable, Equatable {
             let questions = open.filter { $0.projectID == project.id }.count
             if project.onHold {
                 return ProjectStatus(
-                    project: project, activity: .idle, agents: agents, openEscalations: questions,
+                    project: project, activity: .finished, agents: agents, openEscalations: questions,
                     backlogCount: 0, blockedCount: 0, inProgressCount: 0, doneCount: 0)
             }
             // One rule for both dots: whatever its agents are doing, the project is. The
@@ -192,13 +223,10 @@ public struct Dashboard: Sendable, Equatable {
                 return Dashboard.activity(of: agent, task: task,
                                           hasOpenQuestion: open.contains { $0.agentID == agent.id }, now: now)
             }
-            // A stopped agent does not make its project stopped: the project is idle,
-            // which is what it is until somebody picks it back up.
-            let activity: ProjectActivity =
-                doing.contains(.working) ? .working
-                : doing.contains(.blocked) ? .blocked
-                : doing.contains(.waiting) ? .waiting
-                : .idle
+            // A stopped agent does not make its project stopped: the project has finished,
+            // which is what it has until somebody picks it back up.
+            let activity: ProjectActivity = Self.busiest(doing.filter { $0 != .stopped },
+                                                         whenNone: .finished)
             let tasks = snapshot.tasks.filter { $0.projectID == project.id }
             return ProjectStatus(
                 project: project,
@@ -212,8 +240,14 @@ public struct Dashboard: Sendable, Equatable {
             )
         }
         .sorted { a, b in
-            // On hold sorts last, then by activity, then by name.
+            // Three bands, and the order is the order you look in: projects somebody is
+            // on, then projects nobody is on, then the ones set aside. Inside a band, the
+            // busiest first and then by name. An empty project used to sort by an activity
+            // it did not have, so one nobody was on could sit above one being worked on.
+            // (T437, Alex, 15 Sep 2026.)
             if a.project.onHold != b.project.onHold { return !a.project.onHold }
+            let manned = { (p: ProjectStatus) in p.agents.contains { !$0.hasExited } }
+            if manned(a) != manned(b) { return manned(a) }
             if a.activity != b.activity { return rank(a.activity) < rank(b.activity) }
             return a.project.name.localizedCaseInsensitiveCompare(b.project.name) == .orderedAscending
         }
@@ -242,6 +276,7 @@ public struct Dashboard: Sendable, Equatable {
             openEscalations: open.sorted { $0.raised < $1.raised },
             projects: statuses,
             agents: agentStatuses,
+            archived: putAway,
             resources: resources
         )
     }
@@ -251,10 +286,8 @@ public struct Dashboard: Sendable, Equatable {
     private static func rank(_ a: ProjectActivity) -> Int {
         switch a {
         case .working: 0
-        case .blocked: 1
-        case .waiting: 2
-        case .idle: 3
-        // A project never reads stopped, only an agent does; it sorts with the quiet.
+        case .askingYou: 1
+        case .finished: 2
         case .stopped: 3
         }
     }

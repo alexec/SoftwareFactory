@@ -17,8 +17,16 @@ struct PhoneAgentView: View {
 
     @State private var transcript = ACPTranscript()
     @State private var have = 0
-    @State private var words = ""
+    /// Kept rather than held in the view, so leaving the page and coming back does not
+    /// lose what you were halfway through saying. The same holder the Mac uses. (T429.)
+    private var words: Binding<String> {
+        Binding(get: { Drafts.shared.text(for: Drafts.agent(agent)) },
+                set: { Drafts.shared.keep($0, for: Drafts.agent(agent)) })
+    }
     @State private var reached = true
+    /// How tall the floating input actually is. The same measurement the Mac's page takes,
+    /// for the same reason: it grows to four lines and a fixed reserve does not. (T387.)
+    @State private var inputHeight = 0.0
 
     private var status: Dashboard.AgentStatus? {
         model.dashboard.agents.first { $0.agent.id == agent }
@@ -33,16 +41,21 @@ struct PhoneAgentView: View {
                     ForEach(transcript.page()) { row in
                         Row(row: row).id(row.id)
                     }
-                    Color.clear.frame(height: 1).id(Self.bottom)
+                    // The room the input needs, on the page rather than around it, so
+                    // scrolling to the bottom lands the last thing said above the glass
+                    // and not behind it. (T387.)
+                    Color.clear.frame(height: inputHeight).id(Self.bottom)
                 }
                 .padding(.horizontal, Style.cardPadding)
                 .padding(.top, Style.cardPadding)
-                .padding(.bottom, 74)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .background(Color(.paper))
             .overlay(alignment: .bottom) { sayBox }
             .onChange(of: transcript.entries.count) { _, _ in
+                withAnimation(.snappy) { scroller.scrollTo(Self.bottom, anchor: .bottom) }
+            }
+            .onChange(of: inputHeight) { _, _ in
                 withAnimation(.snappy) { scroller.scrollTo(Self.bottom, anchor: .bottom) }
             }
             .overlay { if transcript.entries.isEmpty { nothing } }
@@ -78,12 +91,12 @@ struct PhoneAgentView: View {
     private var nothing: some View {
         VStack(spacing: 8) {
             Text(reached ? "Nothing yet" : "Out of reach")
-                .font(.system(.headline, design: .serif))
+                .font(.headline)
                 .foregroundStyle(Color(.ink))
             Text(reached
                  ? "Say something to \(label) below."
                  : "An agent's conversation lives on the Mac, so this page needs to be on the same network as it.")
-                .font(.system(.callout, design: .serif))
+                .font(.callout)
                 .foregroundStyle(Color(.quiet))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, Style.page)
@@ -92,17 +105,17 @@ struct PhoneAgentView: View {
 
     private var sayBox: some View {
         HStack(spacing: 8) {
-            TextField("Say something to \(label)", text: $words, axis: .vertical)
+            TextField("Say something to \(label)", text: words, axis: .vertical)
                 .lineLimit(1...4)
                 .textFieldStyle(.plain)
-                .font(.system(.callout, design: .serif))
+                .font(.callout)
                 .submitLabel(.send)
                 .onSubmit(say)
             Button("Send", systemImage: "arrow.up.circle.fill", action: say)
                 .buttonStyle(.borderless)
                 .labelStyle(.iconOnly)
                 .disabled(!model.canTalkToAgents
-                          || words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                          || words.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .padding(.leading, 14)
         .padding(.trailing, 8)
@@ -110,12 +123,13 @@ struct PhoneAgentView: View {
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: Style.card))
         .padding(.horizontal, Style.cardPadding)
         .padding(.bottom, 10)
+        .onGeometryChange(for: Double.self) { $0.size.height } action: { inputHeight = $0 }
     }
 
     private func say() {
-        let said = words.trimmingCharacters(in: .whitespacesAndNewlines)
+        let said = words.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !said.isEmpty else { return }
-        words = ""
+        Drafts.shared.clear(Drafts.agent(agent))
         Task { await model.say(said, to: agent) }
     }
 
@@ -128,7 +142,7 @@ struct PhoneAgentView: View {
             switch row.entry.kind {
             case .asked(let text):
                 Text(text)
-                    .font(.system(.callout, design: .serif))
+                    .font(.body)
                     .foregroundStyle(Color(.ink))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
@@ -138,7 +152,7 @@ struct PhoneAgentView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             case .said(let text):
                 MarkdownText(text: text)
-                    .font(.system(.body, design: .serif))
+                    .font(.title3)
                     .foregroundStyle(Color(.ink))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)

@@ -348,6 +348,21 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
     /// The quiet and gone timers start only after the MCP session disconnects.
     public var isConnected: Bool
     public var deregistered: Date?
+    /// Put away: stopped, and off every list. What its conversation, its documents and
+    /// the tasks it did are, unchanged; what it is not is on the floor.
+    ///
+    /// Stop keeps everything and Start picks it back up, which is right, and Delete throws
+    /// the conversation away. There was nothing in between, so the sidebar filled with
+    /// stopped agents under work that had finished and the only broom was the destructive
+    /// one. Archiving stops the process first, because an archived agent that is still
+    /// running is one doing work nobody can see. (T415, Alex, 15 Sep 2026: "the agents are
+    /// stopped and hidden".)
+    public var archivedAt: Date?
+    /// A turn in flight, as the daemon sees it. Written onto the record rather than kept
+    /// in the app, so the dot means the same thing on the phone, which has no daemon to
+    /// ask and reads the same snapshot. False for a terminal or external agent, which
+    /// nobody holds: `isWorking(now:)` is still the best answer there. (T425.)
+    public var isPrompting: Bool = false
 
     public init(id: UUID = UUID(), number: Int? = nil, title: String = "", projectID: String?, registered: Date = .now) {
         self.id = id
@@ -401,6 +416,8 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
 
     public var isRegistered: Bool { deregistered == nil }
 
+    public var isArchived: Bool { archivedAt != nil }
+
     /// What an agent is called, everywhere: its agent_id, the name on its card, the name
     /// in a sentence. Its number, or its raw id for one that registered before numbers.
     /// There is no second name: an agent used to carry one and it was only ever this,
@@ -453,6 +470,7 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
         case version, id, number, title, bel, projectID, taskID, note, wantsLaunch
         case launchedWith
         case pid, pidStartedAt, registered, lastSeen, statusAskedAt, isConnected, deregistered
+        case archivedAt, isPrompting
         case runtime, acpSession
         case about, name
     }
@@ -476,6 +494,8 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
         try c.encodeIfPresent(statusAskedAt, forKey: .statusAskedAt)
         try c.encode(isConnected, forKey: .isConnected)
         try c.encodeIfPresent(deregistered, forKey: .deregistered)
+        try c.encodeIfPresent(archivedAt, forKey: .archivedAt)
+        try c.encode(isPrompting, forKey: .isPrompting)
         try c.encode(runtime, forKey: .runtime)
         try c.encodeIfPresent(acpSession, forKey: .acpSession)
     }
@@ -514,6 +534,10 @@ public struct Agent: Codable, Identifiable, Hashable, Sendable {
         statusAskedAt = try c.decodeIfPresent(Date.self, forKey: .statusAskedAt)
         isConnected = try c.decodeIfPresent(Bool.self, forKey: .isConnected) ?? false
         deregistered = try c.decodeIfPresent(Date.self, forKey: .deregistered)
+        // An agent written down before there was anywhere to put it away reads as on the
+        // floor, which is what it was. (T415.)
+        archivedAt = try c.decodeIfPresent(Date.self, forKey: .archivedAt)
+        isPrompting = try c.decodeIfPresent(Bool.self, forKey: .isPrompting) ?? false
     }
 
 }
@@ -539,8 +563,10 @@ public enum Agents {
     }
 
     /// Registered, and not known to have exited. These count toward the cap.
+    /// On the floor: written down, not known to have exited, and not put away. An
+    /// archived agent holds no slot, because it is not working. (T415.)
     public static func onTheFloor(_ agents: [Agent]) -> [Agent] {
-        agents.filter { $0.isRegistered && !$0.hasExited }
+        agents.filter { $0.isRegistered && !$0.hasExited && !$0.isArchived }
     }
 
     public static func atCap(_ agents: [Agent], cap: Int = defaultCap) -> Bool {
@@ -600,6 +626,19 @@ public enum Agents {
         guard !kind.profile.resuming.canStart else { return nil }
         return "\(kind.title) cannot pick a conversation back up, so \(agent.label) has to be started as a new agent."
     }
+
+    /// Putting one away: stopped, and off every list. Offered for any agent the factory
+    /// wrote down that is not already archived, whether or not its process is still
+    /// running, because archiving stops it first. An external agent can be archived too:
+    /// the factory has nothing to stop there, and the row still wants clearing.
+    public static func mayArchive(_ agent: Agent) -> Bool {
+        agent.isRegistered && !agent.isArchived
+    }
+
+    /// Taking one back out. Its conversation is where it was, so an agent whose CLI can
+    /// pick a session back up comes back ready to start; one whose cannot is still worth
+    /// unarchiving to read what it wrote. (T415.)
+    public static func mayUnarchive(_ agent: Agent) -> Bool { agent.isArchived }
 
     /// There used to be a rule here for two agents turning up on one terminal: a shell
     /// that outlived its agent kept SOFTWARE_FACTORY_SESSION exported, so the next agent
@@ -662,9 +701,6 @@ public struct AgentMessage: Codable, Identifiable, Hashable, Sendable {
         self.delivered = delivered
     }
 
-    /// A nudge is a message whose words are the nudge line, so one delivery path carries
-    /// both and there is no second mechanism to keep in step.
-    public var isNudge: Bool { contents == LaunchPrompt.nudge }
 
     /// One of the factory's own pokes: a nudge, or the line an agent gets when it is
     /// started back up. They say who they are from in their own words.
@@ -838,8 +874,8 @@ public enum Sweep {
     ///   is waiting on something, and the factory clears its own blocks.
     /// - No question of its own still open. An agent that raised one and is waiting for
     ///   an answer is doing exactly what it should.
-    /// - Nothing on its project's backlog for it to pick up. Work waiting means a poke
-    ///   is the right move rather than a stop, which is `agentsToPoke`.
+    /// - Nothing on its project's backlog for it to pick up. Work waiting means it has
+    ///   something to do and should be left alone to find it.
     /// - No mail waiting, because something is about to be said to it.
     ///
     /// An hour is measured from the last of: when it registered, and when a task of its
@@ -848,7 +884,8 @@ public enum Sweep {
     ///
     /// An agent on no project is left alone. There is no backlog to be empty, so "no new
     /// tasks" says nothing about it, and it is there because the person started it for
-    /// something of their own.
+    /// something of their own. No new one can be started that way since T411, so this
+    /// covers the ones that already were, and it still holds for the same reason.
     /// `working` is the agents the daemon says have a turn in flight. It is the real
     /// answer to "is this one doing something", where everything else here is a proxy:
     /// the hour runs from the last task an agent touched, because `lastSeen` stays fresh
@@ -878,43 +915,12 @@ public enum Sweep {
         }
     }
 
-    /// The agent to poke because work has landed on a project where nobody is working.
-    ///
-    /// Filing a task and then going to find an agent to tell about it is a step the
-    /// factory can take itself. Only when every agent on that project is idle: if one of
-    /// them is on a task, it will read the backlog when it finishes, and poking it now
-    /// interrupts the work to tell it about work. The first agent by number gets it,
-    /// because somebody has to and the lowest number is the one that has been there
-    /// longest.
-    ///
-    /// The transition is what counts, not the state, so it fires once as the task
-    /// arrives however it arrived: the add row, dictation, an agent's task_add, the
-    /// phone. A project the factory is seeing for the first time is no transition, or
-    /// every backlog would be a nudge at launch. An agent with mail already waiting is
-    /// left alone: another line in the queue is not another poke. (T352, Alex, 15 Sep 2026.)
-    public static func agentsToPoke(
-        before: Snapshot, after: Snapshot, messages: [AgentMessage], now: Date
-    ) -> [Agent] {
-        guard !before.tasks.isEmpty || !before.projects.isEmpty else { return [] }
-        let known = Set(before.tasks.map(\.id))
-        let landed = Set(
-            after.tasks
-                .filter { !known.contains($0.id) && $0.state == .backlog && $0.removed == nil }
-                .map(\.projectID))
-        guard !landed.isEmpty else { return [] }
-        let waitingFor = Set(Mailbox.waiting(messages).map(\.recipientID))
-        let working = Set(
-            after.tasks.filter { $0.state == .inProgress }.compactMap(\.agentID))
-
-        return landed.compactMap { projectID -> Agent? in
-            let onIt = Agents.onTheFloor(after.agents)
-                .filter { $0.projectID == projectID }
-                .sorted { ($0.number ?? .max, $0.registered) < ($1.number ?? .max, $1.registered) }
-            guard !onIt.isEmpty else { return nil }
-            guard !onIt.contains(where: { working.contains($0.id) }) else { return nil }
-            return onIt.first { !waitingFor.contains($0.id) }
-        }
-    }
+    // The poke went with the nudge (T470). Work landing on a project whose agents are
+    // all idle used to send the first of them the nudge line, which told it a person had
+    // asked when nobody had. What carries it now is the person: filing a task and starting
+    // an agent are the same page and an inch apart since T431, and an agent with nothing to
+    // do is stopped after an hour by `idleAgentsToStop` rather than left waiting for work
+    // it was never told about. (T352 is what this was, and why it mattered.)
 
     /// Agents that owe the person a word about how it is going, and the message that
     /// asks each of them for one.

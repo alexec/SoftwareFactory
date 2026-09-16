@@ -9,6 +9,7 @@ behaviour:
   slow        take a moment, so a turn is in flight long enough to say something into
   hold        do not finish the turn until the file named by the second argument exists,
               so a test decides exactly when an agent stops being busy
+  modes       offer session modes, so a test can watch which one it is put into
   crash       exit as soon as a session is made
 """
 import json, sys, time
@@ -47,7 +48,18 @@ while True:
             "agentCapabilities": {"loadSession": True},
             "agentInfo": {"name": "stub", "version": "1"}}})
     elif method == "session/new":
-        out({"jsonrpc": "2.0", "id": ident, "result": {"sessionId": session}})
+        result = {"sessionId": session}
+        if mode == "modes":
+            # Two modes with nothing in between them, which is the shape that matters:
+            # one the floor would ask for on its own and one only a person would pick.
+            result["modes"] = {
+                "currentModeId": "default",
+                "availableModes": [
+                    {"id": "default", "name": "Manual", "description": "Always ask"},
+                    {"id": "plan", "name": "Plan", "description": "Plan before changing anything"},
+                    {"id": "bypassPermissions", "name": "Bypass permissions", "description": "Accepts all permissions"},
+                ]}
+        out({"jsonrpc": "2.0", "id": ident, "result": result})
         if mode == "crash":
             sys.exit(3)
     elif method == "session/load":

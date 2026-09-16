@@ -6,30 +6,35 @@ import SoftwareFactoryKit
 /// of its own.
 struct DashboardView: View {
     @Environment(AppModel.self) private var model
-    @State private var addingProject = false
-    @State private var newProjectName = ""
+    /// The way to the status board. It came off the sidebar in T360 and had no other way
+    /// in, so it was a page nobody could reach; the number of agents is the number it
+    /// explains, so that tile is its door. (T392.)
+    var openStatusReports: () -> Void = {}
     /// How much room the Needs you strip has, so a question can take it. (T263.)
     @State private var stripWidth: CGFloat = 0
 
     var body: some View {
         ScrollView {
+            // Needs you first. The page you land on is the page that answers what needs
+            // you, and it had four tiles above that in a bigger typeface, three of them
+            // reading zero the day anybody looked. The most important object on a page is
+            // the largest thing on it. (T409, off the hierarchy rules in the brief.)
             VStack(alignment: .leading, spacing: 28) {
-                summary
                 needsYou
+                summary
             }
             .padding(24)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .toolbar {
-            ToolbarItem {
-                Button("Add a project", systemImage: "plus") { addingProject = true }
-                    .help("Add a project by name")
-                    .popover(isPresented: $addingProject, arrowEdge: .bottom) { newProject }
-            }
-        }
     }
 
     // MARK: Summary
+
+    /// Agents that have not said anything within the hour. `StatusReportBoard` decides
+    /// what quiet means; nothing here does.
+    private var quiet: Int {
+        StatusReportBoard.quiet(in: model.snapshot, now: .now)
+    }
 
     private var summary: some View {
         let d = model.dashboard
@@ -37,9 +42,20 @@ struct DashboardView: View {
         return GlassEffectContainer(spacing: 16) {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 16)], spacing: 16) {
                 StatTile(value: d.inProgress, label: d.inProgress == 1 ? "task in progress" : "tasks in progress", symbol: "hammer")
-                StatTile(value: d.openEscalations.count, label: d.openEscalations.count == 1 ? "needs you" : "need you",
-                         symbol: "questionmark.bubble", tint: d.openEscalations.isEmpty ? nil : .orange)
-                StatTile(value: d.agents.count, label: d.agents.count == 1 ? "agent registered" : "agents registered", symbol: "person.2")
+                // There is no tile counting the questions any more. The questions
+                // themselves are the section above this one, so a number saying how many
+                // of them there are, six inches under them, is the same fact at a second
+                // altitude. The sidebar's Dashboard row keeps its badge, which is a
+                // different job: that one is a door, and says come here. (T409.)
+                // The one tile that goes somewhere. How many agents there are is a number
+                // you read once; how many of them have said nothing for an hour is the
+                // one worth acting on, and the page that lists them is behind it.
+                StatTile(value: d.agents.count,
+                         label: d.agents.count == 1 ? "agent registered" : "agents registered",
+                         symbol: "person.2",
+                         tint: quiet > 0 ? Color(.alarm) : nil,
+                         note: quiet > 0 ? (quiet == 1 ? "1 has gone quiet" : "\(quiet) have gone quiet") : nil,
+                         open: openStatusReports)
                 StatTile(value: d.heldCount, label: d.heldCount == 1 ? "resource held" : "resources held", symbol: "lock.rectangle.stack")
             }
         }
@@ -70,7 +86,7 @@ struct DashboardView: View {
                 ScrollView(.horizontal) {
                     HStack(alignment: .top, spacing: 14) {
                         ForEach(open) { escalation in
-                            EscalationCard(escalation: escalation, showsProject: true)
+                            EscalationCard(escalation: escalation, showsProject: true, model: model)
                                 .frame(width: cardWidth(for: open.count))
                         }
                     }
@@ -101,33 +117,6 @@ struct DashboardView: View {
     private static let narrowestCard: CGFloat = 420
     private static let widestCard: CGFloat = 760
 
-    /// A project is a name: an app, a role that spans apps, a piece of tooling.
-    private var newProject: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("A project is a name: an app, a role across apps, a piece of tooling. Agents file against it by that name.")
-                .font(.callout)
-                .foregroundStyle(Color(.quiet))
-                .fixedSize(horizontal: false, vertical: true)
-            TextField("Project name", text: $newProjectName)
-                .onSubmit(addProject)
-            HStack {
-                Spacer()
-                Button("Cancel") { addingProject = false }
-                Button("Add", action: addProject)
-                    .buttonStyle(.glassProminent)
-                    .disabled(newProjectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(16)
-        .frame(width: 320)
-    }
-
-    private func addProject() {
-        model.addProject(named: newProjectName)
-        newProjectName = ""
-        addingProject = false
-    }
-
 }
 
 struct StatTile: View {
@@ -135,22 +124,48 @@ struct StatTile: View {
     var label: String
     var symbol: String
     var tint: Color?
+    /// A second line under the label, for the thing the number does not say: how many of
+    /// those agents have gone quiet. It carries the tile's colour, so an orange tile is
+    /// orange because of the words on it.
+    var note: String?
+    /// Where the number is explained at length, if there is such a page. A tile with one
+    /// is the whole surface you click, which is what `.plain` means here.
+    var open: (() -> Void)?
 
     var body: some View {
+        if let open {
+            Button(action: open) { tile }
+                .buttonStyle(.plain)
+        } else {
+            tile
+        }
+    }
+
+    private var tile: some View {
         HStack(spacing: 14) {
             Image(systemName: symbol)
-                .font(.title2)
+                .font(.title3)
                 .foregroundStyle(tint ?? .secondary)
-                .frame(width: 32)
+                .frame(width: 26)
             VStack(alignment: .leading, spacing: 2) {
+                // Under the heading of the section above it, not over it. At largeTitle
+                // these numbers were the biggest type in the app, which said that the
+                // count of held resources mattered more than the question an agent is
+                // stuck on. (T409.)
                 Text(value, format: .number)
-                    .font(.system(.largeTitle, design: .rounded).weight(.semibold))
+                    .font(.system(.title3, design: .rounded).weight(.semibold))
                     .contentTransition(.numericText())
                 Text(label)
                     .font(.callout)
                     .foregroundStyle(Color(.quiet))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                if let note {
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(tint ?? Color(.faint))
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -231,7 +246,10 @@ struct AgentCard: View {
                     .foregroundStyle(Color(.quiet))
                     .lineLimit(1)
                 VStack(alignment: .leading, spacing: 2) {
-                    if !status.agent.title.isEmpty {
+                    // The same test the sidebar uses: a tmux title is the last command the
+                    // pane ran, and a command is the machine talking rather than news.
+                    // (T407.)
+                    if AgentLine.worthSaying(status.agent.title) {
                         Text(status.agent.title)
                             .font(.callout)
                             .foregroundStyle(Color(.quiet))
@@ -279,15 +297,11 @@ struct AgentCard: View {
         .buttonStyle(.plain)
         .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
         .overlay(alignment: .topTrailing) {
-            if status.canNudge {
-                Button("Nudge") {
-                    sendNudge(to: status.agent, model: model, terminals: terminals, floor: floor)
-                }
-                .buttonStyle(.glass)
-                .controlSize(.small)
-                .help("Tell it to pick up the next task")
-                .padding(10)
-            } else if status.canResume {
+            // Start, and nothing for an agent that is running. Nudge was here, and a card
+            // is not the place to talk to an agent: its page is, where you can see what it
+            // is doing and say something that is not one canned line. (T412, Alex,
+            // 15 Sep 2026.)
+            if status.canResume {
                 Button("Start") {
                     Task { _ = await StartAgent.resume(agent: status.agent, model: model, terminals: terminals, floor: floor) }
                 }
@@ -309,6 +323,12 @@ struct AgentCard: View {
                     stopAgent(status.agent, model: model, floor: floor)
                 }
             }
+            if Agents.mayArchive(status.agent) {
+                Button("Archive \(status.agent.label)") {
+                    stopAgent(status.agent, model: model, floor: floor)
+                    model.archive(status.agent)
+                }
+            }
             Button("Delete \(status.agent.label)", role: .destructive) {
                 stopAgent(status.agent, model: model, floor: floor)
                 floor.forget(status.agent.id)
@@ -327,12 +347,10 @@ struct AgentView: View {
     var status: Dashboard.AgentStatus
     /// Back to the page this was opened from. Nil when there is nowhere to go.
     var back: (() -> Void)?
-    @State private var showsDetails = true
     /// The documents column. On by default: what the agent has written down is the thing
     /// you most want beside the terminal, and the column is not drawn at all when it has
     /// written nothing. (T311.)
     @State private var chosenSide: Side? = .documents
-    @State private var showsMessages = false
     @State private var resumeError: String?
     /// How wide the documents are, remembered across launches and across agents: it is
     /// how you like to read, not a property of one agent. (T329.)
@@ -371,7 +389,10 @@ struct AgentView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            if showsDetails {
+            // The band is only the leases now, and only when it holds any. What it used to
+            // lead with was the tasks in the agent's name, which the sidebar already lists
+            // under that agent, numbered and blocked-first. (T463.)
+            if !leases.isEmpty {
                 strip
                 Divider()
             }
@@ -433,12 +454,6 @@ struct AgentView: View {
                         .help("Back to where you came from")
                 }
             }
-            ToolbarItem {
-                Button("Details", systemImage: "rectangle.bottomthird.inset.filled") {
-                    withAnimation(.snappy) { showsDetails.toggle() }
-                }
-                .help(showsDetails ? "Hide what it is on and holding" : "Show what it is on and holding")
-            }
         }
     }
 
@@ -463,53 +478,28 @@ struct AgentView: View {
 
     private var sideIcons: some View {
         HStack(spacing: 4) {
-            modePicker
+            // The mode moved down to sit under the field it affects. (T431.)
             Spacer(minLength: 0)
-            icon(.documents, "doc.richtext",
-                 on: hasDocuments ? "Hide what it has written" : "It has not written anything yet",
-                 enabled: hasDocuments)
+            // Nothing written, no icon. It was drawn and disabled, which the plain button
+            // style and the explicit foregroundStyle below it rendered identically to a
+            // live one: an icon that looks like every other icon and does nothing when
+            // you click it. The column it opens is already not drawn for an agent that
+            // has written nothing, and this is the same rule one step earlier.
+            // (Alex, 16 Sep 2026.)
+            if hasDocuments {
+                icon(.documents, "doc.richtext", on: "What it has written")
+            }
             icon(.shells, shells.has(agent.id) ? "apple.terminal.fill" : "apple.terminal",
-                 on: "A shell in this agent's folder, beside it",
-                 enabled: true)
+                 on: "A shell in this agent's folder, beside it")
+            // The Finder, beside the shell: both are the agent's folder, opened two ways.
+            // It was up in the header next to the project's name. (Alex, 15 Sep 2026.)
+            OpenFolderButton(project: status.project)
         }
         .padding(.horizontal, Style.cardPadding)
         .padding(.vertical, 5)
     }
 
-    /// What this agent may do without asking, in its own words.
-    ///
-    /// Per agent rather than only on the floor's setting, because it is per agent in
-    /// practice: one on a repo you care about asks, one on a scratch project gets on with
-    /// it. The menu lists exactly what this agent offers, because the four disagree about
-    /// what the choices even are. Nothing is drawn for an agent that offers none, which is
-    /// Grok. (Alex, 16 Sep 2026.)
-    @ViewBuilder
-    private var modePicker: some View {
-        if let running = floor.running(agent.id), !running.modes.isEmpty {
-            Menu {
-                ForEach(running.modes) { mode in
-                    Button {
-                        _Concurrency.Task { await floor.setMode(agent.id, to: mode.id) }
-                    } label: {
-                        if mode.id == running.mode {
-                            Label(mode.name, systemImage: "checkmark")
-                        } else {
-                            Text(mode.name)
-                        }
-                    }
-                    .help(mode.detail ?? "")
-                }
-            } label: {
-                Text(running.modes.first { $0.id == running.mode }?.name ?? "Mode")
-                    .font(.caption)
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("What \(agent.label) may do without asking")
-        }
-    }
-
-    private func icon(_ which: Side, _ symbol: String, on help: String, enabled: Bool) -> some View {
+    private func icon(_ which: Side, _ symbol: String, on help: String) -> some View {
         Button {
             withAnimation(.snappy) { chosenSide = chosenSide == which ? nil : which }
 
@@ -522,7 +512,6 @@ struct AgentView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(chosenSide == which ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-        .disabled(!enabled)
         .help(help)
     }
 
@@ -560,9 +549,6 @@ struct AgentView: View {
                 Text(project.name)
                     .font(.callout)
                     .foregroundStyle(Color(.quiet))
-                // Where its work lives, one click away: an agent's page is where you
-                // are when you want to look at what it has been writing. (T300.)
-                OpenFolderButton(project: project)
             }
             // The line the agent set with its terminal title is what it is doing right
             // now, so it belongs on the top row beside the project rather than at the
@@ -576,25 +562,14 @@ struct AgentView: View {
                     .help(agent.title)
             }
             Spacer(minLength: 12)
-            if status.canNudge {
-                Button("Nudge") {
-                    sendNudge(to: agent, model: model, terminals: terminals, floor: floor)
-                }
-                .buttonStyle(.glass)
-                .controlSize(.small)
-                .help("Tell it to pick up the next task")
-            }
-            // No asking. Stopping an agent used to want confirming, on the argument that
-            // one click ends it mid-thought and that cannot be taken back. In practice it
-            // can: Start picks the conversation back up where it left off, the pane keeps
-            // what it said, and what it held goes back on its own. A question in front of
-            // something that undoes itself is a question asked for nothing. (T294.)
-            if status.canStop {
-                Button("Stop") { stopAgent(agent, model: model, floor: floor) }
-                    .buttonStyle(.glass)
-                    .controlSize(.small)
-                    .help("End this agent's process. What it has said stays on the page, and Start picks it back up.")
-            }
+            // No Stop and no Archive here. Both end an agent, both are one click, and both
+            // sat on the page you go to in order to watch one work and talk to it. They
+            // are on the right-click of its row in the sidebar and of its card, which is
+            // where ending a thing belongs: you go looking for it. Start stays, because it
+            // is the one that begins something rather than ending it, and because a
+            // stopped agent's page is exactly where you notice it has stopped. (T460,
+            // Alex, 15 Sep 2026; Nudge went the same way in T412.)
+            //
             // A stopped agent is picked back up where it left off, in the same session,
             // so it comes back knowing who it is and what it was doing. (T262.)
             if status.canResume {
@@ -623,24 +598,21 @@ struct AgentView: View {
         .background(.bar)
     }
 
-    /// What the agent is on, holding and running, on two lines under its name.
+    /// What it is holding, under its name.
     ///
-    /// This was a column, and a column of labelled rows for a few short facts is a lot
-    /// of window to spend on them. They read as well across as down. (T314.)
+    /// This was a column of labelled rows, which is a lot of window for a few short facts,
+    /// and then a band of two lines (T314, T332). The first line was the tasks in the
+    /// agent's name, and the sidebar lists those under the agent already, numbered and
+    /// blocked first, so the page was repeating the thing you clicked through from. What
+    /// is left is the leases, which are nowhere else. (T463, Alex, 15 Sep 2026.)
     private var strip: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                onNow
-                Spacer(minLength: 8)
-                messagesButton
-            }
-            HStack(spacing: 8) {
                 holding
                 Spacer(minLength: 8)
-                facts
             }
         }
-        .font(.callout)
+        .font(Style.Text.row)
         .lineLimit(1)
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
@@ -648,32 +620,15 @@ struct AgentView: View {
         .background(.bar)
     }
 
-    /// The tasks in its name, done ones left out. Its own note stands in when it has no
-    /// task, because an agent with nothing assigned usually has a reason written down.
-    @ViewBuilder
-    private var onNow: some View {
-        let tasks = model.tasks(assignedTo: agent.id)
-        if tasks.isEmpty {
-            Text(agent.note.isEmpty ? "Nothing on it." : agent.note)
-                .foregroundStyle(Color(.quiet))
-        } else {
-            ForEach(tasks) { task in
-                StripChip(
-                    text: "\(task.label.map { "\($0) " } ?? "")\(task.title)",
-                    detail: task.state.word,
-                    help: "\(task.title) · \(task.state.word)")
-            }
-        }
-    }
-
-    /// What it holds right now. Nothing is drawn when it holds nothing: an empty line
-    /// saying so was worth a row in a column and is not worth one here.
+    /// The resources it has leased. Nothing is drawn when it holds none, which is what
+    /// this comment has always said and what the code did not do: it wrote "Holding
+    /// nothing" two lines under a chip saying which task the agent is holding, so the
+    /// band used the word for a lease on one line and for a task on the other and
+    /// contradicted itself for anybody reading the words rather than the layout. Holding
+    /// no lease is the ordinary case, and the ordinary case is not news. (T418, off T395.)
     @ViewBuilder
     private var holding: some View {
-        if leases.isEmpty {
-            Text("Holding nothing")
-                .foregroundStyle(Color(.faint))
-        } else {
+        if !leases.isEmpty {
             ForEach(leases) { held in
                 StripChip(
                     text: held.resource.name,
@@ -682,43 +637,6 @@ struct AgentView: View {
                         ? "Held until \(held.lease.until.formatted(date: .omitted, time: .shortened))"
                         : "\(held.lease.why) · until \(held.lease.until.formatted(date: .omitted, time: .shortened))")
             }
-        }
-    }
-
-    /// What it is running, and since when if you hold the pointer over it. The project
-    /// and when it last spoke are across the top, so they are not said twice.
-    ///
-    /// Not its process and not its session id. They were here and they are the kind of
-    /// fact that looks useful and is not: the factory watches the process itself and
-    /// stops it when you stop the agent, and the session id is the agent's own business,
-    /// the name it goes by in a tool call. Neither is anything a person does anything
-    /// with, and both are long enough to crowd out what is. (T331, Alex, 15 Sep 2026.)
-    private var facts: some View {
-        Text(running)
-            .foregroundStyle(Color(.quiet))
-            .help("Started \(agent.registered.formatted(date: .abbreviated, time: .shortened))")
-    }
-
-    /// Its messages, behind a button, because most of the time there are none and a
-    /// standing empty list is a line of nothing. The count is the whole summary.
-    @ViewBuilder
-    private var messagesButton: some View {
-        let waiting = model.messages(for: agent.id)
-        Button {
-            showsMessages.toggle()
-        } label: {
-            Label(waiting.isEmpty ? "No messages" : "^[\(waiting.count) message](inflect: true)",
-                  systemImage: "tray")
-        }
-        .buttonStyle(.borderless)
-        .disabled(waiting.isEmpty)
-        .help("What has been sent to this agent")
-        .popover(isPresented: $showsMessages, arrowEdge: .bottom) {
-            ScrollView {
-                AgentMessages(messages: waiting) { model.delete($0) }
-                    .padding(16)
-            }
-            .frame(width: 360, height: min(420, max(140, Double(waiting.count) * 120)))
         }
     }
 
@@ -740,14 +658,6 @@ struct AgentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// What the factory started in the terminal, or the plain truth that it did not
-    /// start this one at all.
-    private var running: String {
-        guard let kind = agent.launchedWith.flatMap(LaunchAgent.init(rawValue:)) else {
-            return "Registered from elsewhere"
-        }
-        return kind.title
-    }
 
     /// What this agent has written: its status report first, then its documents. They
     /// were rows in the column beside the terminal, each behind a triangle, which is a
@@ -757,7 +667,13 @@ struct AgentView: View {
     private var hasDocuments: Bool { !mine.isEmpty }
 
     private var documents: some View {
-        ArtifactBrowser(documents: mine)
+        // Delete is here now. It was left off on the argument that a document belongs to
+        // the project rather than to the agent that wrote it (T266), which is true of
+        // where it lives and beside the point when you are looking at one: this is the
+        // page where you read an agent's status report and its notes, so it is where you
+        // notice one that should not be there, and the project page was the only place
+        // that could take it off. (T414, Alex, 15 Sep 2026.)
+        ArtifactBrowser(documents: mine) { model.delete($0) }
             .id(agent.id)
     }
 
@@ -787,49 +703,6 @@ private struct StripChip: View {
     }
 }
 
-/// The messages themselves, in the agent's page and in the row's popover alike.
-private struct AgentMessages: View {
-    var messages: [AgentMessage]
-    /// Throwing one away. The inbox is a record of what was said to the agent, so the
-    /// person clears it; nothing here reaches the agent twice. (Alex, 14 Sep 2026.)
-    var delete: (AgentMessage) -> Void
-
-    var body: some View {
-        if messages.isEmpty {
-            EmptyLine(text: "No messages yet.", symbol: "tray")
-        } else {
-            ForEach(messages) { message in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(message.subject)
-                            .font(.callout.weight(.semibold))
-                        Spacer()
-                        Text(message.sent, format: .relative(presentation: .named))
-                            .font(.caption)
-                            .foregroundStyle(Color(.faint))
-                        Button("Delete", systemImage: "trash") { delete(message) }
-                            .buttonStyle(.plain)
-                            .labelStyle(.iconOnly)
-                            .font(.caption)
-                            .foregroundStyle(Color(.quiet))
-                            .help("Throw this message away")
-                    }
-                    Text("From \(message.from)")
-                        .font(.caption)
-                        .foregroundStyle(Color(.quiet))
-                    Text(message.contents)
-                        .font(.callout)
-                        .textSelection(.enabled)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contextMenu {
-                    Button("Delete message", role: .destructive) { delete(message) }
-                }
-                if message.id != messages.last?.id { Divider() }
-            }
-        }
-    }
-}
 
 /// Stops an agent, whoever is holding it. The daemon holds an ACP one and the kernel
 /// holds the rest, and `AppModel.stop` knows only about the second. One call at every
@@ -841,14 +714,6 @@ func stopAgent(_ agent: Agent, model: AppModel, floor: Floor) {
         return
     }
     model.stop(agent)
-}
-
-/// Writes the nudge down and delivers it straight away, so the button acts at once
-/// rather than on the next pass.
-@MainActor
-func sendNudge(to agent: Agent, model: AppModel, terminals: TerminalSessions, floor: Floor) {
-    model.nudge(agent)
-    _Concurrency.Task { await deliverPendingMessages(model: model, terminals: terminals, floor: floor) }
 }
 
 /// Every message nobody has delivered yet, given to its agent: nudges the person sent,
@@ -948,7 +813,7 @@ struct AgentBellMark: View {
     @ViewBuilder var body: some View {
         if ringing {
             Image(systemName: "bell.fill")
-                .foregroundStyle(Color.orange)
+                .foregroundStyle(Color(.alarm))
                 .symbolEffect(.wiggle, options: .repeating, isActive: !reduceMotion)
                 .help("It rang for your attention")
                 .accessibilityLabel("Wants a look")

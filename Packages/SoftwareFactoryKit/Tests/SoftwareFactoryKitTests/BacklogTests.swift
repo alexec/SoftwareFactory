@@ -294,13 +294,15 @@ import Testing
         #expect(d.openEscalations.count == 1)
         #expect(d.projects.map(\.project.name) == ["a", "b"])   // /c's agent has left
         // Its agent has a question open, so the project waits with it.
-        #expect(d.projects[0].activity == .waiting)   // grey, not orange: nothing is stuck
+        // Its agent has a question open, so the project wants you too. (T423: that is
+        // the one state you can act on, so it beats everything but being gone.)
+        #expect(d.projects[0].activity == .askingYou)
         // The current task is on the backlog, not next to the project's name. (T168)
         #expect(d.projects[0].doing == nil)
         #expect(d.projects[0].backlogCount == 1)
         #expect(d.projects[0].openEscalations == 1)
         // Its agent has said nothing for fifteen minutes: nothing is moving.
-        #expect(d.projects[1].activity == .idle)
+        #expect(d.projects[1].activity == .finished)
         #expect(d.projects[1].doing == nil)
         #expect(d.workingCount == 0)
         #expect(d.agents.map(\.agent.label) == ["A1", "A2"])
@@ -332,7 +334,9 @@ import Testing
         let d = Dashboard.make(snapshot: Snapshot(agents: [third, second, first]), now: now)
         #expect(d.agents.map(\.agent.label) == ["A1", "A2", "A3"])
         #expect(d.unassignedAgents.map(\.agent.label) == ["A1", "A2", "A3"])
-        #expect(d.unassignedActivity == .waiting)
+        // All three spoke within the ten minutes and none has a question open, so the
+        // group reads working. (T423.)
+        #expect(d.unassignedActivity == .working)
         #expect(!d.unassignedIsEmpty)
     }
 
@@ -356,19 +360,20 @@ import Testing
         var blocked = task
         blocked.state = .blocked
         blocked.blockers = [.init(kind: .person, why: "the answer")]
-        #expect(dot([blocked], agent: agent) == .blocked)
+        // Blocked on a person is you being asked; blocked on a task or a decision is not.
+        #expect(dot([blocked], agent: agent) == .askingYou)
 
         // A question open is the agent waiting, and the project waits with it.
         let question = Escalation(projectID: "/p", question: "?", options: [.init(title: "a")], agentID: agent.id, raised: now)
-        #expect(dot([task], [question], agent: agent) == .waiting)
+        #expect(dot([task], [question], agent: agent) == .askingYou)
         // A project nobody is on says so, and draws no dot.
         let empty = Dashboard.make(snapshot: Snapshot(projects: [project]), now: now).projects[0]
-        #expect(empty.activity == .idle && empty.isEmpty)
+        #expect(empty.activity == .finished && empty.isEmpty)
 
         var silent = agent
         silent.lastSeen = now.addingTimeInterval(-900)
-        #expect(dot([task], agent: silent) == .idle)
-        #expect(Dashboard.make(snapshot: Snapshot(projects: [project]), now: now).projects[0].activity == .idle)
+        #expect(dot([task], agent: silent) == .finished)
+        #expect(Dashboard.make(snapshot: Snapshot(projects: [project]), now: now).projects[0].activity == .finished)
     }
 
     @Test func aProjectOnHoldShowsItsNameAndNothingElse() {
@@ -388,7 +393,7 @@ import Testing
         let d = Dashboard.make(snapshot: Snapshot(projects: [held, live], tasks: [task, liveTask], escalations: [question], agents: [agent]), now: now)
         #expect(d.projects.map(\.project.id) == [live.id, held.id])
         let h = d.projects[1]
-        #expect(h.activity == .idle)
+        #expect(h.activity == .finished)
         #expect(h.doing == nil)
         #expect(h.inProgressCount == 0 && h.blockedCount == 0 && h.backlogCount == 0 && h.doneCount == 0)
         #expect(h.openEscalations == 1)
@@ -441,43 +446,38 @@ import Testing
 
         #expect(activity(agent, [task]) == .working)
 
-        // A blocked task beats everything but silence: the block is what to clear.
+        // A task blocked on a person is you being asked, and that beats working.
         var blocked = task
         blocked.state = .blocked
         blocked.blockers = [.init(kind: .person, why: "the answer")]
-        #expect(activity(agent, [blocked]) == .blocked)
+        #expect(activity(agent, [blocked]) == .askingYou)
 
-        // Nothing in hand, or a question open: waiting.
+        // Nothing in hand is not a state of its own any more: holding no task and having
+        // nothing in flight is finished, which is what it is. A question open is you
+        // being asked, whatever else it is doing.
         var empty = agent
         empty.taskID = nil
-        #expect(activity(empty, []) == .waiting)
+        #expect(activity(empty, []) == .working)
         let question = Escalation(projectID: project.id, question: "?", options: [.init(title: "x")], agentID: agent.id, raised: now)
-        #expect(activity(agent, [task], [question]) == .waiting)
+        #expect(activity(agent, [task], [question]) == .askingYou)
 
         func status(_ agent: Agent, _ tasks: [FactoryTask], _ escalations: [Escalation] = []) -> Dashboard.AgentStatus {
             Dashboard.make(snapshot: Snapshot(projects: [project], tasks: tasks, escalations: escalations, agents: [agent]), now: now)
                 .agents[0]
         }
-        // A nudge is there unless the agent has stopped. Working, blocked,
-        // waiting and idle all get one. (T197)
-        #expect(status(empty, []).canNudge)
-        #expect(status(agent, [task], [question]).canNudge)
-        #expect(status(agent, [task]).canNudge)
-        #expect(status(agent, [blocked]).canNudge)
-
         // Ten minutes without a word and no connection open: idle, task or no task.
         var quiet = agent
         quiet.lastSeen = now.addingTimeInterval(-700)
-        #expect(activity(quiet, [task]) == .idle)
-        #expect(activity(quiet, [blocked]) == .idle)
-        #expect(status(quiet, [task]).canNudge)
+        #expect(activity(quiet, [task]) == .finished)
+        // Blocked on a person still reads as wanting you, however quiet the agent is: the
+        // thing to clear is yours and it does not stop being yours after ten minutes.
+        #expect(activity(quiet, [blocked]) == .askingYou)
 
         // Its process has gone: stopped, and no nudge. The pid is one nobody holds.
         var dead = agent
         dead.pid = 0x7FFF_FFFE
         dead.pidStartedAt = now
         #expect(activity(dead, [task]) == .stopped)
-        #expect(!status(dead, [task]).canNudge)
     }
 
     /// A folder under home reads as "~/…"; anything else reads as it is.
@@ -506,7 +506,7 @@ import Testing
 
     @Test func idleProjectWithNothingOnShowsNothing() {
         let d = Dashboard.make(snapshot: Snapshot(projects: [Project(name: "a", id: "/a")]), now: now)
-        #expect(d.projects[0].activity == .idle)
+        #expect(d.projects[0].activity == .finished)
         #expect(d.projects[0].doing == nil)
     }
 }
@@ -559,5 +559,84 @@ import Testing
         let done = task("finished", 1, .done, for: me)
         let deleted = Backlog.remove(task("deleted", 2, .inProgress, for: me), why: "by Alex")
         #expect(Backlog.reminder(for: me, in: [done, deleted]) == nil)
+    }
+}
+
+/// Put away: stopped, and off every list. (T415, Alex, 15 Sep 2026.)
+@Suite struct ArchiveTests {
+    private func agent(archived: Bool) -> Agent {
+        var a = Agent(number: 7, projectID: "/p")
+        if archived { a.archivedAt = .now }
+        return a
+    }
+
+    @Test func anArchivedAgentIsNotOnTheFloorAndHoldsNoSlot() {
+        let here = agent(archived: false)
+        let away = agent(archived: true)
+        #expect(Agents.onTheFloor([here, away]).map(\.id) == [here.id])
+        #expect(!Agents.atCap([here, away, agent(archived: true)], cap: 2))
+    }
+
+    @Test func archivingIsOfferedOnceAndTakingItBackOutTheOtherWay() {
+        #expect(Agents.mayArchive(agent(archived: false)))
+        #expect(!Agents.mayArchive(agent(archived: true)))
+        #expect(Agents.mayUnarchive(agent(archived: true)))
+        #expect(!Agents.mayUnarchive(agent(archived: false)))
+    }
+
+    /// Off the floor, and still somewhere: the dashboard carries them so there is a place
+    /// to take one back out from. A page nobody can reach is what T392 had to fix.
+    @Test func theDashboardKeepsThemApartRatherThanLosingThem() {
+        let here = agent(archived: false)
+        let away = agent(archived: true)
+        let dash = Dashboard.make(snapshot: Snapshot(projects: [Project(name: "P", id: "/p")],
+                                                     agents: [here, away]))
+        #expect(dash.agents.map(\.id) == [here.id])
+        #expect(dash.archived.map(\.id) == [away.id])
+        #expect(dash.agents(on: "/p").map(\.id) == [here.id])
+    }
+
+    /// A record written before there was anywhere to put an agent away reads as one on
+    /// the floor, which is what it was.
+    @Test func anOlderRecordReadsAsNotArchived() throws {
+        let old = #"{"version":3,"id":"\#(UUID().uuidString)","title":"","bel":false,"note":"","wantsLaunch":false,"registered":0,"lastSeen":0,"isConnected":false,"runtime":"terminal"}"#
+        let read = try JSONDecoder().decode(Agent.self, from: Data(old.utf8))
+        #expect(!read.isArchived)
+    }
+}
+
+/// Where a project sits in the sidebar. (T437, Alex, 15 Sep 2026.)
+@Suite struct ProjectOrderTests {
+    private let now = Date()
+
+    @Test func somebodyOnItComesAboveNobodyOnIt() {
+        let worked = Project(name: "Zebra", id: "/z")
+        let bare = Project(name: "Apple", id: "/a")
+        var agent = Agent(number: 1, projectID: "/z")
+        agent.lastSeen = now
+        let d = Dashboard.make(snapshot: Snapshot(projects: [bare, worked], agents: [agent]), now: now)
+        #expect(d.projects.map(\.project.name) == ["Zebra", "Apple"])
+    }
+
+    @Test func onHoldSinksBelowBoth() {
+        var held = Project(name: "Aardvark", id: "/h")
+        held.onHold = true
+        var busy = Agent(number: 1, projectID: "/h")
+        busy.lastSeen = now
+        let d = Dashboard.make(snapshot: Snapshot(projects: [held, Project(name: "Beta", id: "/b")],
+                                                  agents: [busy]), now: now)
+        #expect(d.projects.map(\.project.name) == ["Beta", "Aardvark"])
+    }
+
+    /// An agent that has stopped is not somebody on it: the work is not moving.
+    @Test func aStoppedAgentDoesNotCountAsSomebodyOnIt() {
+        var dead = Agent(number: 1, projectID: "/z")
+        dead.lastSeen = now
+        dead.pid = 0x7FFF_FFFE
+        dead.pidStartedAt = now
+        let d = Dashboard.make(snapshot: Snapshot(projects: [Project(name: "Zebra", id: "/z"),
+                                                             Project(name: "Apple", id: "/a")],
+                                                  agents: [dead]), now: now)
+        #expect(d.projects.map(\.project.name) == ["Apple", "Zebra"])
     }
 }

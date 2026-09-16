@@ -98,3 +98,62 @@ import Testing
         #expect(LaunchAgent.grok.resumeCommand(session: Self.session) == "grok --resume \(Self.session.uuidString) --always-approve --trust")
     }
 }
+
+/// How each agent is told which model to run. Measured on the binaries on 15 Sep 2026
+/// rather than read: three take --model and the fourth takes no arguments at all. (T462.)
+@Suite struct ModelAtLaunchTests {
+    @Test func theThreeThatTakeAFlagGetOne() throws {
+        for kind in [LaunchAgent.copilot, .grok, .cursor] {
+            let launch = try #require(kind.acpLaunch(model: "some-model"))
+            #expect(launch.arguments.suffix(2) == ["--model", "some-model"])
+            #expect(kind.environment(model: "some-model").isEmpty)
+        }
+    }
+
+    /// Zed's adapter takes no arguments and prints no help; the SDK behind it reads the
+    /// environment, so that is where the model goes.
+    @Test func theOneWithNoArgumentsIsToldInTheEnvironment() throws {
+        let launch = try #require(LaunchAgent.claudeCode.acpLaunch(model: "opus"))
+        #expect(launch.arguments.isEmpty)
+        #expect(LaunchAgent.claudeCode.environment(model: "opus") == ["ANTHROPIC_MODEL": "opus"])
+    }
+
+    /// Nothing named is the CLI's own default, which is what nearly every agent runs on.
+    @Test func noModelChangesNothing() throws {
+        for kind in LaunchAgent.allCases where kind.speaksACP {
+            let plain = try #require(kind.acp)
+            let asked = try #require(kind.acpLaunch(model: "  "))
+            #expect(asked.arguments == plain.arguments)
+            #expect(kind.environment(model: nil).isEmpty)
+        }
+    }
+
+    /// The modes each agent offers, so the start bar can name them before the agent has
+    /// handshaken. Measured with `Tools/acp-modes.py`, so what is guarded here is the
+    /// shape rather than the words: nothing empty, no id twice, and Grok offering none,
+    /// which is why nothing is drawn for it. (T466.)
+    @Test func eachAgentsModesAreNamedAndDistinct() {
+        for kind in LaunchAgent.allCases {
+            let offered = kind.modesOffered
+            #expect(Set(offered.map(\.id)).count == offered.count, "\(kind.title) names an id twice")
+            for mode in offered {
+                #expect(!mode.id.isEmpty)
+                #expect(!mode.name.isEmpty)
+            }
+        }
+        #expect(LaunchAgent.grok.modesOffered.isEmpty)
+        #expect(LaunchAgent.claudeCode.modesOffered.contains { $0.id == "bypassPermissions" })
+    }
+
+    /// The written-down list and the one the floor asks for have to agree, or the mode
+    /// menu offers something and the floor then puts the agent somewhere else. Claude Code
+    /// is the one this matters for: it is the only one of the four whose modes are about
+    /// how much it may do.
+    @Test func theModesTheFloorAsksForAreOnesTheAgentOffers() {
+        let offered = LaunchAgent.claudeCode.modesOffered.map(\.id)
+        for stance in Throttle.Permissions.allCases {
+            guard let wanted = ACP.Modes.wanted(stance, from: offered) else { continue }
+            #expect(offered.contains(wanted))
+        }
+    }
+}

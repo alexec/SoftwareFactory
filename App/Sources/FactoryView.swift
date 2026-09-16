@@ -40,10 +40,19 @@ struct FactoryView: View {
         AgentSlotsCard(inUse: Agents.onTheFloor(model.snapshot.agents).count, cap: Agents.cap(t)) { slots in
             model.setThrottle { $0.agentSlots = slots }
         }
+        // Memory pressure is the one that decides, so it is the one with a colour on it.
+        // The two below it are worth looking at and say nothing about whether the Mac can
+        // take more work: swap used over swapfile size is high whatever is happening,
+        // because macOS makes the files on demand, and free memory counts pages that a Mac
+        // with memory compression has not really lost. Colouring either was the Capacity
+        // page saying the Mac was in trouble while the kernel said it was fine. (T430.)
+        ResourceCard(title: "Memory pressure", value: r.pressure == .normal ? 0.2 : (r.pressure == .warning ? 0.6 : 1),
+              text: r.pressure.word,
+              tint: r.pressure == .critical ? .red : (r.pressure == .warning ? Color(.alarm) : .green))
         ResourceCard(title: "Memory free", value: r.memoryFreeFraction, text: percent(r.memoryFreeFraction),
-              tint: r.memoryFreeFraction <= t.memoryFloor ? .red : (r.memoryFreeFraction <= t.memoryFloor * 2 ? .orange : .green))
+              tint: Color(.quiet))
         ResourceCard(title: "Swap", value: r.swapFraction, text: "\(gigabytes(r.swapUsed)) of \(gigabytes(r.swapTotal))",
-              tint: r.swapFraction >= t.swapCeiling ? .red : (r.swapFraction >= t.swapCeiling * 0.66 ? .orange : .green))
+              tint: Color(.quiet))
         ResourceCard(title: "Load", value: min(1, r.loadPerCore), text: "\(String(format: "%.1f", r.load)) on \(r.cores) cores",
               tint: r.loadPerCore >= 0.9 ? .orange : .green)
         ResourceCard(title: "Compiles", value: t.compileSlots == 0 ? 0 : Double(r.compiles) / Double(t.compileSlots),
@@ -69,13 +78,13 @@ struct FactoryView: View {
                 Room(number: h.simulators, label: h.simulators == 1 ? "more simulator" : "more simulators", ok: h.simulators > 0)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(gigabytes(h.memoryFree))
-                        .font(.system(.title, design: .rounded).weight(.semibold))
+                        .font(Style.Text.gauge)
                         .monospacedDigit()
                     Text("memory free").font(.callout).foregroundStyle(Color(.quiet))
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(gigabytes(h.swapFree))
-                        .font(.system(.title, design: .rounded).weight(.semibold))
+                        .font(Style.Text.gauge)
                         .monospacedDigit()
                     Text("swap free").font(.callout).foregroundStyle(Color(.quiet))
                 }
@@ -172,7 +181,7 @@ private struct Room: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(number, format: .number)
-                .font(.system(.title, design: .rounded).weight(.semibold))
+                .font(Style.Text.gauge)
                 .foregroundStyle(ok ? Color.primary : Color.orange)
                 .contentTransition(.numericText())
             Text(label).font(.callout).foregroundStyle(Color(.quiet))

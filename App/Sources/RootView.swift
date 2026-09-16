@@ -3,7 +3,9 @@ import SoftwareFactoryKit
 
 enum Destination: Hashable {
     case dashboard
-    case agents
+    /// Everybody's news on one page, reached from the agents tile on the dashboard. There
+    /// was an Agents page beside it, a grid of the same cards the sidebar and each project
+    /// already draw; it went in T392 rather than being given a door of its own.
     case statusReports
     case factory
     case noProject
@@ -22,6 +24,15 @@ struct RootView: View {
     // The macOS place for this is a right-click on the row, not a button on its own
     // page. (Alex, 12 Sep 2026.)
     @State private var removing: Project?
+    /// The Archived section, shut until somebody opens it. Archived means hidden, and a
+    /// section that opens itself is not hidden. (T415.)
+    @State private var showingArchived = false
+    /// The room the floating microphone needs at the foot of every page: its 44 points and
+    /// the 20 of padding around it, less a little, because a page's own bottom margin is
+    /// already there. (T471.)
+    private static let microphone = 52.0
+    @State private var addingProject = false
+    @State private var newProjectName = ""
 
     var body: some View {
         NavigationSplitView {
@@ -37,24 +48,29 @@ struct RootView: View {
                 }
                 .tag(Destination.factory)
 
-                HStack {
-                    ActivityDot(
-                        activity: model.dashboard.unassignedActivity,
-                        isEmpty: model.dashboard.unassignedIsEmpty)
-                    Text("No project")
-                    Spacer()
-                    if !model.dashboard.unassignedIsEmpty {
+                // Only while there is somebody on it. An agent cannot be started on no
+                // project any more, so this row is the last of the ones that were, and it
+                // goes when they do rather than sitting there as a place you cannot get
+                // to. (T411.)
+                if !model.dashboard.unassignedIsEmpty {
+                    HStack {
+                        ActivityDot(activity: model.dashboard.unassignedActivity)
+                        Text("No project")
+                        Spacer()
                         Text(model.dashboard.unassignedAgents.count, format: .number)
                             .font(.caption.weight(.semibold))
                             .monospacedDigit()
                             .foregroundStyle(Color(.quiet))
                     }
+                    .tag(Destination.noProject)
+                    ForEach(model.dashboard.agents(on: nil)) { agentRow($0, under: true) }
                 }
-                .tag(Destination.noProject)
-                ForEach(model.dashboard.agents(on: nil)) { agentRow($0, under: true) }
 
-                // Alex, 12 Sep 2026: the count in the heading.
-                Section("Projects (\(model.dashboard.projects.count))") {
+                // Alex, 12 Sep 2026: the count in the heading. The way to add one sits on
+                // the heading too (T433): it was a toolbar button on the Dashboard, which
+                // is a page about what needs you rather than the list of projects, so the
+                // control was one page away from the thing it adds to.
+                Section {
                     ForEach(model.dashboard.projects) { status in
                         // The name, how much is waiting on its backlog, and whether it
                         // wants you.
@@ -81,12 +97,17 @@ struct RootView: View {
                                           : "\(status.backlogCount) tasks on the backlog")
                             }
                             if status.openEscalations > 0 {
+                                // A solid mark rather than a wash. A quarter-strength
+                                // orange over dark paper is a shade of the ground, and
+                                // this is the one number in the sidebar that has to be
+                                // seen from across the room. (T408.)
                                 Text(status.openEscalations, format: .number)
                                     .font(.caption.weight(.semibold))
                                     .monospacedDigit()
+                                    .foregroundStyle(Color(.paper))
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
-                                    .background(.orange.opacity(0.25), in: .capsule)
+                                    .background(Color(.alarm), in: .capsule)
                                     .help(status.openEscalations == 1
                                           ? "1 question waiting on you"
                                           : "\(status.openEscalations) questions waiting on you")
@@ -101,6 +122,29 @@ struct RootView: View {
                         // work it is doing: in one flat list of eight you read every row's
                         // project name to find the two on the thing you came for. (T359.)
                         ForEach(model.dashboard.agents(on: status.id)) { agentRow($0, under: true) }
+                    }
+                } header: {
+                    HStack(spacing: 4) {
+                        Text("Projects (\(model.dashboard.projects.count))")
+                        Spacer(minLength: 0)
+                        Button("Add a project", systemImage: "plus") { addingProject = true }
+                            .buttonStyle(.borderless)
+                            .labelStyle(.iconOnly)
+                            .font(.caption)
+                            .help("Add a project by name")
+                            .popover(isPresented: $addingProject, arrowEdge: .bottom) { newProject }
+                    }
+                }
+
+                // Put away. Drawn only when there is something in it, and folded shut, so
+                // an archived agent is hidden in the way Alex asked for and still has a
+                // door: off every list with nowhere to be seen from is what T392 had to
+                // fix. (T415.)
+                if !model.dashboard.archived.isEmpty {
+                    Section("Archived (\(model.dashboard.archived.count))", isExpanded: $showingArchived) {
+                        ForEach(model.dashboard.archived) { agent in
+                            archivedRow(agent)
+                        }
                     }
                 }
             }
@@ -118,18 +162,23 @@ struct RootView: View {
             }
         } detail: {
             switch selection {
-            case .agents:
-                AgentsView { showAgent($0) }
             case .statusReports:
                 StatusReportsView(
                     selectAgent: { showAgent($0) },
                     selectProject: { id in
                         selection = id.map(Destination.project) ?? .noProject
-                    })
+                    },
+                    back: { selection = .dashboard })
             case .factory:
                 FactoryView()
             case .noProject:
-                NoProjectView { showAgent($0) }
+                // Nobody left on it means the page has nothing to say, and the row it was
+                // reached from has gone too.
+                if model.dashboard.unassignedIsEmpty {
+                    dashboard
+                } else {
+                    NoProjectView { showAgent($0) }
+                }
             case .project(let id):
                 if let project = model.project(for: id) {
                     ProjectView(project: project) { showAgent($0) }
@@ -156,6 +205,15 @@ struct RootView: View {
         // The microphone sits over whatever page is open, bottom right, so a thought can
         // be said from wherever you happen to be standing. It is told which project you
         // are looking at, which is the project when the words do not name one. (T340.)
+        //
+        // And the page is given room for it rather than losing whatever was in that
+        // corner. Seen on screen: a question card's Answer with this button read "Answer
+        // with th…" under the microphone, which is the one control on that card you press.
+        // A safe area inset does it for every page at once, and keeps the button where
+        // T340 wanted it. (T471.)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear.frame(height: Self.microphone)
+        }
         .overlay(alignment: .bottomTrailing) {
             DictateButton(lookingAt: lookingAtProject)
                 .padding(20)
@@ -168,7 +226,10 @@ struct RootView: View {
         .tint(Color(.mark))
         .safeAreaInset(edge: .top) { writeFailure }
         .navigationTitle(title)
-        .toolbar { ToolbarItem(placement: .principal) { waiting } }
+        // Nothing in the middle of the title bar. The two counts that lived there,
+        // documents nobody has read and messages not yet delivered, were a third place
+        // reporting what is waiting, after the Dashboard and the sidebar's own badges.
+        // One class of fact, one altitude. (T434, Alex, 15 Sep 2026.)
         // What tmux is holding and which agents are actually running, kept fresh off
         // the main thread so the cards can say so without anybody waiting on tmux or ps.
         // A process dies between one look and the next, so this is on a clock rather
@@ -255,7 +316,11 @@ struct RootView: View {
                         .font(.caption)
                         .foregroundStyle(Color(.quiet))
                         .lineLimit(1)
-                        .truncationMode(.middle)
+                        // The front of a sentence is what you read. Middle truncation is
+                        // for a path, where both ends identify it, and it was cutting
+                        // "Four pushed: T3...ecord (686bfb3)" out of the middle of prose.
+                        // (T407.)
+                        .truncationMode(.tail)
                 }
             }
         }
@@ -265,11 +330,6 @@ struct RootView: View {
         .contextMenu {
             // The same poke as the button on its card and page: the words are written
             // down and typed into its terminal. (Alex, 14 Sep 2026.)
-            if status.canNudge {
-                Button("Nudge \(status.agent.label)") {
-                    sendNudge(to: status.agent, model: model, terminals: terminals, floor: floor)
-                }
-            }
             // Stop ends its process where it stands; Delete takes the record away too.
             // (T261.)
             if status.canResume {
@@ -280,6 +340,14 @@ struct RootView: View {
             if status.canStop {
                 Button("Stop \(status.agent.label)", role: .destructive) {
                     stopAgent(status.agent, model: model, floor: floor)
+                }
+            }
+            // Between Stop and Delete: stopped, and off every list, with everything it
+            // wrote kept. (T415.)
+            if Agents.mayArchive(status.agent) {
+                Button("Archive \(status.agent.label)") {
+                    stopAgent(status.agent, model: model, floor: floor)
+                    model.archive(status.agent)
                 }
             }
             Button("Delete \(status.agent.label)", role: .destructive) {
@@ -316,6 +384,52 @@ struct RootView: View {
         return Artifacts.statusReport(by: status.agent.id, on: projectID, in: model.snapshot.artifacts)
     }
 
+    /// A project is a name: an app, a role that spans apps, a piece of tooling.
+    private var newProject: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("A project is a name: an app, a role across apps, a piece of tooling. Agents file against it by that name.")
+                .font(.callout)
+                .foregroundStyle(Color(.quiet))
+                .fixedSize(horizontal: false, vertical: true)
+            TextField("Project name", text: $newProjectName)
+                .onSubmit(addProject)
+            HStack {
+                Spacer()
+                Button("Cancel") { addingProject = false }
+                Button("Add", action: addProject)
+                    .buttonStyle(.glassProminent)
+                    .disabled(newProjectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(Style.cardPadding)
+        .frame(width: 320)
+    }
+
+    private func addProject() {
+        model.addProject(named: newProjectName)
+        newProjectName = ""
+        addingProject = false
+    }
+
+    /// One agent that has been put away: its name, quietly, and the two things left to do
+    /// with it. No dot and no line underneath, because neither is news about an agent that
+    /// is not working. (T415.)
+    private func archivedRow(_ agent: Agent) -> some View {
+        Text(agent.label)
+            .foregroundStyle(Color(.quiet))
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .help("Archived \(agent.archivedAt?.formatted(date: .abbreviated, time: .shortened) ?? "")")
+            .contextMenu {
+                Button("Unarchive \(agent.label)") { model.unarchive(agent) }
+                Button("Delete \(agent.label)", role: .destructive) {
+                    floor.forget(agent.id)
+                    shells.closeAll(for: agent.id, terminals: terminals)
+                    model.delete(agent)
+                }
+            }
+    }
+
     /// The whole row in one line, for a row too narrow to show it.
     private func sidebarHelp(_ status: Dashboard.AgentStatus) -> String {
         let project = status.project?.name ?? "No project"
@@ -328,7 +442,6 @@ struct RootView: View {
 
     private var title: String {
         if case .project(let id) = selection, let p = model.project(for: id) { return p.name }
-        if case .agents = selection { return "Agents" }
         if case .statusReports = selection { return "Status reports" }
         if case .factory = selection { return "Capacity" }
         if case .noProject = selection { return "No project" }
@@ -346,38 +459,9 @@ struct RootView: View {
     /// off screen. Nothing is drawn when there is nothing waiting, the way the bell is
     /// nothing until an agent rings it. (T373.)
     @ViewBuilder
-    private var waiting: some View {
-        let documents = model.unreadDocuments
-        let messages = model.messagesWaiting
-        if documents > 0 || messages > 0 {
-            HStack(spacing: 6) {
-                if documents > 0 {
-                    waitingChip(documents, systemImage: "doc.text",
-                                help: documents == 1 ? "One document nobody has read"
-                                                     : "\(documents) documents nobody has read")
-                }
-                if messages > 0 {
-                    waitingChip(messages, systemImage: "envelope",
-                                help: messages == 1 ? "One message waiting for a terminal"
-                                                    : "\(messages) messages waiting for a terminal")
-                }
-            }
-        }
-    }
-
-    private func waitingChip(_ count: Int, systemImage: String, help: String) -> some View {
-        Label(count.formatted(), systemImage: systemImage)
-            .font(.caption.weight(.semibold))
-            .monospacedDigit()
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(.quaternary, in: .capsule)
-            .help(help)
-            .accessibilityLabel(help)
-    }
 
     private var dashboard: some View {
-        DashboardView()
+        DashboardView { selection = .statusReports }
     }
 
     /// A write that did not happen, said where the person is standing. Editing or
@@ -389,7 +473,7 @@ struct RootView: View {
         if let error = model.writeError {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Color(.alarm))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("That change was not saved.")
                         .font(.headline)
@@ -425,14 +509,19 @@ struct RootView: View {
         selection = .agent(id)
     }
 
-    /// Back to the page the agent was opened from, or Agents if there is no telling.
+    /// Back to the page the agent was opened from, or the dashboard if there is no telling.
     private func goBack() {
-        selection = cameFrom ?? .agents
+        selection = cameFrom ?? .dashboard
         cameFrom = nil
     }
 }
 
-/// Agents that registered with no project: the same cards as a project page, no backlog.
+/// The agents that were started before a project was required, and nothing else.
+///
+/// There is no way to make another: every launch now names a project, so this page has no
+/// Launch card on it and the sidebar row above it is drawn only while somebody is still
+/// here. When the last one stops, the row and this page go with it. (T411, Alex,
+/// 15 Sep 2026: make projects required.)
 struct NoProjectView: View {
     @Environment(AppModel.self) private var model
     var selectAgent: (UUID) -> Void = { _ in }
@@ -443,21 +532,18 @@ struct NoProjectView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 8) {
-                    ActivityDot(
-                        activity: model.dashboard.unassignedActivity,
-                        isEmpty: model.dashboard.unassignedIsEmpty)
+                    ActivityDot(activity: model.dashboard.unassignedActivity)
                     Text("No project")
                         .font(.title3.weight(.semibold))
                 }
-                // The cards, and the way to start another. That last card was on the
-                // Agents page, which came off the sidebar in T360, and it was the only
-                // way to start an agent that is not on a project.
+                Text("These were started before a project was required. Nothing new lands here.")
+                    .font(.callout)
+                    .foregroundStyle(Color(.quiet))
                 GlassEffectContainer(spacing: 16) {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 16)], spacing: 16) {
                         ForEach(agents) { status in
                             AgentCard(status: status, select: selectAgent)
                         }
-                        FreeAgentCard()
                     }
                 }
             }
@@ -470,26 +556,4 @@ struct NoProjectView: View {
 
 /// A project's dot: the same four colours an agent's dot uses, because a project is
 /// whatever its agents are. Nobody on it draws nothing.
-struct ActivityDot: View {
-    var activity: Dashboard.ProjectActivity
-    var isEmpty = false
-    var onHold = false
 
-    var body: some View {
-        Group {
-            if isEmpty && !onHold {
-                Circle().fill(.clear)
-            } else {
-                Circle().fill(AgentActivityDot.color(activity))
-            }
-        }
-        .frame(width: 8, height: 8)
-        .help(help)
-    }
-
-    private var help: String {
-        if onHold { return "On hold" }
-        if isEmpty { return "Nobody is on it" }
-        return AgentActivityDot.help(activity)
-    }
-}

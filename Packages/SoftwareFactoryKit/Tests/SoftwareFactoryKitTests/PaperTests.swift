@@ -159,4 +159,28 @@ struct PaperToneTests {
         #expect(Paper.measure == 690)
         #expect(Paper.style.contains("max-width: 46em"))
     }
+
+    /// A table comes out as a table, with what is inside a cell read the way a line is
+    /// read anywhere else. (T391.)
+    @Test func aTableIsSetAsATable() {
+        let html = Paper.html("""
+        | Tone | For |
+        | --- | --- |
+        | `paper` | the **ground** |
+        """)
+        #expect(html.contains("<table><thead><tr><th>Tone</th><th>For</th></tr></thead>"))
+        #expect(html.contains("<td><code>paper</code></td><td>the <strong>ground</strong></td>"))
+    }
+
+    /// The alarm is louder than the mark, or it is not an alarm. Measured as saturation,
+    /// the spread between the reddest and the bluest channel, because that is what makes a
+    /// small patch of colour read as a signal rather than as warm paper. (T408.)
+    @Test func theAlarmIsLouderThanTheMark() {
+        let spread = { (hex: String) -> Int in
+            let v = UInt32(hex, radix: 16)!
+            return Int((v >> 16) & 0xFF) - Int(v & 0xFF)
+        }
+        #expect(spread(Paper.Tone.alarm.hex.light) > spread(Paper.Tone.mark.hex.light))
+        #expect(spread(Paper.Tone.alarm.hex.dark) > spread(Paper.Tone.mark.hex.dark))
+    }
 }

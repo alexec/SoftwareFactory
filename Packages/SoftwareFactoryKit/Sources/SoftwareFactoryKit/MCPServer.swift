@@ -218,7 +218,7 @@ public struct MCPServer: Sendable {
         Work from the \
         backlog. Read the backlog (task_list) and take the work in the order it \
         is in; tasks that belong together sit together, and you may claim several at once when they \
-        are one piece of work. Ask the factory to start another agent (agent_create); the person sets how many may be on the floor, and the one over that is refused. Nudge another agent (agent_nudge). A task's work says what to produce: design a brief and stop, plan \
+        are one piece of work. Ask the factory to start another agent (agent_create); the person sets how many may be on the floor, and the one over that is refused. Say something to another agent (message_send). A task's work says what to produce: design a brief and stop, plan \
         and stop, implement, fix a cause, review, investigate without changing anything, or ship a \
         build. task_next hands you the top task nobody is on when you would rather be \
         handed one, and never a parked one — parked is set aside on purpose, not yours to start on \
@@ -226,7 +226,10 @@ public struct MCPServer: Sendable {
         on hold, finish what you are on and start nothing new on it. When you cannot decide \
         something yourself, raise it \
         (escalation_raise) with two or more \
-        options and your recommendation, then wait for the answer (escalation_await). Put a document \
+        options and your recommendation, and then get on with something else: the factory blocks the task \
+        on the decision and unblocks it when the answer lands. Do not ask inside your own interface and \
+        wait, and do not sit on escalation_await all night; a question raised here reaches the person \
+        wherever they are, and one asked in your terminal reaches nobody who is not watching you. Put a document \
         on the project (artifact_add) when they should read it here; a link on the question is filed \
         as an artifact too. A document is a kilobyte, about two paragraphs: say the short version \
         here and put the long one in the repo and file its path as the link, which is read on the \
@@ -318,16 +321,25 @@ public struct MCPServer: Sendable {
         /// The tools this agent gets. Everything, less the ones it has a better way of
         /// doing.
         ///
-        /// An agent that puts questions through the protocol does not need
-        /// `escalation_raise`: it asks with `elicitation/create`, the factory files the
-        /// same `Escalation`, and the agent blocks on the answer rather than raising one
-        /// and polling for it. Only Claude Code does; Copilot and Grok write the question
-        /// as prose and end the turn, so they keep the tool, and an external agent has no
-        /// pipe at all. (T373, Alex's ask: one shape, and only offer ours where theirs is
-        /// missing.)
+        /// Every agent can raise a question. What differs is whether it is offered a way
+        /// to sit and wait for the answer.
+        ///
+        /// `escalation_raise` was withheld from an agent that asks through the protocol,
+        /// on the argument that `elicitation/create` files the same `Escalation` and is
+        /// the better path. It is, when the agent uses it. What was measured instead is an
+        /// agent asking inside its own CLI, which draws the question in its own interface
+        /// and reaches nobody who is not already watching that one agent: no Needs you
+        /// strip, no banner, no phone, no Lock Screen, and no record of the answer. An
+        /// agent cannot be told to use a tool it has not been given, so now it has it.
+        ///
+        /// `escalation_await` is still withheld from those agents, and the words they
+        /// start with tell every agent to raise and carry on rather than wait. An agent
+        /// sitting on a question overnight is a slot, a terminal and a piece of work
+        /// stopped for nothing, and the factory already blocks the task on the decision
+        /// and unblocks it when the answer lands. (T373, then T422, Alex, 15 Sep 2026.)
         public static func all(asking: Bool) -> [Tool] {
             guard asking else { return all }
-            return all.filter { $0.name != "escalation_raise" && $0.name != "escalation_await" }
+            return all.filter { $0.name != "escalation_await" }
         }
 
         public static var all: [Tool] { [
@@ -344,9 +356,6 @@ public struct MCPServer: Sendable {
                  properties: ["project": str("Project it works; defaults to yours"),
                               "task_id": str("Optional: start it on this task, already in its name")],
                  required: []),
-            Tool(name: "agent_nudge", description: "Poke another agent the same way the person's Nudge does: the words are typed into its terminal. Tells it there is work waiting.",
-                 properties: ["to_agent_id": str("The agent's A<n> id from agent_list")],
-                 required: ["to_agent_id"]),
             Tool(name: "message_send", description: "Send a message to another agent. It is typed into that agent's terminal, the way a nudge is, so it arrives while they are working rather than waiting to be collected. There is nothing to read: keep it to what they need to act on. Three messages waiting to be typed in is the cap, and a fourth is refused.",
                  properties: ["to_agent_id": str("The recipient's id from agent_list"),
                               "subject": str("What it is about, in a few words"),
@@ -584,7 +593,9 @@ public struct MCPServer: Sendable {
 
         case "agent_list":
             let caller = try agent(args, in: snap)
-            let agents = snap.agents.filter { $0.isRegistered && $0.id != caller.id }
+            // On the floor, so an archived agent is not offered as somebody to write to.
+            // It is stopped and hidden, and a message to it would wait for ever. (T415.)
+            let agents = Agents.onTheFloor(snap.agents).filter { $0.id != caller.id }
             if agents.isEmpty { return "No other agents are registered." }
             // In number order: sorting the labels as text put A10 before A2.
             return agents.sorted { ($0.number ?? .max, $0.label) < ($1.number ?? .max, $1.label) }.map { listed in
@@ -594,28 +605,11 @@ public struct MCPServer: Sendable {
                 return "\(listed.label)  [\(activity)]\(project.map { "  \($0)" } ?? "")\(title)"
             }.joined(separator: "\n")
 
-        case "agent_nudge":
-            let sender = try agent(args, in: snap)
-            guard let recipient = agentRef(try string("to_agent_id", args), in: snap),
-                  recipient.isRegistered
-            else { throw ToolError(message: "No active agent has that to_agent_id.") }
-            guard recipient.id != sender.id else { throw ToolError(message: "Nudge another agent, not yourself.") }
-            guard try !Mailbox.isFull(store.messages(for: recipient.id)) else {
-                throw ToolError(message: Mailbox.fullMessage(recipient.label))
-            }
-            // A nudge is a message whose words are the nudge line. The app types every
-            // undelivered message into its agent's terminal, so there is one path and no
-            // flag on the agent to keep in step with it. (Alex, 14 Sep 2026.)
-            let message = AgentMessage(recipientID: recipient.id, from: sender.label,
-                                       subject: "Nudge", contents: LaunchPrompt.nudge, sent: now())
-            try store.save(message)
-            return "Nudged \(recipient.label)."
-
         case "message_send":
             let sender = try agent(args, in: snap)
             guard let recipient = agentRef(try string("to_agent_id", args), in: snap),
-                  recipient.isRegistered
-            else { throw ToolError(message: "No active agent has that to_agent_id.") }
+                  recipient.isRegistered, !recipient.isArchived
+            else { throw ToolError(message: "No active agent has that to_agent_id. An archived one is stopped and hidden, and nothing would reach it.") }
             guard recipient.id != sender.id else { throw ToolError(message: "Send messages to another agent, not yourself.") }
             // Three waiting is the cap. An agent nobody is reaching does not need a
             // fourth message. (Alex, 14 Sep 2026.)
@@ -1156,8 +1150,8 @@ public struct MCPServer: Sendable {
             let verdict = Capacity.verdict(r, throttle: t)
             return """
                 \(verdict.rawValue.capitalized) capacity. \(Capacity.reason(r, throttle: t))
-                Memory \(Capacity.percent(r.memoryFreeFraction)) free of \(Capacity.gigabytes(r.memoryTotal)); swap \(Capacity.gigabytes(r.swapUsed)) of \(Capacity.gigabytes(r.swapTotal)); load \(String(format: "%.1f", r.load)) on \(r.cores) cores.
-                Compiles \(r.compiles) of \(t.compileSlots); simulators \(r.simulators) of \(t.simulatorSlots). Nothing new starts above \(Capacity.percent(t.swapCeiling)) swap or below \(Capacity.percent(t.memoryFloor)) free.
+                Memory pressure \(r.pressure.word), \(Capacity.percent(r.memoryFreeFraction)) free of \(Capacity.gigabytes(r.memoryTotal)); swap \(Capacity.gigabytes(r.swapUsed)) of \(Capacity.gigabytes(r.swapTotal)); load \(String(format: "%.1f", r.load)) on \(r.cores) cores.
+                Compiles \(r.compiles) of \(t.compileSlots); simulators \(r.simulators) of \(t.simulatorSlots). Nothing heavy starts while the kernel calls memory pressure critical, and nothing new compiles while it says warning.
                 """
 
         case "factory_ask":
