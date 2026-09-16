@@ -17,9 +17,14 @@ struct PhoneRootView: View {
                             NotificationPrimer()
                         }
                     }
+                    // The floor before the backlog, the way the Mac's dashboard has it:
+                    // questions first, then who is working, then where the work is. The
+                    // agents were under a list of a dozen projects, which put the thing
+                    // you open the phone to check at the bottom of the page.
+                    // (Alex, 16 Sep 2026.)
                     needsYou
-                    projects
                     registeredAgents
+                    projects
                 }
                 .padding(Style.cardPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -145,6 +150,18 @@ struct PhoneRootView: View {
     /// Green working, orange blocked, grey waiting, black idle: the Mac's colours.
 
     @ViewBuilder
+    /// What an agent has in its name, or what it can say for itself. Off the same rule
+    /// the Mac's sidebar uses.
+    private func lines(for status: Dashboard.AgentStatus) -> [AgentLine.Line] {
+        AgentLine.linesUnderTheName(
+            tasks: Backlog.alreadyYours(status.agent.id, in: model.snapshot.tasks),
+            report: status.agent.projectID.flatMap {
+                Artifacts.statusReport(by: status.agent.id, on: $0, in: model.snapshot.artifacts)
+            },
+            title: status.agent.title)
+    }
+
+    @ViewBuilder
     private var registeredAgents: some View {
         let agents = model.dashboard.agents
         if !agents.isEmpty {
@@ -165,10 +182,24 @@ struct PhoneRootView: View {
                                     Text(project.name).font(.caption).foregroundStyle(Color(.quiet))
                                 }
                             }
-                            if !status.agent.title.isEmpty {
-                                Text(status.agent.title).font(.subheadline).foregroundStyle(Color(.quiet))
-                            } else if let line = status.task?.title ?? (status.agent.note.isEmpty ? nil : status.agent.note) {
-                                Text(line).font(.subheadline).foregroundStyle(Color(.quiet))
+                            // The same lines the Mac's sidebar shows: every task in its
+                            // name, and only failing that whatever it can say for
+                            // itself. The raw terminal title was going straight on the
+                            // row, so an agent that had run a long shell command put
+                            // five lines of it on the page. (Alex, 16 Sep 2026.)
+                            ForEach(lines(for: status)) { line in
+                                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                                    if let number = line.number {
+                                        Text(number)
+                                            .font(.caption.monospaced())
+                                            .foregroundStyle(Color(.faint))
+                                    }
+                                    Text(line.words)
+                                        .font(.subheadline)
+                                        .foregroundStyle(Color(.quiet))
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                }
                             }
                         }
                         Spacer()
