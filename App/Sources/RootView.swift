@@ -158,13 +158,6 @@ struct RootView: View {
             DictateButton(lookingAt: lookingAtProject)
                 .padding(20)
         }
-        // The house paper, under everything. Liquid Glass keeps its own translucency and
-        // sits on this rather than replacing it, so the theme is what shows through the
-        // glass instead of a second idea beside it. The blue is the one colour on the
-        // page, so it is the app's tint as well and every control picks it up.
-        // (Alex, 16 Sep 2026.)
-        .background(Color(.paper))
-        .tint(Color(.mark))
         .safeAreaInset(edge: .top) { writeFailure }
         .navigationTitle(title)
         .toolbar { ToolbarItem(placement: .principal) { waiting } }

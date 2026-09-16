@@ -505,7 +505,12 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     set on, and that was raised, weighed and settled rather than overlooked, so leave it
     alone. The tests guard what is worth guarding now: every tone is warm, the mark is a
     colour rather than a second black, and dark is its own paper rather than a white page
-    dimmed. (Alex, 16 Sep 2026.)
+    dimmed.
+    **It is the theme for reading matter and not for the app.** It goes on a document and
+    on the agent's conversation, which are the two things a person reads; the window, the
+    sidebar and the cards stay on system materials with Liquid Glass over them. Putting
+    the paper under everything was tried and it is not the thing: paper is what a page is
+    made of, not what a window is made of. (Alex, 16 Sep 2026.)
   - An agent's conversation is set on paper: the warm ground, a serif for everything
     anybody said, the same measure the documents use so a line is one you can read to the
     end of, and no gloss anywhere. A tool call is a block set into the page, like a quote
