@@ -55,22 +55,40 @@ struct RootView: View {
                 // Alex, 12 Sep 2026: the count in the heading.
                 Section("Projects (\(model.dashboard.projects.count))") {
                     ForEach(model.dashboard.projects) { status in
-                        // The name, and whether it wants you. The dot and the counts of
-                        // blocked and in progress were here and are gone: a sidebar is a
-                        // list of places to go, and a row that also reports on the work
-                        // makes you read twelve small numbers to find the one project you
-                        // were looking for. What is left is the one thing you cannot act
-                        // on anywhere else, a question waiting. (T358, Alex, 15 Sep 2026.)
-                        HStack {
+                        // The name, how much is waiting on its backlog, and whether it
+                        // wants you.
+                        //
+                        // The counts of blocked and in progress came off in T358, because
+                        // a sidebar is a list of places to go and a row that reports on
+                        // the work makes you read twelve small numbers to find the one
+                        // project you were looking for. The backlog count is back because
+                        // it answers a different question: not how the work is going, but
+                        // where there is work left to pick up. It is quiet, grey and to
+                        // the left of the orange, so the one thing you cannot act on
+                        // anywhere else still reads first. (Alex, 16 Sep 2026.)
+                        HStack(spacing: 6) {
                             Text(status.project.name)
                                 .foregroundStyle(status.project.onHold ? .secondary : .primary)
-                            Spacer()
+                            Spacer(minLength: 4)
+                            if status.backlogCount > 0 {
+                                Text(status.backlogCount, format: .number)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                                    .help(status.backlogCount == 1
+                                          ? "1 task on the backlog"
+                                          : "\(status.backlogCount) tasks on the backlog")
+                            }
                             if status.openEscalations > 0 {
                                 Text(status.openEscalations, format: .number)
                                     .font(.caption.weight(.semibold))
+                                    .monospacedDigit()
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
                                     .background(.orange.opacity(0.25), in: .capsule)
+                                    .help(status.openEscalations == 1
+                                          ? "1 question waiting on you"
+                                          : "\(status.openEscalations) questions waiting on you")
                             }
                         }
                         .tag(Destination.project(status.id))

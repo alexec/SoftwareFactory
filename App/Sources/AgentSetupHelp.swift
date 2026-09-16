@@ -100,6 +100,7 @@ private struct WhatItDoes: View {
             row("Says what it is thinking", profile.thinksOutLoud.word)
             row("Sets out a plan", profile.plans.word)
             row("Says what kind of tool it is running", profile.namesToolKinds.word)
+            row("Puts questions to you through the factory", profile.asksThroughTheProtocol.word)
             row("If you talk over it", profile.whenBusy.word)
         }
         .font(.callout)

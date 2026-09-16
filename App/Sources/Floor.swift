@@ -129,6 +129,14 @@ final class Floor {
         _ = await ask(AgentDaemon.Request(op: .cancel, agent: agent))
     }
 
+    /// The person answered the agent's own question. It has been blocked on this since
+    /// it asked, so the words go back in the shape it asked in.
+    func answerQuestion(_ agent: UUID, request: Int, option: String?, words: String) async {
+        _ = await ask(AgentDaemon.Request(op: .answer, agent: agent, requestID: request,
+                                          optionID: option, words: words))
+        await look()
+    }
+
     /// The person answered a permission request. The agent has been blocked on this.
     func answer(_ agent: UUID, request: Int, option: String) async {
         _ = await ask(AgentDaemon.Request(op: .permission, agent: agent,

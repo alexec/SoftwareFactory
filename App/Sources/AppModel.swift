@@ -588,6 +588,41 @@ final class AppModel {
         var wrote = false
         var waiting: Set<String> = []
 
+        // The agent's own question, `elicitation/create`. The same thing
+        // `escalation_raise` is, arriving down the other pipe, so it becomes the same
+        // record and every page already knows how to draw it. Only Claude Code sends
+        // them; the others answer in prose and end the turn. (T373.)
+        for one in floor.held.values {
+            guard let asked = one.asking else { continue }
+            let reference = Self.questionReference(one.agent, asked.requestID)
+            waiting.insert(reference)
+            let already = snapshot.escalations.first { $0.reference == reference }
+            if let already, let decision = already.decision {
+                let picked = already.options.first { $0.id == decision.optionID }
+                let value = picked.flatMap { title in
+                    asked.options.first { $0.title == title.title }?.value
+                }
+                _Concurrency.Task {
+                    await floor.answerQuestion(one.agent, request: asked.requestID,
+                                               option: value, words: decision.note)
+                }
+                continue
+            }
+            guard already == nil else { continue }
+            guard let agent = snapshot.agents.first(where: { $0.id == one.agent }),
+                  let projectID = agent.projectID else { continue }
+            var question = Escalation(
+                projectID: projectID,
+                question: asked.question,
+                context: "It is waiting on your answer and doing nothing until it has one.",
+                options: asked.options.map { Escalation.Option(title: $0.title, detail: $0.detail) },
+                agentID: agent.id,
+                raisedBy: agent.label)
+            question.reference = reference
+            try? store.save(question)
+            wrote = true
+        }
+
         for one in floor.held.values {
             guard let ask = one.waiting else { continue }
             let reference = Self.permissionReference(one.agent, ask.requestID)
@@ -626,7 +661,8 @@ final class AppModel {
         // patience or because it was answered on the agent's own page, is closed rather
         // than left on the strip saying somebody has to do something.
         for var question in snapshot.escalations where question.isOpen {
-            guard let reference = question.reference, reference.hasPrefix(Self.permissionPrefix),
+            guard let reference = question.reference,
+                  reference.hasPrefix(Self.permissionPrefix) || reference.hasPrefix(Self.questionPrefix),
                   !waiting.contains(reference), !question.options.isEmpty else { continue }
             try? question.decide(question.recommended ?? question.options[0], by: "the factory")
             try? store.save(question)
@@ -636,9 +672,15 @@ final class AppModel {
     }
 
     static let permissionPrefix = "acp-permission:"
+    /// A question the agent asked, as opposed to a tool it asked about.
+    static let questionPrefix = "acp-question:"
 
     static func permissionReference(_ agent: UUID, _ request: Int) -> String {
         "\(permissionPrefix)\(agent.uuidString):\(request)"
+    }
+
+    static func questionReference(_ agent: UUID, _ request: Int) -> String {
+        "\(questionPrefix)\(agent.uuidString):\(request)"
     }
 
     /// "Write notes.md" reads as "wants to write notes.md" rather than "wants to Write".

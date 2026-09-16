@@ -1,0 +1,38 @@
+{
+ "mode": "form",
+ "sessionId": "9fef8396-97ec-4844-b373-e6bf3ef089e8",
+ "toolCallId": "toolu_01XQ6TPHHMiaWJEUsS3vtAWq",
+ "message": "Should this project be called Alpha or Beta?",
+ "requestedSchema": {
+  "type": "object",
+  "properties": {
+   "question_0": {
+    "type": "string",
+    "title": "Name",
+    "oneOf": [
+     {
+      "const": "Alpha",
+      "title": "Alpha",
+      "description": "Signals this is the first cut \u2014 earliest stage, expect rough edges."
+     },
+     {
+      "const": "Beta",
+      "title": "Beta",
+      "description": "Signals it is past first draft and ready for people to try."
+     }
+    ]
+   },
+   "question_0_custom": {
+    "type": "string",
+    "title": "Other",
+    "description": "Type your own answer, or add a note to the option you chose above (optional).",
+    "_meta": {
+     "_askUserQuestionCustomAnswer": {
+      "questionId": "question_0",
+      "isCustomAnswer": true
+     }
+    }
+   }
+  }
+ }
+}

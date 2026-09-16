@@ -23,10 +23,7 @@ public enum ACP {
     public static func initialize() -> [String: Any] {
         [
             "protocolVersion": protocolVersion,
-            "clientCapabilities": [
-                "fs": ["readTextFile": false, "writeTextFile": false],
-                "terminal": false,
-            ],
+            "clientCapabilities": clientCapabilities,
             "clientInfo": ["name": "software-factory", "version": MCPServer.version],
         ]
     }
@@ -85,6 +82,9 @@ public enum ACP {
         case update(session: String, Update)
         /// The agent asking before it acts. It is blocked until we answer this id.
         case permission(id: Int, PermissionRequest)
+        /// The agent asking the person a question, `elicitation/create`. Blocked on this
+        /// id the same way, and put in front of a person the same way.
+        case question(id: Int, Elicitation)
         /// Something else addressed to us that expects an answer. We answer it empty
         /// rather than leaving the agent waiting on a method we have not written yet.
         case request(id: Int, method: String)
@@ -126,6 +126,11 @@ public enum ACP {
                       let decoded = try? decoder.decode(Update.self, from: body)
                 else { return .unrecognised(line) }
                 return .update(session: session, decoded)
+            case "elicitation/create":
+                guard let id, let params = object["params"] as? [String: Any],
+                      let asked = Elicitation.read(params)
+                else { return .unrecognised(line) }
+                return .question(id: id, asked)
             case "session/request_permission":
                 guard let id, let params = object["params"],
                       let body = try? JSONSerialization.data(withJSONObject: params),

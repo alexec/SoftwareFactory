@@ -26,6 +26,11 @@ public struct AgentProfile: Sendable, Equatable {
     public var thinksOutLoud: Known
     /// Whether it sets out a plan that ticks itself off.
     public var plans: Known
+    /// Whether it puts a question to the person through the protocol, `elicitation/create`,
+    /// rather than asking in prose and ending the turn. Only Claude Code does. The others
+    /// write "Alpha or Beta? 1. Alpha 2. Beta" as a message and stop, which is a question
+    /// the floor cannot see, so `escalation_raise` is how they ask and always will be.
+    public var asksThroughTheProtocol: Known
     /// Whether its tool calls say what kind of thing they are. Grok's carry a title and
     /// no `kind`, so its rows fall back to the title and `ToolCall.Kind.changesAnything`
     /// never gets to speak for it.
@@ -35,7 +40,8 @@ public struct AgentProfile: Sendable, Equatable {
 
     public init(agent: LaunchAgent, resuming: Resuming, whenBusy: WhenBusy,
                 asksFirst: Known, thinksOutLoud: Known, plans: Known,
-                namesToolKinds: Known = .untested, caveat: String? = nil) {
+                namesToolKinds: Known = .untested, asksThroughTheProtocol: Known = .untested,
+                caveat: String? = nil) {
         self.agent = agent
         self.resuming = resuming
         self.whenBusy = whenBusy
@@ -43,6 +49,7 @@ public struct AgentProfile: Sendable, Equatable {
         self.thinksOutLoud = thinksOutLoud
         self.plans = plans
         self.namesToolKinds = namesToolKinds
+        self.asksThroughTheProtocol = asksThroughTheProtocol
         self.caveat = caveat
     }
 
@@ -116,25 +123,25 @@ public extension LaunchAgent {
         case .claudeCode:
             AgentProfile(agent: self, resuming: .theConversation, whenBusy: .queues,
                          asksFirst: .yes, thinksOutLoud: .yes, plans: .untested,
-                         namesToolKinds: .yes)
+                         namesToolKinds: .yes, asksThroughTheProtocol: .yes)
         case .copilot:
             AgentProfile(agent: self, resuming: .theConversation, whenBusy: .dropsIt,
                          asksFirst: .yes, thinksOutLoud: .yes, plans: .untested,
-                         namesToolKinds: .yes)
+                         namesToolKinds: .yes, asksThroughTheProtocol: .no)
         case .grok:
             AgentProfile(agent: self, resuming: .theConversation, whenBusy: .queues,
                          asksFirst: .no, thinksOutLoud: .yes, plans: .untested,
-                         namesToolKinds: .no,
+                         namesToolKinds: .no, asksThroughTheProtocol: .no,
                          caveat: "It does not ask before it changes something, so nothing it does will ever reach you as a question. Its tool calls carry a name but not what kind of thing they are, so its rows say what it called the tool.")
         case .cursor:
             AgentProfile(agent: self, resuming: .no, whenBusy: .cancelsItsWork,
                          asksFirst: .untested, thinksOutLoud: .untested, plans: .untested,
-                         namesToolKinds: .untested,
+                         namesToolKinds: .untested, asksThroughTheProtocol: .untested,
                          caveat: "It says it can load a session and then refuses one, so a stopped Cursor agent cannot be started back up. The account also needs a plan before it will do any work here.")
         case .terminal:
             AgentProfile(agent: self, resuming: .untested, whenBusy: .untested,
                          asksFirst: .no, thinksOutLoud: .no, plans: .no,
-                         namesToolKinds: .no,
+                         namesToolKinds: .no, asksThroughTheProtocol: .no,
                          caveat: "Not an agent. A shell, which speaks none of this.")
         }
     }

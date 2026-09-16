@@ -43,6 +43,9 @@ public final class AgentFloor: @unchecked Sendable {
         var headline = ACPHeadline()
         /// Words waiting for the turn in flight to finish. See `prompt(_:_:)`.
         var pending: [String] = []
+        /// The question it is blocked on, as it came off the wire, so the answer can be
+        /// put back in the shape the agent asked in.
+        var asked: ACP.Elicitation?
         init(connection: ACPConnection, state: AgentDaemon.Running, kind: LaunchAgent, cwd: String) {
             self.connection = connection
             self.state = state
@@ -75,6 +78,8 @@ public final class AgentFloor: @unchecked Sendable {
             return .yes
         case .permission:
             return answer(request)
+        case .answer:
+            return answerQuestion(request)
         case .shutdown:
             for one in everythingHeld() { one.connection.stop() }
             return .yes
@@ -128,6 +133,7 @@ public final class AgentFloor: @unchecked Sendable {
                 $0.exit = status
                 $0.pid = nil
                 $0.waiting = nil
+                $0.asking = nil
                 $0.isPrompting = false
                 $0.queued = 0
             }
@@ -138,6 +144,23 @@ public final class AgentFloor: @unchecked Sendable {
                 guard let one = self?.held[agent] else { return }
                 one.headline.apply(line: line)
                 one.state.line = one.headline.line
+            }
+        }
+        // The agent's own question. Blocked on it exactly like a permission request, and
+        // never answered for it: a permission is a yes or no about a tool, and this is a
+        // decision only the person has. (T373.)
+        connection.onQuestion = { [weak self] id, asked in
+            guard let self else { return }
+            self.guarded.sync {
+                guard let held = self.held[agent] else { return }
+                held.asked = asked
+                held.state.asking = AgentDaemon.Question(
+                    requestID: id,
+                    question: asked.message.isEmpty ? (asked.about ?? "It wants your answer.") : asked.message,
+                    options: asked.options.map {
+                        AgentDaemon.Question.Option(value: $0.value, title: $0.title, detail: $0.detail)
+                    },
+                    takesWords: asked.customField != nil)
             }
         }
         connection.onPermission = { [weak self] id, ask in
@@ -284,6 +307,25 @@ public final class AgentFloor: @unchecked Sendable {
         guard let option else { return .no("That question has no options, which should not happen.") }
         one.connection.answerPermission(id: waiting.requestID, with: ACP.permissionAnswer(optionID: option))
         change(agent) { $0.waiting = nil }
+        return .yes
+    }
+
+    /// The person answered the agent's own question.
+    private func answerQuestion(_ request: AgentDaemon.Request) -> AgentDaemon.Reply {
+        guard let agent = request.agent, let one = look(agent) else { return .no("Nobody here by that name.") }
+        guard let waiting = one.state.asking, let asked = one.asked else {
+            return .no("It is not asking anything.")
+        }
+        guard request.requestID == nil || request.requestID == waiting.requestID else {
+            return .no("It has moved on from that question.")
+        }
+        one.connection.answerPermission(
+            id: waiting.requestID,
+            with: asked.answer(option: request.optionID, words: request.words ?? ""))
+        guarded.sync {
+            held[agent]?.state.asking = nil
+            held[agent]?.asked = nil
+        }
         return .yes
     }
 

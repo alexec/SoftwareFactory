@@ -487,12 +487,14 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     stopped ones after (`Dashboard.agents(on:)`, T359). They were a flat Agents section and
     a Stopped one, which meant reading every row's project name to find the two on the
     thing you came for; an agent belongs to the work it is doing. Agents on no project hang
-    under the No project row the same way. A project row is its name, and a
-    count in orange when it has a question waiting. The dot and the counts of blocked and
-    in progress were there and are gone: a sidebar is a list of places to go, and a row
-    that also reports on the work makes you read twelve small numbers to find the project
-    you were looking for. What is left is the one thing you cannot act on anywhere else
-    (T358). An agent is its name and dot, then a line
+    under the No project row the same way. A project row is its name, how many tasks
+    are on its backlog in grey, and a count in orange when it has a question waiting. The
+    dot and the counts of blocked and in progress came off in T358: a sidebar is a list of
+    places to go, and a row that also reports on the work makes you read twelve small
+    numbers to find the project you were looking for. The backlog count is back because it
+    answers a different question, not how the work is going but where there is work left to
+    pick up, and it sits quiet and to the left so the question still reads first.
+    (Alex, 16 Sep 2026.) An agent is its name and dot, then a line
     for every task in its name, numbered (`AgentLine.linesUnderTheName`, off
     `Backlog.alreadyYours`, blocked first). It showed the one task the factory calls
     current, which for an agent holding three is two thirds of a lie: the rest are in its

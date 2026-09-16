@@ -85,12 +85,16 @@ public enum AgentDaemon {
         public var cwd: String?
         /// The words it starts with, or the words to say to one already running.
         public var text: String?
-        /// Answering a permission request: which one, and which option.
+        /// Answering a permission request or a question: which one, and which option.
         public var requestID: Int?
         public var optionID: String?
+        /// Answering a question in the person's own words, when the agent offered a place
+        /// for them.
+        public var words: String?
 
         public init(op: Op, agent: UUID? = nil, kind: String? = nil, cwd: String? = nil,
-                    text: String? = nil, requestID: Int? = nil, optionID: String? = nil) {
+                    text: String? = nil, requestID: Int? = nil, optionID: String? = nil,
+                    words: String? = nil) {
             self.op = op
             self.agent = agent
             self.kind = kind
@@ -98,6 +102,7 @@ public enum AgentDaemon {
             self.text = text
             self.requestID = requestID
             self.optionID = optionID
+            self.words = words
         }
 
         public enum Op: String, Codable, Sendable {
@@ -115,6 +120,8 @@ public enum AgentDaemon {
             case stop
             /// The person picked an option on a permission request.
             case permission
+            /// The person answered the agent's own question.
+            case answer
             /// Are you there? Answers before anything else is touched.
             case ping
             /// Go away, once nothing is running.
@@ -156,6 +163,10 @@ public enum AgentDaemon {
         public var startedAt: Date
         /// Set when the child has gone, with what it said on the way out.
         public var exit: Int32?
+        /// A question the agent has put to the person, `elicitation/create`. Blocked on
+        /// it exactly like a permission request, and put in front of a person the same
+        /// way. Only Claude Code sends these. (T373.)
+        public var asking: Question?
         /// A question it is blocked on. Until this is answered the agent does nothing,
         /// which is what makes it different from every other question on the floor.
         public var waiting: Pending?
@@ -177,7 +188,8 @@ public enum AgentDaemon {
 
         public init(agent: UUID, state: State, pid: Int32? = nil, session: String? = nil,
                     startedAt: Date = .now, exit: Int32? = nil, waiting: Pending? = nil,
-                    isPrompting: Bool = false, line: String? = nil, queued: Int = 0) {
+                    isPrompting: Bool = false, line: String? = nil, queued: Int = 0,
+                    asking: Question? = nil) {
             self.agent = agent
             self.state = state
             self.pid = pid
@@ -188,6 +200,7 @@ public enum AgentDaemon {
             self.isPrompting = isPrompting
             self.line = line
             self.queued = queued
+            self.asking = asking
         }
 
         public enum State: String, Codable, Sendable {
@@ -202,6 +215,37 @@ public enum AgentDaemon {
         }
 
         public var isAlive: Bool { state == .starting || state == .running }
+    }
+
+    /// The agent's own question, flattened into what a person needs to answer it.
+    public struct Question: Codable, Sendable, Equatable {
+        public var requestID: Int
+        public var question: String
+        public var options: [Option]
+        /// Whether the agent offered somewhere for an answer in the person's own words.
+        public var takesWords: Bool
+        public var asked: Date
+
+        public init(requestID: Int, question: String, options: [Option],
+                    takesWords: Bool, asked: Date = .now) {
+            self.requestID = requestID
+            self.question = question
+            self.options = options
+            self.takesWords = takesWords
+            self.asked = asked
+        }
+
+        public struct Option: Codable, Sendable, Equatable, Identifiable {
+            public var value: String
+            public var title: String
+            public var detail: String
+            public var id: String { value }
+            public init(value: String, title: String, detail: String) {
+                self.value = value
+                self.title = title
+                self.detail = detail
+            }
+        }
     }
 
     /// A permission request the agent is blocked on, flattened into what a person needs

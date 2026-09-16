@@ -80,6 +80,9 @@ public final class ACPConnection: @unchecked Sendable {
     /// The agent is blocked on this until it is answered. The daemon puts it in front of
     /// a person.
     public var onPermission: (@Sendable (Int, ACP.PermissionRequest) -> Void)?
+    /// The agent asking the person a question. Blocked on it the same way, and put in
+    /// front of a person the same way. (T373.)
+    public var onQuestion: (@Sendable (Int, ACP.Elicitation) -> Void)?
     /// The child has gone.
     public var onExit: (@Sendable (Int32) -> Void)?
     /// Every line, after it has been written down. The daemon keeps the last one so its
@@ -103,8 +106,19 @@ public final class ACPConnection: @unchecked Sendable {
     }
 
     /// `transcript` is where every line is written down, in order, as it arrives.
+    /// Writing to an agent that has just gone raises SIGPIPE, and the default for SIGPIPE
+    /// is to kill the process doing the writing. That is the daemon, or whatever else is
+    /// holding a connection, dying because a child exited half a millisecond earlier.
+    /// Turned off once, here, rather than left to every host to remember: a type that
+    /// writes to pipes owns this. The write then fails with EPIPE and is dropped, which
+    /// is the right answer for a pipe whose other end has gone. (T373.)
+    private static let brokenPipesAreNotFatal: Void = {
+        signal(SIGPIPE, SIG_IGN)
+    }()
+
     public init(agent: UUID, command: String, arguments: [String], cwd: String,
                 environment: [String: String], transcript: URL, complaints: URL? = nil) {
+        _ = Self.brokenPipesAreNotFatal
         self.agent = agent
         // Created only when it is not there. `createFile` truncates, and a resume opens
         // the log of the conversation it is picking back up: making one would throw away
@@ -220,6 +234,8 @@ public final class ACPConnection: @unchecked Sendable {
             }
         case .permission(let id, let ask):
             onPermission?(id, ask)
+        case .question(let id, let asked):
+            onQuestion?(id, asked)
         case .request(let id, _):
             // A method we have not written. Answered empty rather than left hanging: an
             // agent waiting on a client that will never reply is an agent that has
@@ -283,6 +299,9 @@ public final class ACPConnection: @unchecked Sendable {
 
     private func send(_ data: Data) {
         guard !data.isEmpty else { return }
+        // Nothing to write to. Not an error worth reporting: an agent that has gone is
+        // already reported as gone, by its exit.
+        guard process.isRunning else { return }
         // Off the caller's thread: a child that is not reading its stdin would otherwise
         // block whoever asked, which in the daemon is the socket answering the app.
         let handle = toAgent.fileHandleForWriting
