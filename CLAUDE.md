@@ -494,25 +494,18 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     break, so a whole plan arrived as one paragraph. (T208) A line indented under a
     bullet is the rest of that bullet: a hard-wrapped list used to come apart, half the
     sentence in the item and half underneath it as a paragraph. (T311)
-  - `Paper.Tone` and `Shared/PaperTone.swift`: the house theme, and it is one line.
-    **Warm paper, cool mark.** Seven colours and a measure, written down once, with the
-    stylesheet built from them: the documents are HTML in a web view and the agent's
-    conversation is SwiftUI, so two sources would have drifted the first time either was
+  - `Paper.Tone` and `Shared/PaperTone.swift`: the house theme. A warm near-white ground,
+    a warm near-black ink, and one rust mark. Seven colours and a measure, written down
+    once, with the stylesheet built from them: the documents are HTML in a web view and
+    the agent's conversation is SwiftUI, so two sources drift the first time either is
     touched.
-    Cream is the right ground, and a day spent cool proved it: it is what a person wants to
-    read a plan on. What made the first version look like Claude was not the cream, it was
-    cream **and a rust mark**, which is Claude's own pairing exactly, and an app that looks
-    like the model it happens to run has no face of its own. So the ground stays warm and
-    the one colour on it is the blue the mockups have used all along, `#0b63ce`, which is
-    the app's tint as well. Warm paper with a cool mark is a drawing on buff, an engineer's
-    page, which is right for a factory and is nobody else's.
-    The tests guard exactly that pairing, because it is the thing an unthinking change
-    would undo: every tone on the page is warm, the mark is cool both ways up, and dark is
-    its own paper rather than a white page dimmed.
-    It goes under the whole window. Glass keeps its translucency and sits on this rather
-    than replacing it, so the theme is what shows through the glass instead of a second
-    idea beside it. (Alex, 16 Sep 2026: papery, but not Claude papery, and used
-    everywhere.)
+    Three other palettes were tried on the way here, and this is the one Alex picked with
+    all of them in front of him: cool drafting paper read as technical rather than
+    readable, and buff manila came out too orange. It is close to what Claude itself is
+    set on, and that was raised, weighed and settled rather than overlooked, so leave it
+    alone. The tests guard what is worth guarding now: every tone is warm, the mark is a
+    colour rather than a second black, and dark is its own paper rather than a white page
+    dimmed. (Alex, 16 Sep 2026.)
   - An agent's conversation is set on paper: the warm ground, a serif for everything
     anybody said, the same measure the documents use so a line is one you can read to the
     end of, and no gloss anywhere. A tool call is a block set into the page, like a quote

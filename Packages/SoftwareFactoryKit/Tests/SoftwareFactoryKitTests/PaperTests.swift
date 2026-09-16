@@ -129,10 +129,9 @@ struct PaperToneTests {
         #expect(UInt32(paper.dark, radix: 16)! < UInt32(ink.dark, radix: 16)!)
     }
 
-    /// The theme in one line: warm paper, cool mark. Cream is what a person wants to read
-    /// a plan on, and what made the first version look like Claude was not the cream, it
-    /// was cream and a rust mark, which is Claude's own pairing. Keep the ground, change
-    /// the one colour on it. (Alex, 16 Sep 2026: I liked cream better.)
+    /// Warm, all of it, ground and ink and mark alike. Three other palettes were tried
+    /// and this is the one picked with all of them in front of him, so warmth is the
+    /// decision rather than an oversight. (Alex, 16 Sep 2026.)
     @Test func thePageIsWarm() {
         for tone in [Paper.Tone.paper, .ink, .quiet, .rule, .edge, .block] {
             for hex in [tone.hex.light, tone.hex.dark] {
@@ -144,13 +143,15 @@ struct PaperToneTests {
         }
     }
 
-    @Test func theOneColourOnItIsCool() {
-        // The break from every other warm theme, and it is the blue the mockups always
-        // used. A warm mark on a warm page is somebody else's app.
-        #expect(Paper.Tone.mark.hex.light == "0b63ce")
-        for hex in [Paper.Tone.mark.hex.light, Paper.Tone.mark.hex.dark] {
-            let value = UInt32(hex, radix: 16)!
-            #expect(value & 0xFF > (value >> 16) & 0xFF, "The mark #\(hex) has gone warm")
+    @Test func theMarkStandsOutFromTheInkWithoutShouting() {
+        // It is the only colour on the page, so what matters is that it is a colour and
+        // not a second black.
+        for (mark, ink) in [(Paper.Tone.mark.hex.light, Paper.Tone.ink.hex.light),
+                            (Paper.Tone.mark.hex.dark, Paper.Tone.ink.hex.dark)] {
+            let m = UInt32(mark, radix: 16)!
+            let i = UInt32(ink, radix: 16)!
+            let spread = { (v: UInt32) in Int((v >> 16) & 0xFF) - Int(v & 0xFF) }
+            #expect(abs(spread(m)) > abs(spread(i)), "The mark #\(mark) is no more coloured than the ink")
         }
     }
 
