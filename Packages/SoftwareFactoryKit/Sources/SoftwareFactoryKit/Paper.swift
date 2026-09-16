@@ -215,15 +215,18 @@ public enum Paper {
     /// wide window does not run a sentence off the far side. Dark is ink and paper the
     /// The colours paper is made of, light and dark, in one place.
     ///
-    /// **Drafting paper**, not notepaper. The first version of this was a warm cream
-    /// ground with a rust mark, which is a lovely thing to read and is also, exactly,
-    /// Claude's own paper. An app that looks like the model it happens to run is an app
-    /// with no face of its own. So: cool where that was warm, which is the clearest break
-    /// available, and the blue the mockups already used as the one colour on the page.
-    /// It is a factory, and this is the paper a factory's drawings are on.
+    /// **Warm paper, cool mark.** That pairing is the whole theme, and it is the thing to
+    /// keep.
     ///
-    /// It suits Liquid Glass better as well. Glass is cool and luminous, and it has
-    /// something to refract when the ground underneath it is not cream.
+    /// Cream is the right ground: it is what a person wants to read a plan on, and going
+    /// cool for a day proved it. What made the first version look like Claude was not the
+    /// cream, it was cream *and a rust mark*, which is Claude's own pairing exactly. An
+    /// app that looks like the model it happens to run has no face of its own.
+    ///
+    /// So the ground stays warm and the one colour on the page is the blue the mockups
+    /// have used all along, `#0b63ce`. Warm paper with a cool mark is a drawing on buff,
+    /// an engineer's page, which is the right thing for a factory and is nobody else's.
+    /// The glass has something to refract in the blue, and something warm to sit on.
     ///
     /// One place, because the documents are HTML in a web view and the agent's page is
     /// SwiftUI, and two sources would have drifted the first time either was touched.
@@ -247,12 +250,14 @@ public enum Paper {
         /// Light, then dark. Six digits, no hash.
         public var hex: (light: String, dark: String) {
             switch self {
-            case .paper: ("f2f4f7", "14181d")
-            case .ink: ("1b2027", "dfe4ea")
-            case .quiet: ("5d6874", "8e99a6")
-            case .rule: ("dbe1e9", "262d36")
-            case .edge: ("c3ccd8", "323b46")
-            case .block: ("e8ecf2", "1c222a")
+            case .paper: ("f7f4ec", "1a1815")
+            case .ink: ("26221b", "e8e2d6")
+            case .quiet: ("6f6759", "9b9385")
+            case .rule: ("e2dccd", "33302a")
+            case .edge: ("cdc4b0", "464137")
+            case .block: ("efe9db", "24221d")
+            // The one cool thing on a warm page, and the break from every other warm
+            // theme: this is the blue the mockups always used.
             case .mark: ("0b63ce", "6fa8f5")
             }
         }

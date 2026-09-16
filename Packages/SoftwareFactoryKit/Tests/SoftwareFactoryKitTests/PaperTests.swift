@@ -129,25 +129,29 @@ struct PaperToneTests {
         #expect(UInt32(paper.dark, radix: 16)! < UInt32(ink.dark, radix: 16)!)
     }
 
-    /// The whole point of the palette: it is drafting paper and not notepaper, because
-    /// notepaper is what Claude is set on and an app that looks like the model it happens
-    /// to run has no face of its own. Cool is the break, so cool is what is tested.
-    /// (Alex, 16 Sep 2026.)
-    @Test func theGroundIsCoolRatherThanCream() {
+    /// The theme in one line: warm paper, cool mark. Cream is what a person wants to read
+    /// a plan on, and what made the first version look like Claude was not the cream, it
+    /// was cream and a rust mark, which is Claude's own pairing. Keep the ground, change
+    /// the one colour on it. (Alex, 16 Sep 2026: I liked cream better.)
+    @Test func thePageIsWarm() {
         for tone in [Paper.Tone.paper, .ink, .quiet, .rule, .edge, .block] {
             for hex in [tone.hex.light, tone.hex.dark] {
                 let value = UInt32(hex, radix: 16)!
                 let red = (value >> 16) & 0xFF
                 let blue = value & 0xFF
-                #expect(blue > red, "\(tone.rawValue) #\(hex) is warm, and this palette is not")
+                #expect(red > blue, "\(tone.rawValue) #\(hex) is cool, and the page is not")
             }
         }
     }
 
-    @Test func theOneColourOnThePageIsTheBlueTheMockupsUsed() {
+    @Test func theOneColourOnItIsCool() {
+        // The break from every other warm theme, and it is the blue the mockups always
+        // used. A warm mark on a warm page is somebody else's app.
         #expect(Paper.Tone.mark.hex.light == "0b63ce")
-        let dark = UInt32(Paper.Tone.mark.hex.dark, radix: 16)!
-        #expect(dark & 0xFF > (dark >> 16) & 0xFF, "The mark stays blue in the dark too")
+        for hex in [Paper.Tone.mark.hex.light, Paper.Tone.mark.hex.dark] {
+            let value = UInt32(hex, radix: 16)!
+            #expect(value & 0xFF > (value >> 16) & 0xFF, "The mark #\(hex) has gone warm")
+        }
     }
 
     @Test func thereIsAMeasureAndItIsTheOneTheDocumentsUse() {
