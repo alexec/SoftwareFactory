@@ -213,12 +213,60 @@ public enum Paper {
     /// Paper, in both appearances. The ground is warm rather than white, the type is a
     /// serif at a size you read rather than scan, and the column stops at a measure so a
     /// wide window does not run a sentence off the far side. Dark is ink and paper the
+    /// The colours paper is made of, light and dark, in one place.
+    ///
+    /// They were written into the stylesheet and nowhere else, which was fine while the
+    /// only papery thing was a document in a web view. The agent's own page reads as paper
+    /// too now, and it is drawn in SwiftUI rather than HTML, so the two would have drifted
+    /// the first time either was touched. (Alex, 16 Sep 2026: that lovely papery style,
+    /// matt finish.)
+    public enum Tone: String, CaseIterable, Sendable {
+        /// The ground. Warm, not white.
+        case paper
+        /// What is written on it.
+        case ink
+        /// A second voice: a caption, a date, something said quietly.
+        case quiet
+        /// A line across the page.
+        case rule
+        /// The edge of something sitting on the page.
+        case edge
+        /// A block set into the page: code, a quote, a tool call.
+        case block
+        /// The one colour on the page, for a link or a mark.
+        case mark
+
+        /// Light, then dark. Six digits, no hash.
+        public var hex: (light: String, dark: String) {
+            switch self {
+            case .paper: ("fbfaf6", "1b1a18")
+            case .ink: ("22201c", "e6e1d8")
+            case .quiet: ("6d675d", "9c958a")
+            case .rule: ("e0dbd0", "35322d")
+            case .edge: ("cfc8ba", "45413a")
+            case .block: ("f1ede4", "26241f")
+            case .mark: ("8a5a2b", "d0a271")
+            }
+        }
+    }
+
+    /// The measure: how wide a line may be before it is hard to find the next one.
+    /// 46em of a 15px serif, which is what the documents are set to.
+    public static let measure = 690.0
+
+    static var lightTones: String {
+        Tone.allCases.map { "--\($0.rawValue): #\($0.hex.light);" }.joined(separator: " ")
+    }
+
+    static var darkTones: String {
+        Tone.allCases.map { "--\($0.rawValue): #\($0.hex.dark);" }.joined(separator: " ")
+    }
+
     /// other way up, not a white page dimmed.
-    static let style = """
-    :root { color-scheme: light dark; --paper: #fbfaf6; --ink: #22201c; --quiet: #6d675d; \
-    --rule: #e0dbd0; --edge: #cfc8ba; --block: #f1ede4; --mark: #8a5a2b; }
-    @media (prefers-color-scheme: dark) { :root { --paper: #1b1a18; --ink: #e6e1d8; \
-    --quiet: #9c958a; --rule: #35322d; --edge: #45413a; --block: #26241f; --mark: #d0a271; } }
+    static var style: String {
+    """
+    :root { color-scheme: light dark; \(lightTones) }
+    @media (prefers-color-scheme: dark) { :root { \(darkTones) } }
     html { -webkit-text-size-adjust: 100%; background: var(--paper); }
     body { margin: 0 auto; padding: 30px 32px 56px; max-width: 46em; background: var(--paper); \
     color: var(--ink); font: 15px/1.65 ui-serif, "New York", Georgia, "Times New Roman", serif; \
@@ -246,4 +294,5 @@ public enum Paper {
     table { border-collapse: collapse; }
     td, th { border: 1px solid var(--rule); padding: 4px 8px; text-align: left; }
     """
+    }
 }

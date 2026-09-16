@@ -48,9 +48,14 @@ struct AgentTranscriptView: View {
                         Color.clear.frame(height: 1).id(Self.bottom)
                     }
                 }
-                .padding(Style.cardPadding)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Style.page)
+                .padding(.vertical, Style.page)
+                // A measure: past about this width the eye loses the start of the next
+                // line. It is the same one the documents are set to. (T311's paper.)
+                .frame(maxWidth: Paper.measure, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
+            .background(Color(.paper))
             // The newest thing is what you came to read, the same as a terminal always
             // showed you the bottom.
             .onChange(of: shown.last?.id) { _, _ in
@@ -98,6 +103,7 @@ struct AgentTranscriptView: View {
             TextField("Say something to \(agent.label)", text: $words, axis: .vertical)
                 .lineLimit(1...4)
                 .textFieldStyle(.plain)
+                .font(.system(.callout, design: .serif))
                 .onSubmit(say)
             if running?.isPrompting == true {
                 Button("Stop", systemImage: "stop.fill") {
@@ -111,8 +117,9 @@ struct AgentTranscriptView: View {
                 .labelStyle(.iconOnly)
                 .disabled(words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        .padding(.horizontal, Style.cardPadding)
+        .padding(.horizontal, Style.page)
         .padding(.vertical, 10)
+        .background(Color(.paper))
     }
 
     private func say() {
@@ -147,11 +154,17 @@ struct AgentTranscriptView: View {
         var text: String
         var body: some View {
             Text(text)
-                .font(.callout)
+                .font(.system(.callout, design: .serif))
+                .foregroundStyle(Color(.ink))
                 .textSelection(.enabled)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(.quaternary, in: .rect(cornerRadius: Style.panel))
+                .lineSpacing(2)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                // Set into the page rather than sitting on it: no shadow, no gloss.
+                .background(Color(.block), in: .rect(cornerRadius: Style.panel))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Style.panel)
+                        .strokeBorder(Color(.rule), lineWidth: 1))
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -160,7 +173,10 @@ struct AgentTranscriptView: View {
         var text: String
         var body: some View {
             MarkdownText(text: text)
+                .font(.system(.body, design: .serif))
+                .foregroundStyle(Color(.ink))
                 .textSelection(.enabled)
+                .lineSpacing(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -169,12 +185,13 @@ struct AgentTranscriptView: View {
         var text: String
         var body: some View {
             Text(text)
-                .font(.callout.italic())
-                .foregroundStyle(.secondary)
+                .font(.system(.callout, design: .serif).italic())
+                .foregroundStyle(Color(.quiet))
                 .textSelection(.enabled)
-                .padding(.leading, 10)
+                .lineSpacing(2)
+                .padding(.leading, 12)
                 .overlay(alignment: .leading) {
-                    Rectangle().fill(.quaternary).frame(width: 2)
+                    Rectangle().fill(Color(.rule)).frame(width: 2)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -204,12 +221,13 @@ struct AgentTranscriptView: View {
                     mark
                     Text(call.heading)
                         .font(.callout.weight(.medium))
+                        .foregroundStyle(Color(.ink))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     if let alsoRan {
                         Text(alsoRan)
                             .font(.caption)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Color(.quiet))
                             .lineLimit(1)
                     }
                     Spacer(minLength: 4)
@@ -229,7 +247,7 @@ struct AgentTranscriptView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(.quinary, in: .rect(cornerRadius: Style.panel))
+            .background(Color(.block), in: .rect(cornerRadius: Style.panel))
         }
 
         @ViewBuilder

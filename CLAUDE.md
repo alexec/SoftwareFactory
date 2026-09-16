@@ -494,6 +494,18 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     break, so a whole plan arrived as one paragraph. (T208) A line indented under a
     bullet is the rest of that bullet: a hard-wrapped list used to come apart, half the
     sentence in the item and half underneath it as a paragraph. (T311)
+  - `Paper.Tone` and `Shared/PaperTone.swift`: the seven colours paper is made of and the
+    measure it is set to, written down once. They lived in the stylesheet and nowhere else,
+    which was fine while the only papery thing was a document in a web view; the agent's
+    own conversation reads as paper too now and is drawn in SwiftUI, so without one source
+    the two would have drifted the first time either was touched. Dark is its own paper
+    rather than a white page dimmed, and the ground is warm rather than grey both ways up,
+    which the tests check. (Alex, 16 Sep 2026: that lovely papery style, matt finish.)
+  - An agent's conversation is set on paper: the warm ground, a serif for everything
+    anybody said, the same measure the documents use so a line is one you can read to the
+    end of, and no gloss anywhere. A tool call is a block set into the page, like a quote
+    or a piece of code, rather than a card sitting on top of it. What the agent is doing
+    stays plain, because the paper is for the words.
   - `Paper` in the kit, and `App/Sources/ArtifactPaper.swift`: a document to read, as a
     page. `Paper.html` turns the blocks into HTML and `Paper.page` puts it on paper: a
     warm ground, a serif, a measure, light and dark. `ArtifactPaper` shows all three

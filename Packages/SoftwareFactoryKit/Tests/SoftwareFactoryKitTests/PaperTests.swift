@@ -99,3 +99,43 @@ import Testing
         #expect(page.contains("prefers-color-scheme: dark"))
     }
 }
+
+/// Paper is made of seven colours and a measure, and they are written down once. The
+/// documents are HTML and the agent's page is SwiftUI, so without one source they would
+/// have drifted the first time either was touched. (Alex, 16 Sep 2026.)
+struct PaperToneTests {
+    @Test func everyToneIsASixDigitColourBothWaysUp() {
+        for tone in Paper.Tone.allCases {
+            for hex in [tone.hex.light, tone.hex.dark] {
+                #expect(hex.count == 6, "\(tone.rawValue): \(hex)")
+                #expect(UInt32(hex, radix: 16) != nil, "\(tone.rawValue): \(hex) is not a colour")
+            }
+        }
+    }
+
+    @Test func theStylesheetIsBuiltFromThemRatherThanRepeatingThem() {
+        let style = Paper.style
+        for tone in Paper.Tone.allCases {
+            #expect(style.contains("--\(tone.rawValue): #\(tone.hex.light)"))
+            #expect(style.contains("--\(tone.rawValue): #\(tone.hex.dark)"))
+        }
+    }
+
+    @Test func darkIsItsOwnPaperRatherThanAWhitePageDimmed() {
+        // The ground is darker than the ink, the other way up from light.
+        let paper = Paper.Tone.paper.hex
+        let ink = Paper.Tone.ink.hex
+        #expect(UInt32(paper.light, radix: 16)! > UInt32(ink.light, radix: 16)!)
+        #expect(UInt32(paper.dark, radix: 16)! < UInt32(ink.dark, radix: 16)!)
+        // And warm, not grey: more red than blue, both ways up.
+        for hex in [paper.light, paper.dark] {
+            let value = UInt32(hex, radix: 16)!
+            #expect((value >> 16) & 0xFF > value & 0xFF, "\(hex) is not warm")
+        }
+    }
+
+    @Test func thereIsAMeasureAndItIsTheOneTheDocumentsUse() {
+        #expect(Paper.measure == 690)
+        #expect(Paper.style.contains("max-width: 46em"))
+    }
+}
