@@ -720,9 +720,15 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
       per target and would put the same one in every configuration.
     - The iPhone app is the same either way and archives from `Release`.
 - `Phone/Sources`: **the phone is the Mac seen from somewhere else**, so it is built to
-  the same measurements and set in the same paper. `Style` moved to `Shared` for that
-  reason: it was in the Mac's own sources, so the phone had picked its own corner radii
-  and paddings and drifted. One file, and a card is the same card on both.
+  the same measurements, set in the same paper and coloured the same way. Three things
+  were drifting because each app drew its own: `Style` was in the Mac's sources so the
+  phone had picked its own corner radii and paddings; `AgentActivityDot` was written twice
+  and a stopped agent was grey on one and red on the other, which is the same agent being
+  two colours depending on which screen you look at; and the phone's project row still had
+  the dot and the blocked and in-progress counts the Mac dropped in T358. All three live in
+  `Shared` or match now. Secondary and tertiary text on both is `Paper.Tone.quiet` and
+  `.faint` rather than the system's greys, so the theme reaches the words and not only the
+  ground. (Alex, 16 Sep 2026: make the iPhone layout and colour the same.)
   `PhoneAgentView` is an agent's conversation on the phone, folded by the same
   `ACPTranscript` and drawn the same way, with a field on glass to say something to it.
   Thinking is not shown there: it is nine tenths of the words and there is no room on a

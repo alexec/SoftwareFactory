@@ -88,7 +88,7 @@ struct AgentTranscriptView: View {
                  ? "It is handshaking with the factory."
                  : "Say something to it below.")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(.quiet))
         }
     }
 
@@ -285,7 +285,7 @@ struct AgentTranscriptView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "doc.text")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                     Text(diff.fileName)
                         .font(.caption.monospaced())
                     Text("+\(diff.counts.added)")
@@ -320,11 +320,11 @@ struct AgentTranscriptView: View {
         var body: some View {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text("Working").font(.callout).foregroundStyle(.secondary)
+                Text("Working").font(.callout).foregroundStyle(Color(.quiet))
                 if queued > 0 {
                     Text(queued == 1 ? "1 waiting to be said" : "\(queued) waiting to be said")
                         .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color(.faint))
                 }
             }
         }
@@ -393,7 +393,7 @@ private struct PermissionBar: View {
                     .lineLimit(1)
                 Text("It is waiting on you.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
             }
             Spacer(minLength: 8)
             ForEach(waiting.options) { option in

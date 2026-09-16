@@ -56,20 +56,20 @@ struct PhoneRootView: View {
         switch model.link {
         case .notYetAsked, .looking:
             Label("Looking for the factory on this network.", systemImage: "antenna.radiowaves.left.and.right")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(.quiet))
                 .font(.callout)
         case .connected(let name):
             Label("Connected to \(name).", systemImage: "checkmark.circle")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(.quiet))
                 .font(.callout)
         case .lost:
             if model.source == .cloud {
                 Label("Away from the factory. Reading through iCloud.", systemImage: "icloud")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .font(.callout)
             } else {
                 Label("Lost the factory. It answers again when the Mac is awake and on this network, or through iCloud.", systemImage: "wifi.slash")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .font(.callout)
             }
         }
@@ -80,7 +80,7 @@ struct PhoneRootView: View {
         let open = model.dashboard.openEscalations
         if open.isEmpty {
             Label("Nothing needs you.", systemImage: "checkmark.circle")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(.quiet))
                 .padding(.vertical, 8)
         } else {
             ForEach(open) { escalation in
@@ -95,29 +95,43 @@ struct PhoneRootView: View {
         if !projects.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Projects")
-                    .font(.title3.weight(.semibold))
+                    .font(.title2.weight(.semibold))
                 ForEach(projects) { status in
                     NavigationLink(value: status.project) {
-                        HStack(spacing: 10) {
-                            Circle()
-                                .fill(status.isEmpty ? Color.clear : dotColor(status.activity))
-                                .frame(width: 8, height: 8)
+                        // The same row the Mac's sidebar draws: the name, how much is
+                        // waiting on the backlog in grey, and a question waiting in
+                        // orange. The dot and the counts of blocked and in progress came
+                        // off the Mac in T358, because a row that reports on the work
+                        // makes you read a dozen small numbers to find the one project you
+                        // were looking for, and they should not have stayed here.
+                        // (Alex, 16 Sep 2026.)
+                        HStack(spacing: 8) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(status.project.name).font(.headline).foregroundStyle(status.project.onHold ? .secondary : .primary)
+                                Text(status.project.name)
+                                    .font(.headline)
+                                    .foregroundStyle(status.project.onHold ? Color(.quiet) : Color(.ink))
                                 if status.project.onHold {
-                                    Text("On hold").font(.subheadline).foregroundStyle(.secondary)
+                                    Text("On hold").font(.subheadline).foregroundStyle(Color(.quiet))
                                 }
                             }
-                            Spacer()
-                            HStack(spacing: 6) {
-                                if status.blockedCount > 0 { Text(status.blockedCount, format: .number).foregroundStyle(.orange) }
-                                if status.inProgressCount > 0 { Text(status.inProgressCount, format: .number).foregroundStyle(.green) }
+                            Spacer(minLength: 4)
+                            if status.backlogCount > 0 {
+                                Text(status.backlogCount, format: .number)
+                                    .font(.subheadline)
+                                    .foregroundStyle(Color(.quiet))
+                                    .monospacedDigit()
                             }
-                            .font(.subheadline.weight(.semibold))
-                            .monospacedDigit()
+                            if status.openEscalations > 0 {
+                                Text(status.openEscalations, format: .number)
+                                    .font(.caption.weight(.semibold))
+                                    .monospacedDigit()
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(.orange.opacity(0.25), in: .capsule)
+                            }
                             Image(systemName: "chevron.right")
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(Color(.faint))
                         }
                         .frame(minHeight: 44)
                         .contentShape(.rect)
@@ -129,29 +143,18 @@ struct PhoneRootView: View {
     }
 
     /// Green working, orange blocked, grey waiting, black idle: the Mac's colours.
-    private func dotColor(_ activity: Dashboard.AgentActivity) -> Color {
-        switch activity {
-        case .working: .green
-        case .blocked: .orange
-        case .waiting: .gray
-        case .idle: .primary
-        case .stopped: .red
-        }
-    }
 
     @ViewBuilder
     private var registeredAgents: some View {
         let agents = model.dashboard.agents
         if !agents.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Agents")
-                    .font(.title3.weight(.semibold))
+                Text("On the floor")
+                    .font(.title2.weight(.semibold))
                 ForEach(agents) { status in
                     NavigationLink(value: status.agent.id) {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Circle()
-                            .fill(dotColor(status.activity))
-                            .frame(width: 8, height: 8)
+                        AgentActivityDot(activity: status.activity)
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 6) {
                                 Text(status.agent.label).font(.headline)
@@ -159,19 +162,19 @@ struct PhoneRootView: View {
                                     Image(systemName: "bell.fill").foregroundStyle(.orange)
                                 }
                                 if let project = status.project {
-                                    Text(project.name).font(.caption).foregroundStyle(.secondary)
+                                    Text(project.name).font(.caption).foregroundStyle(Color(.quiet))
                                 }
                             }
                             if !status.agent.title.isEmpty {
-                                Text(status.agent.title).font(.subheadline).foregroundStyle(.secondary)
+                                Text(status.agent.title).font(.subheadline).foregroundStyle(Color(.quiet))
                             } else if let line = status.task?.title ?? (status.agent.note.isEmpty ? nil : status.agent.note) {
-                                Text(line).font(.subheadline).foregroundStyle(.secondary)
+                                Text(line).font(.subheadline).foregroundStyle(Color(.quiet))
                             }
                         }
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.caption)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Color(.faint))
                     }
                     .padding(.vertical, 4)
                     .contentShape(.rect)
@@ -236,7 +239,7 @@ struct PhoneEscalationCard: View {
                 }
                 Text("\(escalation.raisedBy) · \(escalation.raised, format: .relative(presentation: .named))")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .lineLimit(1)
             }
             Text(escalation.question)
@@ -245,7 +248,7 @@ struct PhoneEscalationCard: View {
             if !escalation.context.isEmpty {
                 Text(escalation.context)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let artifact = escalation.artifactID.flatMap({ id in model.snapshot.artifacts.first { $0.id == id } }) {
@@ -276,7 +279,7 @@ struct PhoneEscalationCard: View {
                                     if !option.detail.isEmpty {
                                         Text(option.detail)
                                             .font(.subheadline)
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(Color(.quiet))
                                             .fixedSize(horizontal: false, vertical: true)
                                     }
                                 }

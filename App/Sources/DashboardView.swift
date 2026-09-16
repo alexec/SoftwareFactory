@@ -58,7 +58,7 @@ struct DashboardView: View {
                 if !open.isEmpty {
                     Text("Click an option and the agent is told.")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                 }
             }
             if model.notifier.standing == .notAsked {
@@ -106,7 +106,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("A project is a name: an app, a role across apps, a piece of tooling. Agents file against it by that name.")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(.quiet))
                 .fixedSize(horizontal: false, vertical: true)
             TextField("Project name", text: $newProjectName)
                 .onSubmit(addProject)
@@ -148,7 +148,7 @@ struct StatTile: View {
                     .contentTransition(.numericText())
                 Text(label)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -175,7 +175,7 @@ struct EmptyLine: View {
             Image(systemName: symbol)
             Text(text)
         }
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Color(.quiet))
         .padding(.vertical, 6)
     }
 }
@@ -228,13 +228,13 @@ struct AgentCard: View {
                 }
                 Text(status.project?.name ?? "No project")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .lineLimit(1)
                 VStack(alignment: .leading, spacing: 2) {
                     if !status.agent.title.isEmpty {
                         Text(status.agent.title)
                             .font(.callout)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.quiet))
                             .lineLimit(1)
                             .help(status.agent.title)
                     }
@@ -269,7 +269,7 @@ struct AgentCard: View {
                     .lineLimit(1)
                 }
                 .font(.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color(.faint))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
@@ -559,7 +559,7 @@ struct AgentView: View {
             if let project = status.project {
                 Text(project.name)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                 // Where its work lives, one click away: an agent's page is where you
                 // are when you want to look at what it has been writing. (T300.)
                 OpenFolderButton(project: project)
@@ -570,7 +570,7 @@ struct AgentView: View {
             if !agent.title.isEmpty {
                 Text(agent.title)
                     .font(.callout)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Color(.faint))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .help(agent.title)
@@ -610,12 +610,12 @@ struct AgentView: View {
                 // (T373.)
                 Text("Cannot be started back up")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .help(why)
             }
             Text(agent.lastSeen, format: .relative(presentation: .named))
                 .font(.callout)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color(.faint))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -655,7 +655,7 @@ struct AgentView: View {
         let tasks = model.tasks(assignedTo: agent.id)
         if tasks.isEmpty {
             Text(agent.note.isEmpty ? "Nothing on it." : agent.note)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(.quiet))
         } else {
             ForEach(tasks) { task in
                 StripChip(
@@ -672,7 +672,7 @@ struct AgentView: View {
     private var holding: some View {
         if leases.isEmpty {
             Text("Holding nothing")
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color(.faint))
         } else {
             ForEach(leases) { held in
                 StripChip(
@@ -695,7 +695,7 @@ struct AgentView: View {
     /// with, and both are long enough to crowd out what is. (T331, Alex, 15 Sep 2026.)
     private var facts: some View {
         Text(running)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color(.quiet))
             .help("Started \(agent.registered.formatted(date: .abbreviated, time: .shortened))")
     }
 
@@ -777,7 +777,7 @@ private struct StripChip: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Text(detail)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(.quiet))
                 .lineLimit(1)
         }
         .padding(.horizontal, 8)
@@ -806,17 +806,17 @@ private struct AgentMessages: View {
                         Spacer()
                         Text(message.sent, format: .relative(presentation: .named))
                             .font(.caption)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Color(.faint))
                         Button("Delete", systemImage: "trash") { delete(message) }
                             .buttonStyle(.plain)
                             .labelStyle(.iconOnly)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.quiet))
                             .help("Throw this message away")
                     }
                     Text("From \(message.from)")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                     Text(message.contents)
                         .font(.callout)
                         .textSelection(.enabled)
@@ -925,7 +925,7 @@ struct AgentChip: View {
 struct StoppedMark: View {
     var body: some View {
         Image(systemName: "stop.circle")
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color(.quiet))
             .help("Stopped: its terminal is still here and you can read what it said, but the agent is not running in it any more")
             .accessibilityLabel("Stopped")
     }
@@ -957,48 +957,6 @@ struct AgentBellMark: View {
     }
 }
 
-struct AgentActivityDot: View {
-    var activity: Dashboard.AgentActivity
-
-    /// A stopped agent is drawn as a ring with nothing in it. It used to be red, which
-    /// said something has gone wrong and wants you now; a stopped agent is inert, and it
-    /// was shouting louder than a blocked one, which is the one that actually needs you.
-    /// The quiet end of the palette was already taken, grey for waiting and ink for idle,
-    /// so stopped is the absence of a fill rather than another shade: no process, no ink.
-    /// It also survives colour blindness in a way grey against grey does not.
-    /// (Alex, 14 Sep 2026.)
-    var body: some View {
-        Group {
-            if activity == .stopped {
-                Circle().strokeBorder(.tertiary, lineWidth: 1.5)
-            } else {
-                Circle().fill(Self.color(activity))
-            }
-        }
-        .frame(width: 8, height: 8)
-        .help(Self.help(activity))
-    }
-
-    static func color(_ activity: Dashboard.AgentActivity) -> Color {
-        switch activity {
-        case .working: .green
-        case .blocked: .orange
-        case .waiting: .gray
-        case .idle: .primary
-        case .stopped: .secondary
-        }
-    }
-
-    static func help(_ activity: Dashboard.AgentActivity) -> String {
-        switch activity {
-        case .working: "Working"
-        case .blocked: "Its task is blocked"
-        case .waiting: "Waiting for a task, for mail, or for you"
-        case .idle: "Idle: nothing said for ten minutes"
-        case .stopped: "Stopped: its process has gone"
-        }
-    }
-}
 
 struct NotificationPrimer: View {
     @Environment(AppModel.self) private var model

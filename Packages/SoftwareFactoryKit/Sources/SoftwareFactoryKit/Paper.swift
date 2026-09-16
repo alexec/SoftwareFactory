@@ -235,6 +235,9 @@ public enum Paper {
         case ink
         /// A second voice: a caption, a date, something said quietly.
         case quiet
+        /// A third voice, quieter still: a hint, a count, something you read only when
+        /// you go looking. The system's `.tertiary` in the theme's own colour.
+        case faint
         /// A line across the page.
         case rule
         /// The edge of something sitting on the page.
@@ -250,6 +253,7 @@ public enum Paper {
             case .paper: ("fbfaf6", "1b1a18")
             case .ink: ("22201c", "e6e1d8")
             case .quiet: ("6d675d", "9c958a")
+            case .faint: ("968f83", "77716a")
             case .rule: ("e0dbd0", "35322d")
             case .edge: ("cfc8ba", "45413a")
             case .block: ("f1ede4", "26241f")

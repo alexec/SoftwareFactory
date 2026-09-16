@@ -65,7 +65,7 @@ private struct ReportRow: View {
                          open: openProject) {
                     Text(row.projectName ?? "No project")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
@@ -110,15 +110,15 @@ private struct ReportRow: View {
             // same line the card and the sidebar show. (T373.)
             Text(doing)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(.quiet))
                 .lineLimit(2)
             Text("Nothing filed. The factory can see this one work, so it is not asked.")
                 .font(.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color(.faint))
         } else {
             Text("Nothing filed yet.")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(.quiet))
         }
     }
 }

@@ -21,16 +21,16 @@ struct SettingsView: View {
             Section("Notifications") {
                 switch model.notifier.standing {
                 case .unknown:
-                    Text("Checking.").foregroundStyle(.secondary)
+                    Text("Checking.").foregroundStyle(Color(.quiet))
                 case .notAsked:
                     Text("Not asked yet. The dashboard asks the first time.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                 case .allowed:
                     Text("A banner for each new question, with the options as its actions.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                 case .denied:
                     Text("Banners are off. They can be turned on for Taktu: Software Factory in System Settings, Notifications.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                     Button("Open System Settings") {
                         if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
                             NSWorkspace.shared.open(url)
@@ -39,13 +39,13 @@ struct SettingsView: View {
                 }
                 LabeledContent("You", value: model.isAtTheMac ? "At the Mac" : "Away")
                 Text("At the Mac means the screen is unlocked and something was typed or clicked in the last two minutes.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
             }
 
             Section("iCloud") {
                 LabeledContent("Sync", value: model.cloud.summary)
                 Text("Questions and decisions go through your own iCloud so the phone works away from this network.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
             }
 
             Section("Agent") {
@@ -56,10 +56,10 @@ struct SettingsView: View {
                 }
                 .disabled(AgentLauncher.isSandboxed)
                 Text(model.launchStyle.detail)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                 if AgentLauncher.isSandboxed {
                     Text("This build is sandboxed, so it copies the command for you to paste instead of starting anything itself.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                 }
             }
 
@@ -76,22 +76,22 @@ struct SettingsView: View {
                     }
                 }
                 Text(model.throttle.permissions.detail)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .fixedSize(horizontal: false, vertical: true)
                 if model.throttle.permissions == .agentDecides {
                     Text("Where an agent has no mode of its own for this, the factory says yes on its behalf, which is the nearest thing it has.")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Text("This is the floor's setting. An agent's own page can put that one somewhere else, and it stays where you put it.")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .fixedSize(horizontal: false, vertical: true)
                 if model.throttle.permissions != .allowEverything && model.throttle.permissions != .agentDecides {
                     Text("A question stops the agent until it is answered, so one raised while you are away is an agent doing nothing. The factory takes the recommendation after ten minutes and says so.")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -114,7 +114,7 @@ struct SettingsView: View {
                 Text(floor.isUp
                      ? "Claude Code and GitHub Copilot run as ACP agents, held by a daemon of their own so they keep working when this app is rebuilt. Their pages show what they are doing rather than a terminal."
                      : "It starts itself the first time you launch an agent that speaks ACP. Grok, Cursor and a plain Terminal do not, and keep their terminals.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .fixedSize(horizontal: false, vertical: true)
                 if let trouble = floor.trouble {
                     Text(trouble).foregroundStyle(.red)
@@ -134,7 +134,7 @@ struct SettingsView: View {
                     Text(model.usesTmux
                          ? "An agent you launch runs in a tmux session of its own, so it keeps working when this app quits, and its page picks it back up. You never see tmux: no status bar, no prefix key, its own server, its own settings."
                          : "An agent you launch is this app's own child and ends when you quit.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                         .fixedSize(horizontal: false, vertical: true)
                     // What is held comes from TerminalSessions rather than from tmux
                     // itself: asking tmux here would run it while the window is drawing.
@@ -145,7 +145,7 @@ struct SettingsView: View {
                 } else {
                     LabeledContent("tmux", value: "Not installed")
                     Text("An agent launched in the app is this app's own child and ends when you quit. tmux can hold the session instead, so agents keep working between runs. You would never see it.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                         .fixedSize(horizontal: false, vertical: true)
                     HStack {
                         Button("Install tmux") {
@@ -166,7 +166,7 @@ struct SettingsView: View {
                 if let store = model.store {
                     LabeledContent("Folder", value: Projects.shortPath(store.root.path))
                     Text("Every project, task, agent and question is one JSON file.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                 }
                 if let error = model.storeError {
                     Text(error).foregroundStyle(.red)

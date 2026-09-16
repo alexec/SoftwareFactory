@@ -47,7 +47,7 @@ struct RootView: View {
                         Text(model.dashboard.unassignedAgents.count, format: .number)
                             .font(.caption.weight(.semibold))
                             .monospacedDigit()
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.quiet))
                     }
                 }
                 .tag(Destination.noProject)
@@ -74,7 +74,7 @@ struct RootView: View {
                             if status.backlogCount > 0 {
                                 Text(status.backlogCount, format: .number)
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Color(.quiet))
                                     .monospacedDigit()
                                     .help(status.backlogCount == 1
                                           ? "1 task on the backlog"
@@ -235,7 +235,7 @@ struct RootView: View {
                 if !under {
                     Text(status.project?.name ?? "No project")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -249,11 +249,11 @@ struct RootView: View {
                     if let number = line.number {
                         Text(number)
                             .font(.caption.monospacedDigit())
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Color(.faint))
                     }
                     Text(line.words)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -395,7 +395,7 @@ struct RootView: View {
                         .font(.headline)
                     Text(error)
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                 }
                 Spacer(minLength: 12)
                 Button("OK") { model.clearWriteError() }

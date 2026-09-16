@@ -23,7 +23,7 @@ struct PhoneSettingsView: View {
                         LabeledContent("Connected to", value: name)
                     case .lost:
                         Text("The phone cannot reach the factory. If you said no to local network access, it can be turned on in the iOS Settings app.")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.quiet))
                         Button("Open iOS Settings") {
                             if let url = URL(string: UIApplication.openSettingsURLString) {
                                 UIApplication.shared.open(url)
@@ -36,10 +36,10 @@ struct PhoneSettingsView: View {
                     switch model.notifier.standing {
                     case .allowed:
                         Text("A banner arrives for each new question, with its options, wherever the phone is.")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.quiet))
                     case .denied:
                         Text("Notifications are off for Taktu: Software Factory. They can be turned on in the iOS Settings app.")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.quiet))
                         Button("Open iOS Settings") {
                             if let url = URL(string: UIApplication.openSettingsURLString) {
                                 UIApplication.shared.open(url)
@@ -47,23 +47,23 @@ struct PhoneSettingsView: View {
                         }
                     default:
                         Text("Not asked yet. The dashboard asks the first time.")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.quiet))
                     }
                     #if DEBUG
-                    Text(model.notifier.lastPost).font(.caption).foregroundStyle(.secondary)
+                    Text(model.notifier.lastPost).font(.caption).foregroundStyle(Color(.quiet))
                     #endif
                 }
 
                 Section("Lock Screen") {
                     Text("While a question is open, it sits on the Lock Screen with its options, so you answer without unlocking. It is kept current while Taktu: Software Factory is open.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                 }
 
                 Section("iCloud") {
                     LabeledContent("Sync", value: model.cloud.summary)
                     LabeledContent("Pushes", value: model.cloud.subscribed ? "On: iCloud wakes the app when the Mac writes" : "Not yet; they start once notifications are allowed")
                     Text("Away from the Mac's network, questions arrive and answers go back through your own iCloud.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                 }
 
                 #if DEBUG
@@ -71,7 +71,7 @@ struct PhoneSettingsView: View {
                     Button("Show the first-run sheet again") { model.hasSeenIntro = false }
                     Button("Forget the network priming") { model.hasPrimedNetwork = false }
                     if let error = model.lastError {
-                        Text(error).font(.caption).foregroundStyle(.secondary)
+                        Text(error).font(.caption).foregroundStyle(Color(.quiet))
                     }
                 }
                 #endif

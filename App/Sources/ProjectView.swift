@@ -120,7 +120,7 @@ struct ProjectView: View {
                                 showingAllDone.toggle()
                             }
                             .buttonStyle(.plain)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.quiet))
                         }
                     }
                 }
@@ -216,7 +216,7 @@ struct ProjectView: View {
                 if project.onHold {
                     Text("on hold")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                 }
                 Spacer()
                 Toggle("Active", isOn: Binding(get: { !project.onHold }, set: { model.setOnHold(project, !$0) }))
@@ -244,7 +244,7 @@ struct ProjectView: View {
                 Spacer()
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color(.quiet))
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -367,7 +367,7 @@ struct StartingAgentCard: View {
             }
             Text(ended == nil ? "Waiting for it to register." : "It stopped before registering.")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(.quiet))
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -406,7 +406,7 @@ private struct LaunchAgentCard: View {
                 }
                 Text(isReady ? detail : "Set the project's folder first.")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
@@ -457,19 +457,19 @@ struct DecidedRow: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                 Text(escalation.chosen?.title ?? escalation.decision?.note ?? "Decided")
                     .lineLimit(1)
                     .font(.callout.weight(.medium))
                 Text(escalation.question)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .lineLimit(1)
                 Spacer()
                 if let at = escalation.decision?.at {
                     Text(at, format: .relative(presentation: .named))
                         .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color(.faint))
                 }
             }
         }
@@ -510,7 +510,7 @@ struct TaskRow: View {
             if let label = task.label {
                 Text(label)
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Color(.faint))
                     .frame(minWidth: 34, alignment: .trailing)
                     .textSelection(.enabled)
                     .help("The task's number: say it, type it, or give it to an agent")
@@ -522,7 +522,7 @@ struct TaskRow: View {
                 if task.work != .implement && !task.work.isPrefix(of: task.title) {
                     Text(task.work.word)
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color(.faint))
                         .help(task.work.brief)
                 }
                 if let ending = task.note.split(whereSeparator: \.isNewline).last,
@@ -530,7 +530,7 @@ struct TaskRow: View {
                    ending != task.blockedWhy {
                     Text(ending)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                         .lineLimit(2)
                 }
                 if task.state == .blocked, !task.blockers.isEmpty {
@@ -606,7 +606,7 @@ struct TaskRow: View {
                 Button("Delete", role: .destructive) { model.delete(task) }
             } label: {
                 Image(systemName: "ellipsis.circle")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
             }
             .menuIndicator(.hidden)
             .fixedSize()
@@ -694,7 +694,7 @@ struct TaskRow: View {
             if task.work != .implement && !task.work.isPrefix(of: task.title) {
                 Text(task.work.word)
                     .font(.callout.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .help(task.work.brief)
             }
             if let ending = task.note.split(whereSeparator: \.isNewline).last,
@@ -702,7 +702,7 @@ struct TaskRow: View {
                ending != task.blockedWhy {
                 Text(ending)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .fixedSize(horizontal: false, vertical: true)
             }
             if task.state == .blocked, !task.blockers.isEmpty {

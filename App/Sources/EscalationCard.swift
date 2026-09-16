@@ -21,7 +21,7 @@ struct EscalationCard: View {
                 }
                 Text("\(escalation.raisedBy) · \(escalation.raised, format: .relative(presentation: .named))")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .lineLimit(1)
                 Spacer()
                 if let decision = escalation.decision {
@@ -45,7 +45,7 @@ struct EscalationCard: View {
             if !escalation.context.isEmpty {
                 Text(escalation.context)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -71,7 +71,7 @@ struct EscalationCard: View {
             if let decision = escalation.decision, !decision.note.isEmpty {
                 Label(decision.note, systemImage: escalation.answeredInOwnWords ? "text.bubble" : "note.text")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 HStack(alignment: .top, spacing: 8) {
@@ -124,7 +124,7 @@ private struct OptionButton: View {
                     if !option.detail.isEmpty {
                         Text(option.detail)
                             .font(.callout)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.quiet))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }

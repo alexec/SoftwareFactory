@@ -17,7 +17,7 @@ struct AgentTerminalSheet: View {
                         .font(.headline)
                     Text(project.path ?? "")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                         .lineLimit(1)
                 }
                 Spacer()

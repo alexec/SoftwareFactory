@@ -26,7 +26,7 @@ struct FreeAgentCard: View {
                 }
                 Text("On no project. Say what it is for, in a line.")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
@@ -56,7 +56,7 @@ struct FreeAgentCard: View {
                     .font(.headline)
                 Text("It starts in your home folder, on no project, and hears from other agents in its terminal.")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .fixedSize(horizontal: false, vertical: true)
                 TextField("You're the browser owner. Agents send you messages when they want you to use Chrome for them.",
                           text: $prompt, axis: .vertical)

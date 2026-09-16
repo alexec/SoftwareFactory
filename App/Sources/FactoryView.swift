@@ -63,7 +63,7 @@ struct FactoryView: View {
                     .font(.title2.weight(.semibold))
             }
             Text(Capacity.reason(r, throttle: t))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(.quiet))
             HStack(spacing: 24) {
                 Room(number: h.compiles, label: h.compiles == 1 ? "more compile" : "more compiles", ok: h.compiles > 0)
                 Room(number: h.simulators, label: h.simulators == 1 ? "more simulator" : "more simulators", ok: h.simulators > 0)
@@ -71,13 +71,13 @@ struct FactoryView: View {
                     Text(gigabytes(h.memoryFree))
                         .font(.system(.title, design: .rounded).weight(.semibold))
                         .monospacedDigit()
-                    Text("memory free").font(.callout).foregroundStyle(.secondary)
+                    Text("memory free").font(.callout).foregroundStyle(Color(.quiet))
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(gigabytes(h.swapFree))
                         .font(.system(.title, design: .rounded).weight(.semibold))
                         .monospacedDigit()
-                    Text("swap free").font(.callout).foregroundStyle(.secondary)
+                    Text("swap free").font(.callout).foregroundStyle(Color(.quiet))
                 }
             }
             HStack(spacing: 14) {
@@ -91,7 +91,7 @@ struct FactoryView: View {
             .font(.callout)
             Text("What an agent is told when it asks to start one.")
                 .font(.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color(.faint))
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -175,7 +175,7 @@ private struct Room: View {
                 .font(.system(.title, design: .rounded).weight(.semibold))
                 .foregroundStyle(ok ? Color.primary : Color.orange)
                 .contentTransition(.numericText())
-            Text(label).font(.callout).foregroundStyle(.secondary)
+            Text(label).font(.callout).foregroundStyle(Color(.quiet))
         }
     }
 }
@@ -207,7 +207,7 @@ private struct AgentSlotsCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Agents").font(.callout).foregroundStyle(.secondary)
+                Text("Agents").font(.callout).foregroundStyle(Color(.quiet))
                 Spacer()
                 Text("\(inUse) of \(cap)").font(.callout.weight(.medium)).monospacedDigit()
             }
@@ -231,7 +231,7 @@ private struct ResourceCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(title).font(.callout).foregroundStyle(.secondary)
+                Text(title).font(.callout).foregroundStyle(Color(.quiet))
                 Spacer()
                 Text(text).font(.callout.weight(.medium)).monospacedDigit()
             }
@@ -259,7 +259,7 @@ private struct LeasableResourceCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(status.resource.name).font(.callout).foregroundStyle(.secondary)
+                Text(status.resource.name).font(.callout).foregroundStyle(Color(.quiet))
                 Spacer()
                 Text(status.occupancy).font(.callout.weight(.medium)).monospacedDigit()
                 Menu {

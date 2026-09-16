@@ -71,11 +71,11 @@ struct DictateField<Submit: View>: View {
             primer
         case .denied:
             Text(DictationHelp.deniedText)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(.quiet))
                 .fixedSize(horizontal: false, vertical: true)
         case .unavailable(let why):
             Text(why)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(.quiet))
                 .fixedSize(horizontal: false, vertical: true)
         case .allowed:
             Text(dictation.text.isEmpty ? (heardNothing ? "Nothing heard. Try again." : "Listening…") : dictation.text)

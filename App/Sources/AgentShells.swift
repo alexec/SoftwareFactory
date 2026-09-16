@@ -128,7 +128,7 @@ struct AgentShellsPane: View {
                             Image(systemName: "xmark").font(.system(size: 8))
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color(.faint))
                         .help("Close \(shell.name)")
                     }
                     .padding(.horizontal, 8)
@@ -142,7 +142,7 @@ struct AgentShellsPane: View {
                     Image(systemName: "plus").font(.caption)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(.quiet))
                 .help("Open another shell in \(Projects.shortPath(AgentShells.folder(folder)))")
                 Spacer(minLength: 0)
             }

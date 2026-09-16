@@ -56,7 +56,7 @@ struct IntroSheet: View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: "arrow.turn.down.right")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(.quiet))
             Text(text)
         }
     }

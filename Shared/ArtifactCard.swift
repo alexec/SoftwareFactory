@@ -39,7 +39,7 @@ struct ArtifactCard: View {
                     // (T262.)
                     Text("\(artifact.addedBy) · \(when, format: .relative(presentation: .named))")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                 }
                 Spacer(minLength: 0)
                 if let onDelete { deleteButton(onDelete) }
@@ -59,7 +59,7 @@ struct ArtifactCard: View {
             .buttonStyle(.plain)
             .labelStyle(.iconOnly)
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color(.quiet))
             .help("Take this document off the project. The record is kept, out of the lists.")
     }
 

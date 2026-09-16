@@ -29,19 +29,19 @@ struct MarkdownText: View {
             inline(text)
         case .bullet(let text, let indent):
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("•").foregroundStyle(.secondary)
+                Text("•").foregroundStyle(Color(.quiet))
                 inline(text)
             }
             .padding(.leading, CGFloat(indent) * 16)
         case .numbered(let number, let text):
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("\(number).").foregroundStyle(.secondary).monospacedDigit()
+                Text("\(number).").foregroundStyle(Color(.quiet)).monospacedDigit()
                 inline(text)
             }
         case .quote(let text):
             HStack(alignment: .top, spacing: 8) {
                 Rectangle().fill(.tertiary).frame(width: 2)
-                inline(text).foregroundStyle(.secondary)
+                inline(text).foregroundStyle(Color(.quiet))
             }
             .fixedSize(horizontal: false, vertical: true)
         case .code(let lines):

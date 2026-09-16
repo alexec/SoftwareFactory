@@ -73,7 +73,7 @@ struct DictateButton: View {
             case .notAsked: primer
             case .denied: denied
             case .unavailable(let why):
-                Text(why).foregroundStyle(.secondary)
+                Text(why).foregroundStyle(Color(.quiet))
             }
         }
         .padding(Style.sheetPadding)
@@ -126,7 +126,7 @@ struct DictateButton: View {
         Label(dictation.isListening ? "Listening" : "Not listening",
               systemImage: dictation.isListening ? "waveform" : "mic.slash")
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color(.quiet))
             .labelStyle(.titleAndIcon)
             .symbolEffect(.variableColor, isActive: dictation.isListening)
     }
@@ -140,7 +140,7 @@ struct DictateButton: View {
             Text("Talk to the factory and it works out which project you mean and what to put on its backlog. "
                  + "The words are recognised on this Mac and nothing is recorded.")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(.quiet))
             HStack {
                 Spacer()
                 Button("Continue") { Task { await dictation.ask(); begin() } }
@@ -155,7 +155,7 @@ struct DictateButton: View {
                 .font(.headline)
             Text("Turn it on in System Settings, under Privacy & Security, and come back.")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(.quiet))
             HStack {
                 Spacer()
                 Button("Open System Settings") {

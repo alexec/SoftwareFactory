@@ -54,7 +54,7 @@ struct PhoneBacklogView: View {
                         else {
                             Text("Adding a task needs iCloud, which is not signed in on this phone.")
                                 .font(.callout)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Color(.quiet))
                         }
                     }
                 } else if state == .parked {
@@ -90,13 +90,13 @@ struct PhoneBacklogView: View {
                 if task.work != .implement && !task.work.isPrefix(of: task.title) {
                     Text(task.work.word)
                         .font(.callout.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                 }
                 if let ending = task.note.split(whereSeparator: \.isNewline).last,
                    !ending.isEmpty,
                    ending != task.blockedWhy {
                     Text(ending)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                 }
                 if task.state == .blocked, !task.blockers.isEmpty {
                     Text(task.blockedWhy)
@@ -124,7 +124,7 @@ struct PhoneBacklogView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if let label = task.label {
-                    Text(label).font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
+                    Text(label).font(.caption.monospacedDigit()).foregroundStyle(Color(.faint))
                 }
                 Text(task.title)
                     .strikethrough(task.state == .done)
@@ -132,7 +132,7 @@ struct PhoneBacklogView: View {
                 if task.work != .implement && !task.work.isPrefix(of: task.title) {
                     Text(task.work.word)
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color(.faint))
                 }
                 Spacer()
                 Text(task.state == .inProgress ? "In progress" : (task.state == .done ? "Done" : (task.state == .parked ? "Parked" : "")))
@@ -144,7 +144,7 @@ struct PhoneBacklogView: View {
                ending != task.blockedWhy {
                 Text(ending)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                     .lineLimit(2)
             }
             if task.state == .blocked, !task.blockers.isEmpty {
@@ -186,7 +186,7 @@ struct PhoneBacklogView: View {
             if model.source != .factory {
                 Text("Away from the Mac; this goes through iCloud and lands there in a moment, numbered once it does.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
             }
         }
     }
@@ -289,14 +289,14 @@ struct PhoneDecidedRow: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.quiet))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(escalation.chosen?.title ?? escalation.decision?.note ?? "Decided")
                         .font(.subheadline.weight(.medium))
                         .lineLimit(1)
                     Text(escalation.question)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.quiet))
                         .lineLimit(1)
                 }
             }
