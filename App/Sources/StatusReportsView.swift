@@ -104,6 +104,17 @@ private struct ReportRow: View {
                     .font(.callout)
                     .textSelection(.enabled)
             }
+        } else if let doing = row.doing {
+            // An agent the factory watches is never asked for a report, so an empty row
+            // would be saying it had gone quiet when its page shows the work. This is the
+            // same line the card and the sidebar show. (T373.)
+            Text(doing)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            Text("Nothing filed. The factory can see this one work, so it is not asked.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         } else {
             Text("Nothing filed yet.")
                 .font(.callout)

@@ -251,6 +251,29 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     `Running.queued` says how many are waiting. A stopped agent gives up its queue: there
     is nobody to say it to, and it must not be said to whatever starts next under that
     name. (T373.)
+  - `ACP.ToolCall.heading` is what a tool call's row says, and it is not just `title`.
+    A call's first message often carries the raw tool name, `read_file` or `apply_patch`,
+    and only the update that follows replaces it with a sentence, so the row reads like a
+    function reference for as long as the call is running, which is exactly when somebody
+    is looking at it. Grok never sends anything else, because its calls carry no kind
+    either. And all of them write absolute paths, so a row is nine tenths somebody's home
+    folder. A title written for a person keeps its words and loses its paths; a bare tool
+    name becomes a verb and the file it is working on, off `locations`.
+    (Alex, 16 Sep 2026.)
+  - There is nothing to register any more. `LaunchAgent.setupCommand` and the
+    `claude plugin marketplace add` dance are gone: `session/new` carries the factory's MCP
+    server and all four coding agents speak ACP, so an agent is handed its tools as it
+    starts. `setUp` is what is left, and the only thing in it is Zed's adapter for Claude
+    Code. (T373.)
+  - The factory does not ask an agent it can watch how its work is going.
+    `Sweep.statusReportsWanted` skips an ACP agent: the ask exists because an agent at work
+    is silent and silence says nothing about how it is going, and an ACP agent is not
+    silent. Its page shows the work and `StatusReportBoard.Row.doing` shows the same line
+    on the board, so such a row is never stale and never chased. What a report says that a
+    transcript cannot is judgement, and an agent with something to say files one without
+    being asked. `Sweep.idleAgentsToStop` takes `working`, the agents the daemon says have
+    a turn in flight, which is the real answer where the rest of that rule is a proxy:
+    stopping an agent mid-turn throws the turn away. (T373.)
   - `AgentProfile` and `LaunchAgent.profile`: what each agent was measured doing, as
     opposed to what it says it can do. ACP describes the shape of a message and almost
     nothing about the behaviour behind it, and a capability flag is no help either, because

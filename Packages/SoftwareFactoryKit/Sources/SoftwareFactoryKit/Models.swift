@@ -849,8 +849,13 @@ public enum Sweep {
     /// An agent on no project is left alone. There is no backlog to be empty, so "no new
     /// tasks" says nothing about it, and it is there because the person started it for
     /// something of their own.
+    /// `working` is the agents the daemon says have a turn in flight. It is the real
+    /// answer to "is this one doing something", where everything else here is a proxy:
+    /// the hour runs from the last task an agent touched, because `lastSeen` stays fresh
+    /// for an agent that is only polling. An ACP agent mid-turn is working however long
+    /// ago it last touched a task, and stopping it would throw that turn away. (T373.)
     public static func idleAgentsToStop(
-        in snapshot: Snapshot, messages: [AgentMessage], now: Date
+        in snapshot: Snapshot, messages: [AgentMessage], working: Set<UUID> = [], now: Date
     ) -> [Agent] {
         let waitingFor = Set(Mailbox.waiting(messages).map(\.recipientID))
         let asking = Set(snapshot.escalations.filter(\.isOpen).compactMap(\.agentID))
@@ -859,6 +864,7 @@ public enum Sweep {
 
         return Agents.onTheFloor(snapshot.agents).filter { agent in
             guard Agents.mayStop(agent) else { return false }
+            guard !working.contains(agent.id) else { return false }
             guard let projectID = agent.projectID else { return false }
             guard !projectsWithWork.contains(projectID) else { return false }
             guard !waitingFor.contains(agent.id), !asking.contains(agent.id) else { return false }
@@ -930,6 +936,13 @@ public enum Sweep {
         var asks: [AgentMessage] = []
         let waitingFor = Set(Mailbox.waiting(messages).map(\.recipientID))
         for agent in Agents.onTheFloor(snapshot.agents) {
+            // Not an agent the factory can watch. The ask exists because an agent at work
+            // is silent and silence says nothing about how it is going; an ACP agent is
+            // not silent, and asking it to write down what its own page already shows is
+            // an interruption an hour for nothing. What a report says that a transcript
+            // cannot is judgement, and an agent with something to say files one without
+            // being asked. (T373.)
+            guard !agent.speaksACP else { continue }
             guard let projectID = agent.projectID,
                   let project = snapshot.projects.first(where: { $0.id == projectID }),
                   project.removed == nil else { continue }

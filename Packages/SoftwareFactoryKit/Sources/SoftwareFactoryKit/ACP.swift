@@ -229,10 +229,78 @@ public enum ACP {
             return out
         }
 
-        /// What the person is shown when the agent has not named the call itself.
+        /// What the person is shown for this call.
+        ///
+        /// Three things get in the way of just using `title`. A call's first message often
+        /// carries the raw tool name, `read_file` or `apply_patch`, and only the update
+        /// that follows replaces it with a sentence, so the row reads like a function
+        /// reference for as long as the call is running, which is exactly when somebody is
+        /// looking at it. Grok never sends anything else, because its calls carry no kind
+        /// either. And every one of them puts absolute paths in, so a row is nine tenths
+        /// somebody's home folder.
+        ///
+        /// So: a real title has its paths shortened to file names, and a bare tool name
+        /// becomes a sentence with the file it is working on. (Alex, 16 Sep 2026.)
         public var heading: String {
-            if let title, !title.isEmpty { return title }
-            return kind?.title ?? "Working"
+            let given = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !given.isEmpty, !Self.isBareToolName(given) { return Self.shortenPaths(in: given) }
+            let verb = given.isEmpty ? (kind?.title ?? "Working") : Self.inWords(given)
+            guard let path = locations?.first?.path, !path.isEmpty else { return verb }
+            return "\(verb) \(Self.fileName(path))"
+        }
+
+        /// Whether this is the name of a function rather than something written for a
+        /// person: one word, no spaces, lower case, the way every CLI names its tools.
+        static func isBareToolName(_ title: String) -> Bool {
+            guard !title.contains(" ") else { return false }
+            return title == title.lowercased() && !title.contains("/") && !title.contains(".")
+        }
+
+        /// A tool name as a person would say it. The common ones are named because the
+        /// guess is bad for exactly the calls that happen most; anything else has its
+        /// underscores taken out and is left alone.
+        static func inWords(_ name: String) -> String {
+            let plain = name.lowercased()
+                .replacingOccurrences(of: "_tool", with: "")
+                .replacingOccurrences(of: "-", with: "_")
+            switch plain {
+            case "read", "read_file", "view", "view_file", "cat", "open": return "Reading"
+            case "write", "write_file", "create", "create_file", "apply_patch", "edit",
+                 "edit_file", "str_replace", "multi_edit", "patch": return "Editing"
+            case "delete", "delete_file", "remove", "rm": return "Deleting"
+            case "move", "rename", "mv": return "Moving"
+            case "search", "grep", "glob", "find", "codebase_search", "ripgrep": return "Searching"
+            case "bash", "shell", "run", "run_command", "exec", "terminal": return "Running"
+            case "fetch", "web_fetch", "http", "curl": return "Fetching"
+            case "list", "ls", "list_dir", "list_files": return "Listing"
+            case "think", "thinking", "plan", "todo", "todo_write": return "Thinking"
+            default:
+                let words = plain.split(separator: "_").map(String.init)
+                guard let first = words.first else { return "Working" }
+                return ([first.prefix(1).uppercased() + first.dropFirst()] + words.dropFirst())
+                    .joined(separator: " ")
+            }
+        }
+
+        /// The last component of a path, or the whole thing when it is not one.
+        static func fileName(_ path: String) -> String {
+            let trimmed = path.trimmingCharacters(in: CharacterSet(charactersIn: "`'\"<> "))
+            guard trimmed.contains("/") else { return trimmed }
+            return trimmed.split(separator: "/").last.map(String.init) ?? trimmed
+        }
+
+        /// Any absolute path inside a sentence, cut down to its file name. An agent writes
+        /// "Read `/Users/someone/very/long/way/down/README.md`" and a row has space for
+        /// about a third of that, all of it the part that is the same every time.
+        static func shortenPaths(in title: String) -> String {
+            title.split(separator: " ", omittingEmptySubsequences: false).map { piece -> String in
+                let word = String(piece)
+                guard word.contains("/"), word.count > 24 else { return word }
+                let lead = word.prefix { $0 == "`" || $0 == "\"" || $0 == "'" || $0 == "(" }
+                let tail = String(word.reversed().prefix { $0 == "`" || $0 == "\"" || $0 == "'" || $0 == ")" || $0 == "." || $0 == "," }.reversed())
+                let bare = String(word.dropFirst(lead.count).dropLast(tail.count))
+                return lead + fileName(bare) + tail
+            }.joined(separator: " ")
         }
 
         public var isFinished: Bool { status == .completed || status == .failed }

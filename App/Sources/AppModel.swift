@@ -20,6 +20,8 @@ final class AppModel {
     /// to nil a line later, so a failed edit or delete said nothing anywhere and the row
     /// simply redrew as it was. (T264, Alex, 15 Sep 2026.)
     private(set) var writeError: String?
+    /// Agents the daemon says have a turn in flight, refreshed on the floor's own poll.
+    private(set) var busyAgents: Set<UUID> = []
 
     let store: FileStore?
     private(set) var serverState = "Starting"
@@ -138,6 +140,7 @@ final class AppModel {
         // asking. (T357.)
         for agent in Sweep.idleAgentsToStop(in: snapshot,
                                             messages: messagesByAgent.values.flatMap { $0 },
+                                            working: busyAgents,
                                             now: .now) {
             signalStop(agent)
         }
@@ -541,6 +544,9 @@ final class AppModel {
     /// they did. And the session it minted goes beside them. (T373.)
     func noteFloor(_ running: [AgentDaemon.Running]) {
         guard store != nil else { return }
+        // Who is mid-turn, for the idle sweep. It is the one part of being busy that the
+        // store cannot answer: a task record says nothing about a turn. (T373.)
+        busyAgents = Set(running.filter(\.isPrompting).map(\.agent))
         for one in running {
             guard let agent = snapshot.agents.first(where: { $0.id == one.agent }) else { continue }
             let line = Agent.preparedTitle(one.line ?? "")

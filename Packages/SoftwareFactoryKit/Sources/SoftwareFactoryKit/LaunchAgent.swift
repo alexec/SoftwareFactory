@@ -47,26 +47,6 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
         }
     }
 
-    /// The command that registers this factory with the agent, once. Nil for a terminal:
-    /// there is nothing in it to register.
-    public var setupCommand: String? {
-        switch self {
-        case .claudeCode:
-            """
-            claude plugin marketplace add alexec/SoftwareFactory && \
-            claude plugin install software-factory@software-factory-plugins
-            """
-        case .copilot:
-            "copilot plugin install alexec/SoftwareFactory:Plugins/software-factory"
-        case .grok:
-            "grok plugin install alexec/SoftwareFactory#Plugins/software-factory --trust"
-        case .cursor:
-            "cursor-agent plugin marketplace add https://github.com/alexec/SoftwareFactory"
-        case .terminal:
-            nil
-        }
-    }
-
     /// What Launch an agent runs, once the shell is already in the project's folder.
     /// The prompt names the project, so an agent starts on the right backlog without
     /// being asked. (Alex, 12 Sep 2026.) Given a task, it names that instead: the
@@ -146,12 +126,15 @@ public enum LaunchAgent: String, CaseIterable, Identifiable, Sendable, Hashable 
     }
 
     /// What has to be run once before this one can be launched, and what it is for. Empty
-    /// for a plain shell, which needs nothing.
+    /// for a plain shell, which needs nothing, and for the three that need nothing but
+    /// themselves.
+    ///
+    /// There used to be a second step here, a plugin install that registered the factory
+    /// with the agent: `claude plugin marketplace add`, and one like it for each of the
+    /// others. It is gone. `session/new` carries the factory's MCP server, so an ACP agent
+    /// is handed its tools as it starts, and all four of ours speak ACP. (T373.)
     public var setUp: [(what: String, command: String)] {
-        var steps: [(String, String)] = []
-        if let install = acpInstall { steps.append(("The part that speaks ACP", install)) }
-        if let setup = setupCommand, !speaksACP { steps.append(("Register the factory with it", setup)) }
-        return steps
+        acpInstall.map { [("The part that speaks ACP", $0)] } ?? []
     }
 
     // MARK: Speaking ACP

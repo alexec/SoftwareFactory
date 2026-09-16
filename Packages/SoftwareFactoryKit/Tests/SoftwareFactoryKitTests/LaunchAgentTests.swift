@@ -12,11 +12,10 @@ import Testing
         #expect(LaunchAgent.remembered("nope") == .claudeCode)
     }
 
-    @Test func everyKindHasATitleInstallAndSetup() {
+    @Test func everyKindHasATitleAndSomewhereToGetIt() {
         #expect(LaunchAgent.allCases.map(\.title) == ["Claude Code", "GitHub Copilot", "Grok", "Cursor", "Terminal"])
         for agent in LaunchAgent.allCases where agent.isCodingAgent {
             #expect(agent.installURL?.scheme == "https")
-            #expect(!(agent.setupCommand ?? "").isEmpty)
         }
     }
 
@@ -27,22 +26,25 @@ import Testing
         let shell = LaunchAgent.terminal
         #expect(!shell.isCodingAgent)
         #expect(shell.installURL == nil)
-        #expect(shell.setupCommand == nil)
         #expect(shell.command(for: "Work the backlog.", session: Self.session) == "zsh -il")
         #expect(shell.launchCommand(for: project, as: "A9", session: Self.session) == "zsh -il")
         #expect(shell.resumeCommand(session: Self.session) == "zsh -il")
         #expect(LaunchAgent.allCases.filter(\.isCodingAgent).count == LaunchAgent.allCases.count - 1)
     }
 
-    @Test func setupCommandNamesThePlugin() {
-        #expect(LaunchAgent.claudeCode.setupCommand?.contains("claude plugin") == true)
-        #expect(LaunchAgent.claudeCode.setupCommand?.contains("software-factory") == true)
-        #expect(LaunchAgent.copilot.setupCommand?.contains("copilot plugin install") == true)
-        #expect(LaunchAgent.copilot.setupCommand?.contains("Plugins/software-factory") == true)
-        #expect(LaunchAgent.grok.setupCommand?.contains("grok plugin install") == true)
-        #expect(LaunchAgent.grok.setupCommand?.contains("Plugins/software-factory") == true)
-        #expect(LaunchAgent.cursor.setupCommand?.contains("cursor-agent plugin marketplace add") == true)
-        #expect(LaunchAgent.cursor.setupCommand?.contains("alexec/SoftwareFactory") == true)
+    /// There is no registering any more. `session/new` carries the factory's MCP server,
+    /// so an ACP agent is handed its tools as it starts, and all four of ours speak ACP.
+    /// The plugin marketplace commands went with `setupCommand`. (T373.)
+    @Test func thereIsNothingToRegisterAnyMore() {
+        for agent in LaunchAgent.allCases {
+            #expect(agent.setUp.contains { $0.what.lowercased().contains("register") } == false)
+            #expect(agent.setUp.contains { $0.command.contains("plugin") } == false)
+        }
+        // The one thing still worth installing is Zed's adapter, for Claude Code.
+        #expect(LaunchAgent.claudeCode.setUp.count == 1)
+        for agent in [LaunchAgent.copilot, .grok, .cursor, .terminal] {
+            #expect(agent.setUp.isEmpty)
+        }
     }
 
     @Test func commandUsesTheAgentsBinaryAndQuotesThePrompt() {

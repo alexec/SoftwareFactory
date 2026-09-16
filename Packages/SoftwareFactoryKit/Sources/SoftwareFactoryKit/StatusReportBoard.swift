@@ -21,8 +21,17 @@ public enum StatusReportBoard {
         /// Its report, if it has filed one.
         public var report: Artifact?
         /// Whether that report still stands, or is old enough that the factory has asked
-        /// for another.
+        /// for another. An agent the factory can watch is never stale: its page says what
+        /// it is doing, so there is nothing to chase. (T373.)
         public var isFresh: Bool
+        /// What it is doing, for an agent whose work the factory can see. This is
+        /// `Agent.title`, which the daemon fills from the transcript, and it stands in
+        /// for a report that is no longer asked for.
+        public var doing: String? {
+            guard agent.speaksACP else { return nil }
+            let line = agent.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return line.isEmpty ? nil : line
+        }
 
         public var id: UUID { agent.id }
         /// When it last said anything about its work. Nil for an agent that never has.
@@ -54,7 +63,9 @@ public enum StatusReportBoard {
             }
             return Row(
                 agent: agent, projectName: project?.name, projectID: project?.id, report: report,
-                isFresh: report.map { Artifacts.isFresh($0, now: now) } ?? false)
+                // An agent the factory watches is never chased for a report it was never
+                // asked for.
+                isFresh: agent.speaksACP || (report.map { Artifacts.isFresh($0, now: now) } ?? false))
         }
         return rows.sorted { a, b in
             switch (a.said, b.said) {

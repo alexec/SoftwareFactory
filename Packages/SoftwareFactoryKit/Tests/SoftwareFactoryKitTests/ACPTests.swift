@@ -365,3 +365,62 @@ struct PermissionStanceTests {
         }
     }
 }
+
+/// What a tool call's row actually says. Taken from what the four agents really send,
+/// which is not one thing. (Alex, 16 Sep 2026.)
+struct ToolHeadingTests {
+    private func call(_ title: String?, kind: ACP.ToolCall.Kind? = nil, at path: String? = nil) -> ACP.ToolCall {
+        ACP.ToolCall(toolCallID: "t", title: title, kind: kind,
+                     locations: path.map { [ACP.Location(path: $0)] })
+    }
+
+    @Test func aTitleWrittenForAPersonIsLeftAlone() {
+        #expect(call("Read README.md").heading == "Read README.md")
+        #expect(call("Search tools: \"task_\"").heading == "Search tools: \"task_\"")
+        #expect(call("Create file").heading == "Create file")
+    }
+
+    @Test func aBareToolNameBecomesASentence() {
+        // Grok sends these and nothing else, because its calls carry no kind either.
+        #expect(call("read_file", at: "/Users/alex/Projects/Demo/README.md").heading == "Reading README.md")
+        #expect(call("write", at: "/a/b/notes.md").heading == "Editing notes.md")
+        #expect(call("search_tool").heading == "Searching")
+        #expect(call("apply_patch").heading == "Editing")
+        #expect(call("bash").heading == "Running")
+    }
+
+    @Test func aToolNameNobodyNamedIsStillReadable() {
+        #expect(call("fetch_the_thing").heading == "Fetch the thing")
+        #expect(call("frobnicate").heading == "Frobnicate")
+    }
+
+    @Test func aLongPathInATitleIsCutDownToTheFile() {
+        // Grok writes the whole path, and a row has space for about a third of it, all of
+        // it the part that is the same every time.
+        #expect(call("Read `/Users/alexcollins/.grok/installed-plugins/software-factory/skills/work/SKILL.md`").heading
+                == "Read `SKILL.md`")
+        #expect(call("Viewing /private/tmp/claude-501/-Users-alexcollins-SoftwareFactory/work/hello.txt").heading
+                == "Viewing hello.txt")
+        // Short ones are left as they are: the path is the information.
+        #expect(call("Read src/main.swift").heading == "Read src/main.swift")
+    }
+
+    @Test func nothingAtAllStillSaysSomething() {
+        #expect(call(nil, kind: .read).heading == "Reading")
+        #expect(call(nil).heading == "Working")
+        #expect(call("").heading == "Working")
+        #expect(call(nil, kind: .execute, at: "/a/b/Makefile").heading == "Running Makefile")
+    }
+
+    @Test func theRecordingsAllComeOutReadable() throws {
+        for lines in [ACPTests.recording, ACPClaudeTranscriptTests.recording] {
+            for entry in ACPTranscript.folding(lines).entries {
+                guard let call = entry.tool else { continue }
+                let heading = call.heading
+                #expect(!heading.isEmpty)
+                #expect(heading.count < 60, "Too long for a row: \(heading)")
+                #expect(!heading.contains("/private/"), "Still a path: \(heading)")
+            }
+        }
+    }
+}
