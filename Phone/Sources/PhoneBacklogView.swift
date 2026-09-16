@@ -77,6 +77,8 @@ struct PhoneBacklogView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color(.paper))
         .navigationTitle(project.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { EditButton() }

@@ -78,7 +78,7 @@ final class Floor {
     private func refold(_ agent: UUID) {
         guard let store else { return }
         let size = (try? FileManager.default.attributesOfItem(
-            atPath: AgentDaemon.transcriptFile(for: agent, in: store).path)[.size] as? Int) ?? 0
+            atPath: store.transcriptFile(for: agent).path)[.size] as? Int) ?? 0
         guard lengths[agent] != size else { return }
         lengths[agent] = size
         _ = fold(agent)
@@ -87,7 +87,7 @@ final class Floor {
     @discardableResult
     private func fold(_ agent: UUID) -> ACPTranscript {
         guard let store else { return ACPTranscript() }
-        let page = ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store))
+        let page = ACPTranscript.folding(store.transcriptLines(for: agent))
         transcripts[agent] = page
         return page
     }

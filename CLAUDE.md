@@ -719,6 +719,22 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
       step. They are not generated from `project.yml` any more: xcodegen writes one file
       per target and would put the same one in every configuration.
     - The iPhone app is the same either way and archives from `Release`.
+- `Phone/Sources`: **the phone is the Mac seen from somewhere else**, so it is built to
+  the same measurements and set in the same paper. `Style` moved to `Shared` for that
+  reason: it was in the Mac's own sources, so the phone had picked its own corner radii
+  and paddings and drifted. One file, and a card is the same card on both.
+  `PhoneAgentView` is an agent's conversation on the phone, folded by the same
+  `ACPTranscript` and drawn the same way, with a field on glass to say something to it.
+  Thinking is not shown there: it is nine tenths of the words and there is no room on a
+  phone to fold it away behind a control. It is the network half only, because a
+  transcript is a file on the Mac and there is no copy in iCloud, so out of reach the page
+  says so rather than showing an empty conversation. Words go down as an `AgentMessage`
+  and the Mac delivers them the way it delivers a nudge, so the mailbox and the
+  never-mid-turn rule hold without the phone knowing about either.
+  `GET /api/transcript?agent=&after=` carries only the lines the phone has not got, and
+  `POST /api/say` writes the message. `FileStore` owns the transcript folder, not
+  `AgentDaemon`: the daemon is macOS only and this is the store's own layout, which both
+  apps know. (Alex, 16 Sep 2026.)
 - `Phone/Sources`: `PhoneModel` (NWBrowser finds the factory; `FactoryClient` speaks the
   package's HTTP over the Bonjour endpoint, polling `/api/snapshot` every 3 s and posting
   `/api/decide` and `/api/task`; when the factory is out of reach it reads, decides and

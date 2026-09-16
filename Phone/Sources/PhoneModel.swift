@@ -149,6 +149,47 @@ final class PhoneModel {
 
     /// From a Lock Screen button. The question is in the last snapshot when the app has
     /// been running; after a cold start it is fetched from iCloud, or the factory if near.
+    // MARK: Talking to an agent
+
+    /// One agent's conversation, from the line the phone already has. Only over the
+    /// network: a transcript is a file on the Mac and there is no copy in iCloud, so away
+    /// from home the page says so rather than showing an empty conversation.
+    /// (Alex, 16 Sep 2026.)
+    func conversation(with agent: UUID, after: Int) async -> (lines: [String], total: Int)? {
+        guard let client else { return nil }
+        do {
+            let response = try await client.send(HTTPRequest(
+                method: "GET", path: "/api/transcript?agent=\(agent.uuidString)&after=\(after)"))
+            guard response.status == 200 else { return nil }
+            let read = try JSONDecoder().decode(HTTPRouter.Conversation.self, from: response.body)
+            return (read.lines, read.total)
+        } catch {
+            return nil
+        }
+    }
+
+    /// Words for an agent. It goes down as a message, which the Mac delivers the way it
+    /// delivers a nudge, so the mailbox and the queueing behave as they already do and
+    /// nothing is said to an agent in the middle of a turn.
+    @discardableResult
+    func say(_ words: String, to agent: UUID) async -> Bool {
+        guard let client else { return false }
+        let said = words.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !said.isEmpty else { return false }
+        do {
+            let body = try JSONEncoder().encode(HTTPRouter.Said(agent: agent, text: said))
+            let response = try await client.send(HTTPRequest(
+                method: "POST", path: "/api/say",
+                headers: ["content-type": "application/json"], body: body))
+            return response.status == 200
+        } catch {
+            return false
+        }
+    }
+
+    /// Whether the Mac is in reach, which is what talking to an agent needs.
+    var canTalkToAgents: Bool { client != nil }
+
     func decide(escalationID: UUID, optionID: UUID) async {
         if snapshot.escalations.isEmpty { await poll() }
         var found = snapshot.escalations.first { $0.id == escalationID }

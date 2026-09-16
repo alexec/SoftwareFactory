@@ -21,12 +21,19 @@ struct PhoneRootView: View {
                     projects
                     registeredAgents
                 }
-                .padding(16)
+                .padding(Style.cardPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .scrollContentBackground(.hidden)
+            .background(Color(.paper))
             .navigationTitle("Needs you")
             .navigationDestination(for: Project.self) { project in
                 PhoneBacklogView(project: project)
+            }
+            // By id rather than by the status: a status is a snapshot of a moment, and
+            // the page it opens has to follow the agent as it works.
+            .navigationDestination(for: UUID.self) { id in
+                PhoneAgentView(agent: id)
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -34,6 +41,10 @@ struct PhoneRootView: View {
                 }
             }
         }
+        // The same paper and the same tint as the Mac. The two apps are one thing seen
+        // from two places, so a card is the same corner and the ground is the same
+        // ground. (Alex, 16 Sep 2026: harmonize the iPhone interface.)
+        .tint(Color(.mark))
         .sheet(isPresented: $showingSettings) { PhoneSettingsView() }
         .sheet(isPresented: Binding(get: { !model.hasSeenIntro }, set: { model.hasSeenIntro = !$0 })) {
             PhoneIntroSheet()
@@ -136,6 +147,7 @@ struct PhoneRootView: View {
                 Text("Agents")
                     .font(.title3.weight(.semibold))
                 ForEach(agents) { status in
+                    NavigationLink(value: status.agent.id) {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Circle()
                             .fill(dotColor(status.activity))
@@ -157,8 +169,14 @@ struct PhoneRootView: View {
                             }
                         }
                         Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
                     }
                     .padding(.vertical, 4)
+                    .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -178,8 +196,8 @@ struct NotificationPrimer: View {
             }
             .buttonStyle(.glassProminent)
         }
-        .padding(16)
-        .glassEffect(.regular, in: .rect(cornerRadius: 20))
+        .padding(Style.cardPadding)
+        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
     }
 }
 
@@ -196,8 +214,8 @@ struct NetworkPrimer: View {
             }
             .buttonStyle(.glassProminent)
         }
-        .padding(16)
-        .glassEffect(.regular, in: .rect(cornerRadius: 20))
+        .padding(Style.cardPadding)
+        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
     }
 }
 
@@ -270,7 +288,7 @@ struct PhoneEscalationCard: View {
                             .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
-                        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
+                        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: Style.panel))
                     }
                 }
             }
@@ -290,9 +308,9 @@ struct PhoneEscalationCard: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 14))
+            .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: Style.panel))
         }
-        .padding(16)
-        .glassEffect(.regular.tint(.orange.opacity(0.12)), in: .rect(cornerRadius: 20))
+        .padding(Style.cardPadding)
+        .glassEffect(.regular.tint(.orange.opacity(0.12)), in: .rect(cornerRadius: Style.card))
     }
 }

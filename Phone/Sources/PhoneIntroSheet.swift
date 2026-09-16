@@ -28,7 +28,7 @@ struct PhoneIntroSheet: View {
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(24)
+                .padding(Style.page)
             }
             Button {
                 model.hasSeenIntro = true
@@ -38,7 +38,7 @@ struct PhoneIntroSheet: View {
             }
             .buttonStyle(.glassProminent)
             .controlSize(.large)
-            .padding(.horizontal, 24)
+            .padding(.horizontal, Style.page)
             .padding(.bottom, 16)
         }
         .interactiveDismissDisabled()

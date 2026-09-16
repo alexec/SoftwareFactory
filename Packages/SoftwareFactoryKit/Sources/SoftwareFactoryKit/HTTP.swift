@@ -163,6 +163,18 @@ public struct HTTPRouter: Sendable {
                 }
             }
             return HTTPResponse(status: 200)
+        // An agent's conversation, for the phone. The transcript is a file under the
+        // store, so this reads it the same way it reads any other record and needs
+        // nothing from the daemon. `after` is how many lines the phone already has, so a
+        // poll carries the new ones rather than the whole thing every three seconds.
+        // (Alex, 16 Sep 2026: bring chatting to the iPhone.)
+        case ("GET", "/api/transcript"):
+            return transcript(request)
+        // Words for an agent, from the phone. Written down as a message, which the app
+        // delivers the way it delivers a nudge: one path, so the mailbox, the queueing
+        // and the transcript all behave as they already do.
+        case ("POST", "/api/say"):
+            return say(request.body)
         case ("GET", "/api/snapshot"):
             do { return .encoded(try store.load()) } catch { return .text("\(error)", status: 500) }
         case ("POST", "/api/decide"):
@@ -187,6 +199,64 @@ public struct HTTPRouter: Sendable {
     static func originAllowed(_ origin: String) -> Bool {
         guard let url = URL(string: origin), let host = url.host() else { return false }
         return host == "localhost" || host == "127.0.0.1" || host == "::1"
+    }
+
+    /// One agent's conversation, folded, and how many raw lines it was folded from so the
+    /// caller can ask for the rest next time.
+    public struct Conversation: Codable, Sendable {
+        public var lines: [String]
+        public var total: Int
+
+        public init(lines: [String], total: Int) {
+            self.lines = lines
+            self.total = total
+        }
+    }
+
+    func transcript(_ request: HTTPRequest) -> HTTPResponse {
+        let query = request.path.split(separator: "?").dropFirst().joined(separator: "?")
+        var wanted: [String: String] = [:]
+        for pair in query.split(separator: "&") {
+            let parts = pair.split(separator: "=", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+            wanted[String(parts[0])] = String(parts[1]).removingPercentEncoding ?? String(parts[1])
+        }
+        guard let raw = wanted["agent"], let agent = UUID(uuidString: raw) else {
+            return .text("agent is required", status: 400)
+        }
+        let all = store.transcriptLines(for: agent)
+        let after = wanted["after"].flatMap(Int.init) ?? 0
+        let from = min(max(after, 0), all.count)
+        return .encoded(Conversation(lines: Array(all[from...]), total: all.count))
+    }
+
+    public struct Said: Codable, Sendable {
+        public var agent: UUID
+        public var text: String
+
+        public init(agent: UUID, text: String) {
+            self.agent = agent
+            self.text = text
+        }
+    }
+
+    func say(_ body: Data) -> HTTPResponse {
+        guard let said = try? JSONDecoder().decode(Said.self, from: body) else {
+            return .text("Expected agent and text", status: 400)
+        }
+        let words = said.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !words.isEmpty else { return .text("Nothing to say", status: 400) }
+        do {
+            let snap = try store.load()
+            guard let agent = snap.agents.first(where: { $0.id == said.agent }), agent.isRegistered else {
+                return .text("Unknown agent", status: 404)
+            }
+            try store.save(AgentMessage(recipientID: agent.id, from: "Alex",
+                                        subject: "You", contents: words))
+            return HTTPResponse(status: 200)
+        } catch {
+            return .text("\(error)", status: 500)
+        }
     }
 
     func mcp(_ request: HTTPRequest, as caller: String? = nil) -> HTTPResponse {

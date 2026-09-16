@@ -1,6 +1,11 @@
 import Foundation
 
-/// The measurements the Mac app is built to.
+/// The measurements both apps are built to.
+///
+/// It lived in the Mac's own sources, so the phone had its own numbers and drifted: two
+/// corner radii it had picked for itself, and paddings that were nearly but not quite
+/// these. One file in `Shared`, and a corner is the same corner on both.
+/// (Alex, 16 Sep 2026: harmonize the iPhone interface.)
 ///
 /// They were each written where they were used, so the same thing came out at four
 /// sizes: a card at 18 points of corner and a card at 14, a box inside a card at 12 and

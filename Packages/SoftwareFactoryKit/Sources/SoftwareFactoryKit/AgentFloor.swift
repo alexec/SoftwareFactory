@@ -121,10 +121,10 @@ public final class AgentFloor: @unchecked Sendable {
         // transcript is the record, and a silent failure to keep it is the worst one
         // available. It happens for real, because the store is a group container and a
         // process started outside the app may not be allowed in. (T373.)
-        guard AgentDaemon.canKeepTranscripts(in: store) else {
+        guard store.canKeepTranscripts else {
             return .no("The daemon cannot write to \(store.root.path)/transcripts, so it could not keep a record of what this agent does. Start it from the app rather than by hand.")
         }
-        let transcript = AgentDaemon.transcriptFile(for: agent, in: store)
+        let transcript = store.transcriptFile(for: agent)
         // A resume keeps the log: that is the conversation being picked back up. A fresh
         // start writes over it, because a new conversation under an old log reads as one
         // conversation that has lost its middle.
@@ -133,7 +133,7 @@ public final class AgentFloor: @unchecked Sendable {
         let connection = ACPConnection(
             agent: agent, command: binary, arguments: launch.arguments, cwd: cwd,
             environment: environment(for: cwd), transcript: transcript,
-            complaints: AgentDaemon.complaintsFile(for: agent, in: store))
+            complaints: store.complaintsFile(for: agent))
 
         let held = Held(connection: connection,
                         state: AgentDaemon.Running(agent: agent, state: .starting),
@@ -253,7 +253,7 @@ public final class AgentFloor: @unchecked Sendable {
     /// second record: the log is the record, and a daemon restart must not lose the
     /// conversation the app is about to ask it to pick back up.
     private func knownSession(for agent: UUID) -> String? {
-        for line in AgentDaemon.transcriptLines(for: agent, in: store).reversed() {
+        for line in store.transcriptLines(for: agent).reversed() {
             if case .update(let session, _) = ACP.read(line: line) { return session }
         }
         return nil

@@ -34,45 +34,6 @@ public enum AgentDaemon {
         return folder
     }
 
-    /// One log per agent, under the store, beside `agents/` and `tasks/`. It is the
-    /// record: the transcript on an agent's page is folded out of this file, which is why
-    /// the page has something to show after the app has been rebuilt under it.
-    public static func transcriptFolder(in store: FileStore) -> URL {
-        let folder = store.root.appending(path: "transcripts", directoryHint: .isDirectory)
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        return folder
-    }
-
-    public static func transcriptFile(for agent: UUID, in store: FileStore) -> URL {
-        transcriptFolder(in: store).appending(path: "\(agent.uuidString).jsonl")
-    }
-
-    /// Whatever the agent wrote to stderr. Not shown anywhere: it is what you read when
-    /// an agent will not start and the transcript is empty, which is the one failure the
-    /// protocol itself cannot describe.
-    public static func complaintsFile(for agent: UUID, in store: FileStore) -> URL {
-        transcriptFolder(in: store).appending(path: "\(agent.uuidString).err")
-    }
-
-    /// Whether the transcript folder is really there and really writable. The store is a
-    /// group container, and a daemon started outside the app may not be allowed into it,
-    /// in which case every log would be silently empty.
-    public static func canKeepTranscripts(in store: FileStore) -> Bool {
-        let folder = transcriptFolder(in: store)
-        var isFolder: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isFolder),
-              isFolder.boolValue else { return false }
-        return FileManager.default.isWritableFile(atPath: folder.path)
-    }
-
-    /// The lines an agent has sent, for folding into a page. A missing file is an agent
-    /// that has not started rather than an error.
-    public static func transcriptLines(for agent: UUID, in store: FileStore) -> [String] {
-        guard let text = try? String(contentsOf: transcriptFile(for: agent, in: store), encoding: .utf8)
-        else { return [] }
-        return text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
-    }
-
     // MARK: What the app asks for
 
     public struct Request: Codable, Sendable, Equatable {

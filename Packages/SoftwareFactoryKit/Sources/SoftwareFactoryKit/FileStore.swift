@@ -118,6 +118,49 @@ public struct FileStore: Sendable {
         return numbers.take(notBelow: seen.flatMap { $0 } ?? 0)
     }
 
+    // MARK: Transcripts
+
+    /// One log per agent, under the store, beside `agents/` and `tasks/`. It is the
+    /// record of what an agent did: the daemon appends to it, the Mac's page folds it, and
+    /// the phone reads it over HTTP. Here rather than on the daemon because the daemon is
+    /// macOS only and this is the store's own folder layout, which both apps know.
+    /// (T373; Alex, 16 Sep 2026.)
+    public var transcriptFolder: URL {
+        let folder = root.appending(path: "transcripts", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }
+
+    public func transcriptFile(for agent: UUID) -> URL {
+        transcriptFolder.appending(path: "\(agent.uuidString).jsonl")
+    }
+
+    /// Whatever the agent wrote to stderr. Not shown anywhere: it is what you read when
+    /// an agent will not start and the transcript is empty, which is the one failure the
+    /// protocol itself cannot describe.
+    public func complaintsFile(for agent: UUID) -> URL {
+        transcriptFolder.appending(path: "\(agent.uuidString).err")
+    }
+
+    /// The lines an agent has sent, for folding into a page. A missing file is an agent
+    /// that has not started rather than an error.
+    public func transcriptLines(for agent: UUID) -> [String] {
+        guard let text = try? String(contentsOf: transcriptFile(for: agent), encoding: .utf8)
+        else { return [] }
+        return text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+    }
+
+    /// Whether the transcript folder is really there and really writable. The store is a
+    /// group container, and a daemon started outside the app may not be allowed into it,
+    /// in which case every log would be silently empty.
+    public var canKeepTranscripts: Bool {
+        let folder = transcriptFolder
+        var isFolder: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isFolder),
+              isFolder.boolValue else { return false }
+        return FileManager.default.isWritableFile(atPath: folder.path)
+    }
+
     /// The throttle is one file, `throttle.json`, and the default when there is none.
     public func throttle() -> Throttle {
         let url = root.appending(path: "throttle.json")

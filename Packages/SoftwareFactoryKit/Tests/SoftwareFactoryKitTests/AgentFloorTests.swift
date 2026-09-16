@@ -41,7 +41,7 @@ struct AgentFloorTests {
 
     /// Everything the factory has actually said to this agent, in order.
     static func asked(_ agent: UUID, in store: FileStore) -> [String] {
-        ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store))
+        ACPTranscript.folding(store.transcriptLines(for: agent))
             .entries.compactMap { entry in
                 if case .asked(let text) = entry.kind { return text }
                 return nil
@@ -68,9 +68,9 @@ struct AgentFloorTests {
         #expect(reply.session == "stub-session-1")
 
         await Self.until("the turn to finish") {
-            ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store)).lastSaid != nil
+            ACPTranscript.folding(store.transcriptLines(for: agent)).lastSaid != nil
         }
-        let page = ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store))
+        let page = ACPTranscript.folding(store.transcriptLines(for: agent))
         // Both sides of it: what the factory said, the tool, then what it said back.
         #expect(page.entries.first?.text == "read the backlog")
         #expect(page.entries.compactMap(\.tool).count == 1)
@@ -84,13 +84,13 @@ struct AgentFloorTests {
         let agent = UUID()
         #expect(await Self.start(floor, agent: agent, cwd: root, words: "first").ok)
         await Self.until("the first turn") {
-            ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store)).lastSaid != nil
+            ACPTranscript.folding(store.transcriptLines(for: agent)).lastSaid != nil
         }
         #expect(await floor.handle(AgentDaemon.Request(op: .say, agent: agent, text: "second")).ok)
         await Self.until("the second turn") {
-            ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store)).entries.count >= 6
+            ACPTranscript.folding(store.transcriptLines(for: agent)).entries.count >= 6
         }
-        let asked = ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store))
+        let asked = ACPTranscript.folding(store.transcriptLines(for: agent))
             .entries.compactMap { entry -> String? in
                 if case .asked(let text) = entry.kind { return text }
                 return nil
@@ -113,7 +113,7 @@ struct AgentFloorTests {
         // standing one and the agent stops asking about this kind of thing. One round
         // trip rather than one per call. (Alex, 16 Sep 2026.)
         await Self.until("it to carry on") {
-            ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store)).entries
+            ACPTranscript.folding(store.transcriptLines(for: agent)).entries
                 .contains { $0.text?.contains("picked:allow_always") == true }
         }
         #expect(floor.everything().first?.waiting == nil)
@@ -154,7 +154,7 @@ struct AgentFloorTests {
                 op: .permission, agent: agent, requestID: waiting.requestID, optionID: "allow_once"))
             #expect(answered.ok)
             await Self.until("the agent to carry on") {
-                (ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store)).entries
+                (ACPTranscript.folding(store.transcriptLines(for: agent)).entries
                     .contains { $0.text?.contains("picked:allow_once") == true })
             }
             #expect(floor.everything().first?.waiting == nil)
@@ -197,12 +197,12 @@ struct AgentFloorTests {
         let agent = UUID()
         #expect(await Self.start(floor, agent: agent, cwd: root, words: "say this").ok)
         await Self.until("the turn") {
-            ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store)).lastSaid != nil
+            ACPTranscript.folding(store.transcriptLines(for: agent)).lastSaid != nil
         }
         #expect(await floor.handle(AgentDaemon.Request(op: .stop, agent: agent)).ok)
         await Self.until("the child to go") { floor.everything().first?.isAlive == false }
         // What it last said is still readable, which is what leaving the tmux pane did.
-        #expect(AgentDaemon.transcriptLines(for: agent, in: store).isEmpty == false)
+        #expect(store.transcriptLines(for: agent).isEmpty == false)
         #expect(floor.everything().first?.state == .stopped)
     }
 
@@ -212,18 +212,18 @@ struct AgentFloorTests {
         let agent = UUID()
         #expect(await Self.start(floor, agent: agent, cwd: root, words: "first words").ok)
         await Self.until("the turn") {
-            ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store)).lastSaid != nil
+            ACPTranscript.folding(store.transcriptLines(for: agent)).lastSaid != nil
         }
         _ = await floor.handle(AgentDaemon.Request(op: .stop, agent: agent))
         await Self.until("the child to go") { floor.everything().first?.isAlive == false }
-        let before = AgentDaemon.transcriptLines(for: agent, in: store).count
+        let before = store.transcriptLines(for: agent).count
 
         let again = await floor.handle(AgentDaemon.Request(op: .resume, agent: agent, kind: "copilot",
                                                           cwd: root.path, text: "carry on"))
         #expect(again.ok, "\(again.error ?? "")")
         #expect(again.session == "stub-session-1", "It comes back as the same conversation.")
         // And the log is not started over: that is the conversation being picked up.
-        #expect(AgentDaemon.transcriptLines(for: agent, in: store).count > before)
+        #expect(store.transcriptLines(for: agent).count > before)
         _ = await floor.handle(AgentDaemon.Request(op: .stop, agent: agent))
     }
 
@@ -233,16 +233,16 @@ struct AgentFloorTests {
         let agent = UUID()
         #expect(await Self.start(floor, agent: agent, cwd: root, words: "old words").ok)
         await Self.until("the turn") {
-            ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store)).lastSaid != nil
+            ACPTranscript.folding(store.transcriptLines(for: agent)).lastSaid != nil
         }
         _ = await floor.handle(AgentDaemon.Request(op: .stop, agent: agent))
         await Self.until("the child to go") { floor.everything().first?.isAlive == false }
 
         #expect(await Self.start(floor, agent: agent, cwd: root, words: "new words").ok)
         await Self.until("the new turn") {
-            ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store)).lastSaid != nil
+            ACPTranscript.folding(store.transcriptLines(for: agent)).lastSaid != nil
         }
-        let page = ACPTranscript.folding(AgentDaemon.transcriptLines(for: agent, in: store))
+        let page = ACPTranscript.folding(store.transcriptLines(for: agent))
         #expect(page.entries.contains { $0.text == "old words" } == false,
                 "A new conversation under an old log reads as one that has lost its middle.")
         _ = await floor.handle(AgentDaemon.Request(op: .stop, agent: agent))
@@ -295,13 +295,13 @@ struct AgentFloorTests {
 
     @Test func aDaemonThatCannotKeepARecordSaysSoRatherThanStartingAnyway() async throws {
         let (store, root) = try Self.scratch()
-        #expect(AgentDaemon.canKeepTranscripts(in: store))
+        #expect(store.canKeepTranscripts)
         // What a daemon started outside the app looks like against a group container it
         // is not allowed into.
-        let folder = AgentDaemon.transcriptFolder(in: store)
+        let folder = store.transcriptFolder
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) }
-        #expect(AgentDaemon.canKeepTranscripts(in: store) == false)
+        #expect(store.canKeepTranscripts == false)
         let reply = await Self.start(Self.floor(store), agent: UUID(), cwd: root)
         #expect(reply.ok == false)
         #expect(reply.error?.contains("could not keep a record") == true)

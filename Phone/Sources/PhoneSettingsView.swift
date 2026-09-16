@@ -76,7 +76,9 @@ struct PhoneSettingsView: View {
                 }
                 #endif
             }
-            .navigationTitle("Settings")
+            .scrollContentBackground(.hidden)
+        .background(Color(.paper))
+        .navigationTitle("Settings")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }

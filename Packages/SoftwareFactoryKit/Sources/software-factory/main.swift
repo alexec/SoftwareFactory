@@ -103,7 +103,7 @@ case "floor":
         let waiting = one.waiting.map { "  waiting: \($0.title)" } ?? ""
         let turn = one.isPrompting ? "  (in a turn)" : ""
         print("  \(word) \(one.agent.uuidString)  pid \(one.pid.map(String.init) ?? "-")\(turn)\(waiting)")
-        let lines = AgentDaemon.transcriptLines(for: one.agent, in: store)
+        let lines = store.transcriptLines(for: one.agent)
         let page = ACPTranscript.folding(lines)
         if let line = page.line { print("            \(line)") }
     }
