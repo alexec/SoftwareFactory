@@ -127,11 +127,27 @@ struct PaperToneTests {
         let ink = Paper.Tone.ink.hex
         #expect(UInt32(paper.light, radix: 16)! > UInt32(ink.light, radix: 16)!)
         #expect(UInt32(paper.dark, radix: 16)! < UInt32(ink.dark, radix: 16)!)
-        // And warm, not grey: more red than blue, both ways up.
-        for hex in [paper.light, paper.dark] {
-            let value = UInt32(hex, radix: 16)!
-            #expect((value >> 16) & 0xFF > value & 0xFF, "\(hex) is not warm")
+    }
+
+    /// The whole point of the palette: it is drafting paper and not notepaper, because
+    /// notepaper is what Claude is set on and an app that looks like the model it happens
+    /// to run has no face of its own. Cool is the break, so cool is what is tested.
+    /// (Alex, 16 Sep 2026.)
+    @Test func theGroundIsCoolRatherThanCream() {
+        for tone in [Paper.Tone.paper, .ink, .quiet, .rule, .edge, .block] {
+            for hex in [tone.hex.light, tone.hex.dark] {
+                let value = UInt32(hex, radix: 16)!
+                let red = (value >> 16) & 0xFF
+                let blue = value & 0xFF
+                #expect(blue > red, "\(tone.rawValue) #\(hex) is warm, and this palette is not")
+            }
         }
+    }
+
+    @Test func theOneColourOnThePageIsTheBlueTheMockupsUsed() {
+        #expect(Paper.Tone.mark.hex.light == "0b63ce")
+        let dark = UInt32(Paper.Tone.mark.hex.dark, radix: 16)!
+        #expect(dark & 0xFF > (dark >> 16) & 0xFF, "The mark stays blue in the dark too")
     }
 
     @Test func thereIsAMeasureAndItIsTheOneTheDocumentsUse() {

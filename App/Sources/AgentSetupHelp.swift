@@ -51,6 +51,8 @@ struct AgentSetupHelp: View {
             .padding(Style.page)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .background(Color(.paper))
+        .tint(Color(.mark))
         .frame(minWidth: 460, idealWidth: 560, minHeight: 420, idealHeight: 620)
     }
 }

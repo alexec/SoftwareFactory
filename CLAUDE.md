@@ -494,13 +494,23 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     break, so a whole plan arrived as one paragraph. (T208) A line indented under a
     bullet is the rest of that bullet: a hard-wrapped list used to come apart, half the
     sentence in the item and half underneath it as a paragraph. (T311)
-  - `Paper.Tone` and `Shared/PaperTone.swift`: the seven colours paper is made of and the
-    measure it is set to, written down once. They lived in the stylesheet and nowhere else,
-    which was fine while the only papery thing was a document in a web view; the agent's
-    own conversation reads as paper too now and is drawn in SwiftUI, so without one source
-    the two would have drifted the first time either was touched. Dark is its own paper
-    rather than a white page dimmed, and the ground is warm rather than grey both ways up,
-    which the tests check. (Alex, 16 Sep 2026: that lovely papery style, matt finish.)
+  - `Paper.Tone` and `Shared/PaperTone.swift`: **drafting paper**, the house theme. Seven
+    colours and a measure, written down once, and the stylesheet built from them: the
+    documents are HTML in a web view and the agent's conversation is SwiftUI, so two
+    sources would have drifted the first time either was touched.
+    The first version was a warm cream ground with a rust mark, which is a lovely thing to
+    read and is also, exactly, Claude's own paper. An app that looks like the model it
+    happens to run has no face of its own. So it is cool where that was warm, which is the
+    clearest break available, with the blue the mockups already used as the one colour on
+    the page: `#0b63ce`, which is the app's tint as well. It is a factory, and this is the
+    paper a factory's drawings are on. It suits Liquid Glass better too, which is cool and
+    luminous and has something to refract when the ground is not cream.
+    The tests guard the two things easy to undo later: every tone is cool both ways up,
+    and dark is its own paper rather than a white page dimmed.
+    It goes under the whole window. Glass keeps its translucency and sits on this rather
+    than replacing it, so the theme is what shows through the glass instead of a second
+    idea beside it. (Alex, 16 Sep 2026: papery, but not Claude papery, and used
+    everywhere.)
   - An agent's conversation is set on paper: the warm ground, a serif for everything
     anybody said, the same measure the documents use so a line is one you can read to the
     end of, and no gloss anywhere. A tool call is a block set into the page, like a quote

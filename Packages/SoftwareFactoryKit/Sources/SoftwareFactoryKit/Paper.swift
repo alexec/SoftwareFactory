@@ -215,11 +215,19 @@ public enum Paper {
     /// wide window does not run a sentence off the far side. Dark is ink and paper the
     /// The colours paper is made of, light and dark, in one place.
     ///
-    /// They were written into the stylesheet and nowhere else, which was fine while the
-    /// only papery thing was a document in a web view. The agent's own page reads as paper
-    /// too now, and it is drawn in SwiftUI rather than HTML, so the two would have drifted
-    /// the first time either was touched. (Alex, 16 Sep 2026: that lovely papery style,
-    /// matt finish.)
+    /// **Drafting paper**, not notepaper. The first version of this was a warm cream
+    /// ground with a rust mark, which is a lovely thing to read and is also, exactly,
+    /// Claude's own paper. An app that looks like the model it happens to run is an app
+    /// with no face of its own. So: cool where that was warm, which is the clearest break
+    /// available, and the blue the mockups already used as the one colour on the page.
+    /// It is a factory, and this is the paper a factory's drawings are on.
+    ///
+    /// It suits Liquid Glass better as well. Glass is cool and luminous, and it has
+    /// something to refract when the ground underneath it is not cream.
+    ///
+    /// One place, because the documents are HTML in a web view and the agent's page is
+    /// SwiftUI, and two sources would have drifted the first time either was touched.
+    /// (Alex, 16 Sep 2026: papery, but not Claude papery, and used everywhere.)
     public enum Tone: String, CaseIterable, Sendable {
         /// The ground. Warm, not white.
         case paper
@@ -239,13 +247,13 @@ public enum Paper {
         /// Light, then dark. Six digits, no hash.
         public var hex: (light: String, dark: String) {
             switch self {
-            case .paper: ("fbfaf6", "1b1a18")
-            case .ink: ("22201c", "e6e1d8")
-            case .quiet: ("6d675d", "9c958a")
-            case .rule: ("e0dbd0", "35322d")
-            case .edge: ("cfc8ba", "45413a")
-            case .block: ("f1ede4", "26241f")
-            case .mark: ("8a5a2b", "d0a271")
+            case .paper: ("f2f4f7", "14181d")
+            case .ink: ("1b2027", "dfe4ea")
+            case .quiet: ("5d6874", "8e99a6")
+            case .rule: ("dbe1e9", "262d36")
+            case .edge: ("c3ccd8", "323b46")
+            case .block: ("e8ecf2", "1c222a")
+            case .mark: ("0b63ce", "6fa8f5")
             }
         }
     }
