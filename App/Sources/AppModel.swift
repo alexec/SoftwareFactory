@@ -70,6 +70,13 @@ final class AppModel: Deciding {
             server.start()
             self.server = server
         }
+        // Once a launch, and off this thread: a log whose agent is no longer in the store
+        // has no page and no way to be read, and before T555 nothing ever took one away.
+        // Deleting an agent archives its log now, so this is only for the ones stranded
+        // before that, and after the first launch it finds nothing and costs one listing.
+        if let store {
+            _Concurrency.Task.detached(priority: .background) { store.archiveStrandedTranscripts() }
+        }
         _Concurrency.Task { await cloud.prepare() }
         _Concurrency.Task { await notifier.refreshStanding() }
         notifier.onDecision = { [weak self] escalationID, optionID in
@@ -406,6 +413,12 @@ final class AppModel: Deciding {
             for report in Artifacts.statusReports(by: agent.id, in: snapshot.artifacts) {
                 try store.delete(report)
             }
+            // Its conversation goes to the archive with it. It used to stay on the disk
+            // for ever with no agent, no page and no way to read it: 49 MB of stranded log
+            // on this Mac by the fifth day. Archived rather than deleted, which is what
+            // Alex chose, and which costs nothing here because nothing reads either.
+            // (R78, T555.)
+            store.archiveTranscript(of: agent.id)
             try store.delete(agent)
         }
     }
@@ -420,7 +433,7 @@ final class AppModel: Deciding {
     func archive(_ agent: Agent) {
         stop(agent)
         persist { store in
-            guard var found = try store.load().agents.first(where: { $0.id == agent.id }) else { return }
+            guard var found = store.loadAgent(agent.id) else { return }
             found.archivedAt = .now
             try store.save(found)
         }
@@ -430,7 +443,7 @@ final class AppModel: Deciding {
     /// one whose CLI can pick a session back up is offered Start the moment it reappears.
     func unarchive(_ agent: Agent) {
         persist { store in
-            guard var found = try store.load().agents.first(where: { $0.id == agent.id }) else { return }
+            guard var found = store.loadAgent(agent.id) else { return }
             found.archivedAt = nil
             try store.save(found)
         }
@@ -562,7 +575,7 @@ final class AppModel: Deciding {
             }.value
             guard let self, let pid, let started = ProcessCheck.startTime(of: pid) else { return }
             self.persist { store in
-                guard var found = try store.load().agents.first(where: { $0.id == agent.id }) else { return }
+                guard var found = store.loadAgent(agent.id) else { return }
                 found.pid = pid
                 found.pidStartedAt = started
                 try store.save(found)
@@ -574,7 +587,7 @@ final class AppModel: Deciding {
     func setRuntime(_ runtime: Agent.Runtime, for agent: Agent) {
         guard agent.runtime != runtime else { return }
         persist { store in
-            guard var found = try store.load().agents.first(where: { $0.id == agent.id }) else { return }
+            guard var found = store.loadAgent(agent.id) else { return }
             found.runtime = runtime
             try store.save(found)
         }
@@ -585,7 +598,7 @@ final class AppModel: Deciding {
     func rememberACPSession(_ session: String?, for agent: Agent) {
         guard let session, agent.acpSession != session else { return }
         persist { store in
-            guard var found = try store.load().agents.first(where: { $0.id == agent.id }) else { return }
+            guard var found = store.loadAgent(agent.id) else { return }
             found.acpSession = session
             try store.save(found)
         }
@@ -617,7 +630,7 @@ final class AppModel: Deciding {
             guard newPID || newLine || newSession || newTurn else { continue }
             let started = newPID ? one.pid.flatMap { ProcessCheck.startTime(of: $0) } : nil
             persist { store in
-                guard var found = try store.load().agents.first(where: { $0.id == one.agent }) else { return }
+                guard var found = store.loadAgent(one.agent) else { return }
                 if newLine { found.title = line }
                 if newSession { found.acpSession = one.session }
                 found.isPrompting = one.isPrompting
@@ -794,7 +807,7 @@ final class AppModel: Deciding {
     func remember(_ kind: LaunchAgent, for agent: Agent) {
         guard agent.launchedWith != kind.rawValue else { return }
         persist { store in
-            guard var found = try store.load().agents.first(where: { $0.id == agent.id }) else { return }
+            guard var found = store.loadAgent(agent.id) else { return }
             found.launchedWith = kind.rawValue
             try store.save(found)
         }

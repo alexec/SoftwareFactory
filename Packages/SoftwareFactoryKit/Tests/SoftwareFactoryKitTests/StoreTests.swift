@@ -149,6 +149,75 @@ func wholeSecond() -> Date {
         #expect(store.stamp() == first)
     }
 
+    @Test func oneAgentReadsBackFromItsOwnFile() throws {
+        let store = try temporaryStore()
+        var wanted = Agent(number: 7, projectID: "p", registered: wholeSecond())
+        wanted.title = "on it"
+        try store.save(wanted)
+        // A floor's worth of others, so the answer is not "it read them all and picked one".
+        for n in 1...20 { try store.save(Agent(number: n + 100, projectID: "p", registered: wholeSecond())) }
+        #expect(store.loadAgent(wanted.id)?.title == "on it")
+        #expect(store.loadAgent(wanted.id)?.number == 7)
+        #expect(store.loadAgent(UUID()) == nil)
+    }
+
+    @Test func aDeletedAgentReadsBackAsNothingRatherThanThrowing() throws {
+        let store = try temporaryStore()
+        let agent = Agent(number: 1, projectID: "p", registered: wholeSecond())
+        try store.save(agent)
+        #expect(store.loadAgent(agent.id) != nil)
+        try store.delete(agent)
+        #expect(store.loadAgent(agent.id) == nil)
+    }
+
+    /// A deleted agent's conversation goes to the archive rather than staying on the disk
+    /// with nothing to read it. (R78, T555.)
+    @Test func anAgentsLogIsArchivedWithIt() throws {
+        let store = try temporaryStore()
+        let agent = Agent(number: 1, projectID: "p", registered: wholeSecond())
+        try store.save(agent)
+        try "a line\n".write(to: store.transcriptFile(for: agent.id), atomically: true, encoding: .utf8)
+        try "it went wrong\n".write(to: store.complaintsFile(for: agent.id), atomically: true, encoding: .utf8)
+
+        #expect(store.archiveTranscript(of: agent.id) == 2)
+        #expect(store.transcriptLines(for: agent.id).isEmpty)
+        let kept = store.archiveFolder("transcripts").appending(path: "\(agent.id.uuidString).jsonl")
+        #expect(try String(contentsOf: kept, encoding: .utf8) == "a line\n")
+        // Nothing to move the second time, and nothing thrown.
+        #expect(store.archiveTranscript(of: agent.id) == 0)
+    }
+
+    @Test func aLogWithNoAgentIsSweptUpAndOneWithAnAgentIsLeftAlone() throws {
+        let store = try temporaryStore()
+        let here = Agent(number: 1, projectID: "p", registered: wholeSecond())
+        try store.save(here)
+        try "mine\n".write(to: store.transcriptFile(for: here.id), atomically: true, encoding: .utf8)
+        let gone = UUID()
+        try "stranded\n".write(to: store.transcriptFile(for: gone), atomically: true, encoding: .utf8)
+        // Something else in the folder, which is not ours to move.
+        let stranger = store.transcriptFolder.appending(path: "notes.txt")
+        try "hello".write(to: stranger, atomically: true, encoding: .utf8)
+
+        #expect(store.archiveStrandedTranscripts() == 1)
+        #expect(store.transcriptLines(for: here.id) == ["mine"])
+        #expect(store.transcriptLines(for: gone).isEmpty)
+        #expect(FileManager.default.fileExists(atPath: stranger.path))
+        let kept = store.archiveFolder("transcripts").appending(path: "\(gone.uuidString).jsonl")
+        #expect(try String(contentsOf: kept, encoding: .utf8) == "stranded\n")
+        // Run again and there is nothing left to find.
+        #expect(store.archiveStrandedTranscripts() == 0)
+    }
+
+    /// An empty `agents/` is not a floor with nobody on it: it is a store that has not been
+    /// read, and sweeping against it would archive every live conversation there is.
+    @Test func anEmptyFloorSweepsNothing() throws {
+        let store = try temporaryStore()
+        let who = UUID()
+        try "words\n".write(to: store.transcriptFile(for: who), atomically: true, encoding: .utf8)
+        #expect(store.archiveStrandedTranscripts() == 0)
+        #expect(store.transcriptLines(for: who) == ["words"])
+    }
+
     @Test func everyRecordCarriesAVersionAndReadsWithoutOne() throws {
         let store = try temporaryStore()
         let project = Project(name: "a", id: "/a")

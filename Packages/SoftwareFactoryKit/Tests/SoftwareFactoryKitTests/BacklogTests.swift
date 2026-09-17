@@ -327,6 +327,41 @@ import Testing
         #expect(!d.agents[1].waitingOnYou)
     }
 
+    /// Everything in an agent's name, and its one report, come off the status. The sidebar
+    /// worked both out in a view body, once per row and again for the row's help. (T526.)
+    @Test func aStatusCarriesEverythingInItsAgentsName() {
+        let p = Project(name: "a", id: "/a")
+        let agent = Agent(number: 1, projectID: "/a", registered: now)
+        let other = Agent(number: 2, projectID: "/a", registered: now)
+        var blocked = FactoryTask(projectID: p.id, title: "blocked", state: .blocked, rank: 1)
+        blocked.agentID = agent.id
+        var going = FactoryTask(projectID: p.id, title: "going", state: .inProgress, rank: 2)
+        going.agentID = agent.id
+        var finished = FactoryTask(projectID: p.id, title: "done", state: .succeeded, rank: 3)
+        finished.agentID = agent.id
+        var theirs = FactoryTask(projectID: p.id, title: "theirs", state: .inProgress, rank: 4)
+        theirs.agentID = other.id
+        var mine = Artifact(projectID: p.id, title: "A1", body: "on it", kind: .statusReport)
+        mine.agentID = agent.id
+        var elsewhere = Artifact(projectID: "/b", title: "A1", body: "somewhere else", kind: .statusReport)
+        elsewhere.agentID = agent.id
+        let d = Dashboard.make(
+            snapshot: Snapshot(projects: [p], tasks: [blocked, going, finished, theirs],
+                               artifacts: [mine, elsewhere], agents: [agent, other]),
+            now: now)
+
+        let first = d.agents[0]
+        // Blocked first, finished left out, and somebody else's is not yours.
+        #expect(first.held.map(\.title) == ["blocked", "going"])
+        #expect(d.agents[1].held.map(\.title) == ["theirs"])
+        // The report on the project it is on, not the one it left behind on another.
+        #expect(first.report?.body == "on it")
+        #expect(d.agents[1].report == nil)
+        // The same answers the views used to work out for themselves.
+        #expect(first.held == Backlog.alreadyYours(agent.id, in: [blocked, going, finished, theirs]))
+        #expect(first.report == Artifacts.statusReport(by: agent.id, on: "/a", in: [mine, elsewhere]))
+    }
+
     /// An agent the app starts knows its name before it registers. The number is taken
     /// off the factory's counter, so nothing about the agents still in the store can
     /// hand the same one out twice.

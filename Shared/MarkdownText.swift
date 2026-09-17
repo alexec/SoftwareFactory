@@ -11,7 +11,7 @@ struct MarkdownText: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(Markdown.blocks(text).enumerated()), id: \.offset) { _, block in
+            ForEach(Array(MarkdownCache.blocks(text).enumerated()), id: \.offset) { _, block in
                 view(for: block)
             }
         }
@@ -83,12 +83,52 @@ struct MarkdownText: View {
 
     /// Bold, links and `code` inside a line are markdown's own job.
     private func inline(_ words: String) -> Text {
-        if let attributed = try? AttributedString(
+        Text(MarkdownCache.attributed(words))
+    }
+}
+
+/// Markdown parsed once per piece of text rather than once per redraw.
+///
+/// `body` runs whenever anything on the screen changes, and the app reloads the store every
+/// two seconds, so a conversation of three hundred turns re-read three hundred documents to
+/// draw the same words again. Splitting one is cheap and reading the marks inside its lines
+/// is not: measured on a real status report of 2,852 characters, 0.03 ms to split and
+/// 0.21 ms for the lines. The text is the key because the text is the whole input: these are
+/// pure functions, so the same string always folds the same way and a stale answer is not a
+/// thing that can happen. (R67, T526.)
+///
+/// **Main actor rather than a lock.** Every caller is a SwiftUI view body, so there is one
+/// thread and nothing to guard against.
+///
+/// Full is emptied rather than evicted by age. What is wanted is what is on screen, which
+/// arrives together and is asked for again on the next redraw, so the cache refills in one
+/// pass; keeping a use order to throw away the coldest entry is bookkeeping on every read to
+/// save a refill that costs a frame every few thousand documents.
+@MainActor
+enum MarkdownCache {
+    /// Generous enough to hold a long conversation scrolled all the way back, small enough
+    /// that a runaway is a few megabytes rather than the store.
+    static let room = 4000
+
+    private static var split: [String: [MarkdownBlock]] = [:]
+    private static var lines: [String: AttributedString] = [:]
+
+    static func blocks(_ text: String) -> [MarkdownBlock] {
+        if let already = split[text] { return already }
+        let folded = Markdown.blocks(text)
+        if split.count >= room { split.removeAll(keepingCapacity: true) }
+        split[text] = folded
+        return folded
+    }
+
+    static func attributed(_ words: String) -> AttributedString {
+        if let already = lines[words] { return already }
+        let read = (try? AttributedString(
             markdown: words,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) {
-            return Text(attributed)
-        }
-        return Text(words)
+        )) ?? AttributedString(words)
+        if lines.count >= room { lines.removeAll(keepingCapacity: true) }
+        lines[words] = read
+        return read
     }
 }

@@ -59,6 +59,15 @@ public struct Dashboard: Sendable, Equatable {
         public var agent: Agent
         public var project: Project?
         public var task: FactoryTask?
+        /// Everything in this agent's name, blocked first, which is more than `task`: an
+        /// agent holding three has two of them in its name and nowhere else. The sidebar
+        /// draws a line for each, and it used to work them out in the view body, once per
+        /// row and again for the row's help, which is a pass over every task in the store
+        /// per line of the sidebar. `make` already walks that array. (T362, then T526.)
+        public var held: [FactoryTask] = []
+        /// The one report this agent keeps, if it has filed one. Same argument as `held`:
+        /// the row and its help both want it and the view was finding it twice.
+        public var report: Artifact?
         public var activity: AgentActivity
         public var waitingOnYou: Bool
 
@@ -203,6 +212,39 @@ public struct Dashboard: Sendable, Equatable {
         let putAway = snapshot.agents.filter { $0.isRegistered && $0.isArchived }.sorted(by: byNumber)
         let open = snapshot.escalations.filter(\.isOpen)
 
+        // Indexed once, read many times. This is the one place that walks every task and
+        // every agent, and it used to walk them again for each of twenty-one projects and
+        // each of sixteen agents: the project counts filtered all 587 tasks per project,
+        // and an agent's current task was found with `first(where:)` twice over, once here
+        // and once for its own status. Grouping costs one pass and the questions are then
+        // lookups. (R67, T526.)
+        let tasksByProject = Dictionary(grouping: snapshot.tasks, by: \.projectID)
+        var taskByID: [UUID: FactoryTask] = [:]
+        // Everything in an agent's name, gathered in the same pass, in whatever order the
+        // store gave them; sorted per agent below, where the lists are short.
+        var heldByAgent: [UUID: [FactoryTask]] = [:]
+        for task in snapshot.tasks {
+            taskByID[task.id] = task
+            if let who = task.agentID, task.removed == nil, !task.state.isFinished {
+                heldByAgent[who, default: []].append(task)
+            }
+        }
+        let asking = Set(open.compactMap(\.agentID))
+        // The one report per agent per project, off the same list `Artifacts.statusReport`
+        // reads. Keyed by both, because both is what identifies one: an agent moved from
+        // one project to another has a report on each and only the one on the project it
+        // is on now is its line in the sidebar.
+        struct WhoseReport: Hashable { var agent: UUID; var project: String }
+        var reportBy: [WhoseReport: Artifact] = [:]
+        for report in snapshot.artifacts
+        where report.kind == .statusReport && report.removed == nil {
+            guard let who = report.agentID else { continue }
+            let key = WhoseReport(agent: who, project: report.projectID)
+            // Newest wins, which is the order `statusReports` put them in.
+            if let already = reportBy[key], already.updated >= report.updated { continue }
+            reportBy[key] = report
+        }
+
         let onHold = Set(projects.values.filter(\.onHold).map(\.id))
         let statuses = projects.values.map { project -> ProjectStatus in
             let agents = registered.filter { $0.projectID == project.id }
@@ -222,23 +264,30 @@ public struct Dashboard: Sendable, Equatable {
             // One rule for both dots: whatever its agents are doing, the project is. The
             // busiest of them wins, so a project with one working agent reads working.
             let doing = agents.map { agent -> AgentActivity in
-                let task = agent.taskID.flatMap { id in snapshot.tasks.first { $0.id == id } }
-                return Dashboard.activity(of: agent, task: task,
-                                          hasOpenQuestion: open.contains { $0.agentID == agent.id }, now: now)
+                Dashboard.activity(of: agent, task: agent.taskID.flatMap { taskByID[$0] },
+                                   hasOpenQuestion: asking.contains(agent.id), now: now)
             }
             // A stopped agent does not make its project stopped: the project has finished,
             // which is what it has until somebody picks it back up.
             let activity: ProjectActivity = Self.busiest(doing.filter { $0 != .stopped },
                                                          whenNone: .finished)
-            let tasks = snapshot.tasks.filter { $0.projectID == project.id }
+            var backlog = 0, blocked = 0, going = 0, done = 0
+            for t in tasksByProject[project.id] ?? [] {
+                switch t.state {
+                case .backlog: backlog += 1
+                case .blocked: blocked += 1
+                case .inProgress: going += 1
+                default: if t.state.isFinished { done += 1 }
+                }
+            }
             return ProjectStatus(
                 project: project,
                 activity: activity,
                 agents: agents,
-                backlogCount: tasks.filter { $0.state == .backlog }.count,
-                blockedCount: tasks.filter { $0.state == .blocked }.count,
-                inProgressCount: tasks.filter { $0.state == .inProgress }.count,
-                doneCount: tasks.filter { $0.state.isFinished }.count
+                backlogCount: backlog,
+                blockedCount: blocked,
+                inProgressCount: going,
+                doneCount: done
             )
         }
         .sorted { a, b in
@@ -248,12 +297,14 @@ public struct Dashboard: Sendable, Equatable {
         }
 
         let agentStatuses = registered.map { agent in
-            let task = agent.taskID.flatMap { id in snapshot.tasks.first { $0.id == id } }
-            let question = open.contains { $0.agentID == agent.id }
+            let task = agent.taskID.flatMap { taskByID[$0] }
+            let question = asking.contains(agent.id)
             return AgentStatus(
                 agent: agent,
                 project: agent.projectID.flatMap { projects[$0] },
                 task: task,
+                held: (heldByAgent[agent.id] ?? []).sorted(by: Backlog.order),
+                report: agent.projectID.flatMap { reportBy[WhoseReport(agent: agent.id, project: $0)] },
                 activity: activity(of: agent, task: task, hasOpenQuestion: question, now: now),
                 waitingOnYou: question)
         }

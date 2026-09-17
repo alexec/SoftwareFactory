@@ -155,6 +155,24 @@ public struct FileStore: Sendable {
         return Stamp(newest: newest, count: count)
     }
 
+    /// One agent, read from its own file.
+    ///
+    /// Everything that changes an agent has to read the current record first, because two
+    /// writers hold the same one: the app sets a title or a pid while the server writes
+    /// down what the agent just said. The way to do that was `load().agents.first(where:)`,
+    /// which reads and decodes nine hundred files to answer a question about one of about
+    /// five hundred bytes: 19 ms where this is microseconds. Ten places did it, one of them
+    /// to read a single boolean off the record. (R67, T525.)
+    ///
+    /// Nothing is thrown for an agent that is not there. Every caller already had to cope
+    /// with `first(where:)` finding nothing, and an agent deleted between the read and this
+    /// call is the ordinary case rather than an error.
+    public func loadAgent(_ id: UUID) -> Agent? {
+        let file = root.appending(path: "agents").appending(path: id.uuidString + ".json")
+        guard let data = try? Data(contentsOf: file) else { return nil }
+        return try? Self.decoder.decode(Agent.self, from: data)
+    }
+
     /// The folders `load()` reads. Named once so a stamp cannot come to cover a different
     /// set from the thing it is a stamp of.
     static let recordFolders = ["projects", "tasks", "escalations", "artifacts",
@@ -196,6 +214,81 @@ public struct FileStore: Sendable {
     /// protocol itself cannot describe.
     public func complaintsFile(for agent: UUID) -> URL {
         transcriptFolder.appending(path: "\(agent.uuidString).err")
+    }
+
+    /// Where a record goes when it is finished with. Beside the live folders, in the same
+    /// layout, and **nothing reads it**: `load()` does not, `stamp()` does not, and a
+    /// caller that wants the history asks for it by name the way `loadEveryTask()` does.
+    ///
+    /// Archive rather than delete is the person's decision, not a default: "nothing is
+    /// lost, the reads get small, and a question about last July is answered by going to
+    /// look" (Alex, escalation 80C58D5D, 17 Sep 2026). So nothing in here is ever removed
+    /// by this app; emptying it is a thing a person does in the Finder, once they have
+    /// decided they are finished with it, which is a decision and not a sweep.
+    public func archiveFolder(_ what: String) -> URL {
+        let folder = root.appending(path: "archive", directoryHint: .isDirectory)
+            .appending(path: what, directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }
+
+    /// An agent's log and its stderr, moved out of the way now that the agent is gone.
+    ///
+    /// Deleting an agent took its record and cleared the fold held in memory, and the file
+    /// it was folded from stayed on the disk for ever. On this Mac that was 49 MB of log
+    /// belonging to agents with no record, no page and no way to be read: a leak rather
+    /// than a policy, because there was never a decision to keep them, only nothing that
+    /// took them away. (R78, T555.)
+    ///
+    /// A name already in the archive is written over. The same agent id cannot come back
+    /// (`AgentNumbers` never hands a number back either), so a collision means the same
+    /// agent archived twice and the later copy is the whole of it.
+    @discardableResult
+    public func archiveTranscript(of agent: UUID) -> Int {
+        var moved = 0
+        for file in [transcriptFile(for: agent), complaintsFile(for: agent)]
+        where FileManager.default.fileExists(atPath: file.path) {
+            let to = archiveFolder("transcripts").appending(path: file.lastPathComponent)
+            try? FileManager.default.removeItem(at: to)
+            if (try? FileManager.default.moveItem(at: file, to: to)) != nil { moved += 1 }
+        }
+        return moved
+    }
+
+    /// Every log whose agent is no longer in the store, moved to the archive.
+    ///
+    /// `archiveTranscript` stops the next one being stranded; this is for the ones already
+    /// stranded before it existed.
+    ///
+    /// **The agents it keeps come off the file names in `agents/`, not out of a snapshot.**
+    /// `load()` skips a record it cannot decode, which is the right thing for drawing a
+    /// screen and the wrong thing here: one unreadable agent record would read as an agent
+    /// that does not exist, and this would move a working agent's conversation out from
+    /// under it. A file that will not decode still has its name.
+    @discardableResult
+    public func archiveStrandedTranscripts() -> Int {
+        let records = (try? FileManager.default.contentsOfDirectory(
+            at: root.appending(path: "agents"), includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles])) ?? []
+        let live = Set(records.compactMap { UUID(uuidString: $0.deletingPathExtension().lastPathComponent) })
+        // Nothing known means nothing to compare against: an empty or unreadable agents
+        // folder must not read as a floor with nobody on it.
+        guard !live.isEmpty else { return 0 }
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: transcriptFolder, includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles])) ?? []
+        var moved = 0
+        for file in files {
+            // The name is the agent's id and the extension says which of its two files it
+            // is. Anything else in here was not put there by us and is left alone.
+            guard ["jsonl", "err"].contains(file.pathExtension),
+                  let who = UUID(uuidString: file.deletingPathExtension().lastPathComponent),
+                  !live.contains(who) else { continue }
+            let to = archiveFolder("transcripts").appending(path: file.lastPathComponent)
+            try? FileManager.default.removeItem(at: to)
+            if (try? FileManager.default.moveItem(at: file, to: to)) != nil { moved += 1 }
+        }
+        return moved
     }
 
     /// The lines an agent has sent, for folding into a page. A missing file is an agent

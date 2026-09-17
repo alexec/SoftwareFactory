@@ -413,21 +413,18 @@ struct RootView: View {
     /// report, else the terminal title. The rule is in the kit; this finds the report.
     /// (T295.)
     private func sidebarTitle(_ status: Dashboard.AgentStatus) -> String {
-        AgentLine.underTheName(task: status.task, report: report(for: status), title: status.agent.title)
+        AgentLine.underTheName(task: status.task, report: status.report, title: status.agent.title)
     }
 
     /// Everything in this agent's name, blocked first, or the one line it can say for
     /// itself when it holds nothing. (T362.)
+    /// Both of these are read off the status rather than worked out here. They were
+    /// `Backlog.alreadyYours` and `Artifacts.statusReport` called in a view body, once for
+    /// the row and again for its help, which with sixteen agents was thirty-two passes over
+    /// every task in the store per redraw. `Dashboard.make` walks that array anyway. (T526.)
     private func sidebarLines(_ status: Dashboard.AgentStatus) -> [AgentLine.Line] {
-        AgentLine.linesUnderTheName(
-            tasks: Backlog.alreadyYours(status.agent.id, in: model.snapshot.tasks),
-            report: report(for: status),
-            title: status.agent.title)
-    }
-
-    private func report(for status: Dashboard.AgentStatus) -> Artifact? {
-        guard let projectID = status.agent.projectID else { return nil }
-        return Artifacts.statusReport(by: status.agent.id, on: projectID, in: model.snapshot.artifacts)
+        AgentLine.linesUnderTheName(tasks: status.held, report: status.report,
+                                    title: status.agent.title)
     }
 
     /// A project is a name: an app, a role that spans apps, a piece of tooling.

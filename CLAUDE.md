@@ -164,6 +164,32 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     everything, so a number is never reused.
     `Snapshot` decodes with missing collections as empty, for older clients. `defaultRoot()` is the app group
     container or `$SOFTWARE_FACTORY_STORE`.
+    **Finished with is not thrown away, it is moved** (Alex, escalation 80C58D5D,
+    17 Sep 2026: "nothing is lost, the reads get small, and a question about last July is
+    answered by going to look"). `archiveFolder(_:)` is `archive/<what>/` beside the live
+    folders, in the same layout, and nothing reads it: not `load()`, not `stamp()`. Nothing
+    in this app ever deletes from it either; emptying it is a person's decision made in the
+    Finder, not a sweep. So far the only thing that moves there is an agent's conversation,
+    `archiveTranscript(of:)` when the agent is deleted and `archiveStrandedTranscripts()`
+    once at launch for the ones stranded before that rule existed. It swept 47 MB in 22
+    files the first time it ran. The sweep reads the **file names** in `agents/` rather than
+    a snapshot: `load()` skips a record it cannot decode, which is right for drawing a
+    screen and wrong here, where one unreadable record would read as an agent that does not
+    exist and move a working agent's conversation out from under it. An empty `agents/`
+    sweeps nothing, for the same reason. What should join it, and why the rule fires on a
+    record being finished rather than on its age, is `docs/what-ages-out.md` (R78, T527);
+    T556 and T557 are the rest of it. (T555.)
+    **Do not read the store to answer a question about one record.** `load()` reads and
+    decodes every file there is, which on this Mac is nine hundred of them and 19.7 ms; a
+    record's file name is its id, so reading the one is 0.02 ms, a thousandth. Ten places
+    wrote `load().agents.first(where:)` to change one field on one agent, and one of them
+    did it on every `tools/list` to read a single boolean. `loadAgent(_:)` is that, and
+    `MCPServer.oneAgent` is it behind either of an agent's two names: a UUID is its own
+    file, "A7" is a number and still needs the floor read to match one. Nothing is thrown
+    for an agent that is not there, because every caller already coped with `first(where:)`
+    finding nothing. Adding the same for tasks or projects is the same three lines; it has
+    not been needed yet because the callers that want one task mostly want the list too.
+    (R67, T525.)
   - `Backlog`: order (in progress, backlog, parked, done), next rank, top rank, next
     task, move (onMove semantics; parked sits out), place above, state changes,
     `personMaySet` (backlog and parked only), current task, `visible`.
@@ -431,6 +457,17 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     verdict, the reason, and `ask(work:)` for compile, simulator, model.
   - `Dashboard.make(snapshot:now:)`: counts, one `ProjectStatus` per project, one
     `AgentStatus` per agent on the floor.
+    **It walks the tasks once and the views ask it rather than the snapshot** (T526). It
+    used to filter all 587 tasks for each of twenty projects for the four counts, and find
+    each agent's current task with `first(where:)` twice over; that is one grouping by
+    `projectID` and one dictionary by id, and it took `make` from 4.3 ms to 1.9 ms in a
+    Debug build, which is the build the app is. The same pass fills two new fields on
+    `AgentStatus`: `held`, everything in that agent's name blocked first, and `report`, the
+    one status report it keeps on the project it is on. Those were `Backlog.alreadyYours`
+    and `Artifacts.statusReport` **called in a view body**, once for a sidebar row and again
+    for the row's help, so the sidebar paid a pass over every task in the store per line, on
+    every redraw. Anything the sidebar wants about an agent goes here, not in the view: a
+    view body runs whenever anything changes and there is no way to tell it not to.
     **An agent is one of four things** (T423, T425, Alex, 15 Sep 2026): working (green),
     asking you (the alarm orange), finished (blue), or stopped (a hollow circle, which is
     what a black dot was asking for: filled black is invisible on dark paper and filled
@@ -553,6 +590,13 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     break, so a whole plan arrived as one paragraph. (T208) A line indented under a
     bullet is the rest of that bullet: a hard-wrapped list used to come apart, half the
     sentence in the item and half underneath it as a paragraph. (T311)
+    Both halves go through `MarkdownCache`, which is main-actor and keyed on the text
+    itself, because both are pure: the same string always folds the same way, so a stale
+    answer is not a thing that can happen. It is parsed per redraw otherwise, and a
+    conversation scrolled back holds hundreds of these: measured at 0.03 ms to split a
+    2,852-character report and 0.21 ms for the marks inside its lines, which is the
+    expensive half. Full is emptied rather than evicted by age, because what is wanted is
+    what is on screen and that arrives together and refills in one pass. (R67, T526.)
   - **There is no house theme** (Alex, 16 Sep 2026: conventional Liquid Glass). There was:
     `Paper.Tone`, nine warm colours and a rust mark, written down once and painted under
     the window, the sidebar, Settings, the sheets, the agent's conversation and the

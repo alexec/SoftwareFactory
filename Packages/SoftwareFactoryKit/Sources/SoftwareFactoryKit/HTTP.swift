@@ -273,8 +273,8 @@ public struct HTTPRouter: Sendable {
         let words = said.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !words.isEmpty else { return .text("Nothing to say", status: 400) }
         do {
-            let snap = try store.load()
-            guard let agent = snap.agents.first(where: { $0.id == said.agent }), agent.isRegistered else {
+            // The phone names the agent by its id, which is its file. (T525.)
+            guard let agent = store.loadAgent(said.agent), agent.isRegistered else {
                 return .text("Unknown agent", status: 404)
             }
             try store.save(AgentMessage(recipientID: agent.id, from: "Alex",

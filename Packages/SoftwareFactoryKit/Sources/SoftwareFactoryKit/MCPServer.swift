@@ -1216,9 +1216,21 @@ public struct MCPServer: Sendable {
     /// the top of `call`.
     /// Whether this agent has its own way of putting a question to the person, so the
     /// factory does not offer it one as well.
+    /// This is asked on every `tools/list`, which is once per agent as it starts and again
+    /// whenever one reconnects, and it used to read the whole store to look at one field of
+    /// one record. An agent that asks at its own address is a UUID, which is its file's
+    /// name, so the ordinary case never reads a second record. (T525.)
     func asksThroughTheProtocol(_ caller: String) -> Bool {
-        guard let snap = try? store.load(), let agent = agentRef(caller, in: snap) else { return false }
+        guard let agent = oneAgent(caller) else { return false }
         return LaunchAgent.remembered(agent.launchedWith).profile.asksThroughTheProtocol == .yes
+    }
+
+    /// One agent by whichever of its two names the caller used: its UUID, which is its own
+    /// file, or "A7", which is not and needs the floor read to match a number.
+    func oneAgent(_ ref: String) -> Agent? {
+        if let id = UUID(uuidString: ref) { return store.loadAgent(id) }
+        guard let snap = try? store.load() else { return nil }
+        return agentRef(ref, in: snap)
     }
 
     func agent(_ args: [String: Any], in snap: Snapshot) throws -> Agent {
@@ -1244,8 +1256,7 @@ public struct MCPServer: Sendable {
     // to ask for. (T-session, 13 Sep 2026, and it settles T156 with it.)
 
     func setConnection(connected: Bool, for agentID: String) throws {
-        let snap = try store.load()
-        guard var agent = agentRef(agentID, in: snap) else {
+        guard var agent = oneAgent(agentID) else {
             throw ToolError(message: "Unknown session_id. Call agent_register first.")
         }
         let timestamp = now()
