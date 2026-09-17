@@ -39,25 +39,23 @@ struct DashboardView: View {
     private var summary: some View {
         let d = model.dashboard
         // Tiles wrap onto a second row in a narrow window rather than squeezing their words.
-        return GlassEffectContainer(spacing: 16) {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 16)], spacing: 16) {
-                StatTile(value: d.inProgress, label: d.inProgress == 1 ? "task in progress" : "tasks in progress", symbol: "hammer")
-                // There is no tile counting the questions any more. The questions
-                // themselves are the section above this one, so a number saying how many
-                // of them there are, six inches under them, is the same fact at a second
-                // altitude. The sidebar's Dashboard row keeps its badge, which is a
-                // different job: that one is a door, and says come here. (T409.)
-                // The one tile that goes somewhere. How many agents there are is a number
-                // you read once; how many of them have said nothing for an hour is the
-                // one worth acting on, and the page that lists them is behind it.
-                StatTile(value: d.agents.count,
-                         label: d.agents.count == 1 ? "agent registered" : "agents registered",
-                         symbol: "person.2",
-                         tint: quiet > 0 ? Color(.alarm) : nil,
-                         note: quiet > 0 ? (quiet == 1 ? "1 has gone quiet" : "\(quiet) have gone quiet") : nil,
-                         open: openStatusReports)
-                StatTile(value: d.heldCount, label: d.heldCount == 1 ? "resource held" : "resources held", symbol: "lock.rectangle.stack")
-            }
+        return LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 16)], spacing: 16) {
+            StatTile(value: d.inProgress, label: d.inProgress == 1 ? "task in progress" : "tasks in progress", symbol: "hammer")
+            // There is no tile counting the questions any more. The questions
+            // themselves are the section above this one, so a number saying how many
+            // of them there are, six inches under them, is the same fact at a second
+            // altitude. The sidebar's Dashboard row keeps its badge, which is a
+            // different job: that one is a door, and says come here. (T409.)
+            // The one tile that goes somewhere. How many agents there are is a number
+            // you read once; how many of them have said nothing for an hour is the
+            // one worth acting on, and the page that lists them is behind it.
+            StatTile(value: d.agents.count,
+                     label: d.agents.count == 1 ? "agent registered" : "agents registered",
+                     symbol: "person.2",
+                     tint: quiet > 0 ? Color.orange : nil,
+                     note: quiet > 0 ? (quiet == 1 ? "1 has gone quiet" : "\(quiet) have gone quiet") : nil,
+                     open: openStatusReports)
+            StatTile(value: d.heldCount, label: d.heldCount == 1 ? "resource held" : "resources held", symbol: "lock.rectangle.stack")
         }
         .frame(maxWidth: 900)
     }
@@ -74,7 +72,7 @@ struct DashboardView: View {
                 if !open.isEmpty {
                     Text("Click an option and the agent is told.")
                         .font(.callout)
-                        .foregroundStyle(Color(.quiet))
+                        .foregroundStyle(.secondary)
                 }
             }
             if model.notifier.standing == .notAsked {
@@ -157,13 +155,13 @@ struct StatTile: View {
                     .contentTransition(.numericText())
                 Text(label)
                     .font(.callout)
-                    .foregroundStyle(Color(.quiet))
+                    .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 if let note {
                     Text(note)
                         .font(.caption)
-                        .foregroundStyle(tint ?? Color(.faint))
+                        .foregroundStyle(tint ?? Color.secondary)
                         .lineLimit(1)
                 }
             }
@@ -171,13 +169,8 @@ struct StatTile: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity)
-        .glassEffect(glass, in: .rect(cornerRadius: Style.card))
+        .cardSurface(tint: tint)
         .animation(.snappy, value: value)
-    }
-
-    private var glass: Glass {
-        if let tint { return .regular.tint(tint.opacity(0.18)) }
-        return .regular
     }
 }
 
@@ -190,7 +183,7 @@ struct EmptyLine: View {
             Image(systemName: symbol)
             Text(text)
         }
-        .foregroundStyle(Color(.quiet))
+        .foregroundStyle(.secondary)
         .padding(.vertical, 6)
     }
 }
@@ -243,7 +236,7 @@ struct AgentCard: View {
                 }
                 Text(status.project?.name ?? "No project")
                     .font(.callout)
-                    .foregroundStyle(Color(.quiet))
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                 VStack(alignment: .leading, spacing: 2) {
                     // The same test the sidebar uses: a tmux title is the last command the
@@ -252,7 +245,7 @@ struct AgentCard: View {
                     if AgentLine.worthSaying(status.agent.title) {
                         Text(status.agent.title)
                             .font(.callout)
-                            .foregroundStyle(Color(.quiet))
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .help(status.agent.title)
                     }
@@ -287,7 +280,7 @@ struct AgentCard: View {
                     .lineLimit(1)
                 }
                 .font(.caption)
-                .foregroundStyle(Color(.faint))
+                .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
@@ -295,7 +288,7 @@ struct AgentCard: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
+        .cardSurface()
         .overlay(alignment: .topTrailing) {
             // Start, and nothing for an agent that is running. Nudge was here, and a card
             // is not the place to talk to an agent: its page is, where you can see what it
@@ -430,6 +423,10 @@ struct AgentView: View {
                             switch side {
                             case .documents: documents
                             case .shells: AgentShellsPane(agent: agent, folder: status.project?.path)
+                            case .files:
+                                if let url = OpenFolder.url(for: status.project) {
+                                    FileBrowser(root: url)
+                                }
                             }
                         }
                         .frame(width: ColumnGrip.width(documentsWidth, beside: page.size.width))
@@ -464,15 +461,21 @@ struct AgentView: View {
     /// a person wants is to run something by hand where the agent is working and watch
     /// both, so a terminal is opened beside one now rather than being launched instead of
     /// one. (Alex, 16 Sep 2026.)
+    ///
+    /// The files are the third, and the folder icon used to leave the app for the Finder to
+    /// show them. Three ways into the same folder, and now all three of them open beside the
+    /// agent rather than two of them doing that and one sending you somewhere else.
+    /// (Alex, 16 Sep 2026.)
     private enum Side: String, Hashable {
-        case documents, shells
+        case documents, shells, files
     }
 
-    /// Which pane is showing, or none. Two small icons rather than two toggles, because
-    /// only one of them can be showing and a pair of toggles says otherwise.
+    /// Which pane is showing, or none. Small icons rather than toggles, because only one of
+    /// them can be showing and a row of toggles says otherwise.
     private var side: Side? {
         guard let chosen = chosenSide else { return nil }
         if chosen == .documents, !hasDocuments { return nil }
+        if chosen == .files, OpenFolder.url(for: status.project) == nil { return nil }
         return chosen
     }
 
@@ -491,9 +494,13 @@ struct AgentView: View {
             }
             icon(.shells, shells.has(agent.id) ? "apple.terminal.fill" : "apple.terminal",
                  on: "A shell in this agent's folder, beside it")
-            // The Finder, beside the shell: both are the agent's folder, opened two ways.
-            // It was up in the header next to the project's name. (Alex, 15 Sep 2026.)
-            OpenFolderButton(project: status.project)
+            // The folder itself, beside the shell: both are the agent's folder, opened two
+            // ways. It was up in the header next to the project's name (Alex, 15 Sep 2026),
+            // and it opened the Finder until it was asked to open here instead. The Finder
+            // is a button inside the browser now, for the things only it can do.
+            if OpenFolder.url(for: status.project) != nil {
+                icon(.files, "folder", on: "What is in this agent's folder")
+            }
         }
         .padding(.horizontal, Style.cardPadding)
         .padding(.vertical, 5)
@@ -548,7 +555,7 @@ struct AgentView: View {
             if let project = status.project {
                 Text(project.name)
                     .font(.callout)
-                    .foregroundStyle(Color(.quiet))
+                    .foregroundStyle(.secondary)
             }
             // The line the agent set with its terminal title is what it is doing right
             // now, so it belongs on the top row beside the project rather than at the
@@ -556,7 +563,7 @@ struct AgentView: View {
             if !agent.title.isEmpty {
                 Text(agent.title)
                     .font(.callout)
-                    .foregroundStyle(Color(.faint))
+                    .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .help(agent.title)
@@ -585,12 +592,12 @@ struct AgentView: View {
                 // (T373.)
                 Text("Cannot be started back up")
                     .font(.callout)
-                    .foregroundStyle(Color(.quiet))
+                    .foregroundStyle(.secondary)
                     .help(why)
             }
             Text(agent.lastSeen, format: .relative(presentation: .named))
                 .font(.callout)
-                .foregroundStyle(Color(.faint))
+                .foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -693,7 +700,7 @@ private struct StripChip: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Text(detail)
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
         .padding(.horizontal, 8)
@@ -735,7 +742,9 @@ func deliverPendingMessages(model: AppModel, terminals: TerminalSessions, floor:
             // conversation all along, whether or not this app has been looking at it.
             guard floor.running(agent.id)?.state == .running else { continue }
             for message in waiting {
-                guard await floor.say(message.promptLine, to: agent.id) else { break }
+                // A message left undelivered is one still in the mailbox, which is where it
+                // belongs until something takes it.
+                guard await floor.say(message.promptLine, to: agent.id) == nil else { break }
                 model.delete(message)
             }
             continue
@@ -790,7 +799,7 @@ struct AgentChip: View {
 struct StoppedMark: View {
     var body: some View {
         Image(systemName: "stop.circle")
-            .foregroundStyle(Color(.quiet))
+            .foregroundStyle(.secondary)
             .help("Stopped: its terminal is still here and you can read what it said, but the agent is not running in it any more")
             .accessibilityLabel("Stopped")
     }
@@ -813,7 +822,7 @@ struct AgentBellMark: View {
     @ViewBuilder var body: some View {
         if ringing {
             Image(systemName: "bell.fill")
-                .foregroundStyle(Color(.alarm))
+                .foregroundStyle(Color.orange)
                 .symbolEffect(.wiggle, options: .repeating, isActive: !reduceMotion)
                 .help("It rang for your attention")
                 .accessibilityLabel("Wants a look")
@@ -835,6 +844,6 @@ struct NotificationPrimer: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
+        .cardSurface()
     }
 }

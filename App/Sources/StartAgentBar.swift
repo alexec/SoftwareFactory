@@ -148,7 +148,7 @@ struct StartAgentBar: View {
         TextField("Default model", text: $runOn)
             .textFieldStyle(.plain)
             .font(Style.Text.quiet)
-            .foregroundStyle(Color(.faint))
+            .foregroundStyle(.tertiary)
             .multilineTextAlignment(.trailing)
             .frame(width: 130)
             .disabled(!isReady)
@@ -156,7 +156,10 @@ struct StartAgentBar: View {
     }
 
     private var prompt: String {
-        isReady ? "Start an agent on \(project.name)" : "Set the project's folder first"
+        // The default, shown where you would type over it: an agent started with nothing
+        // typed works the backlog, which is what the factory's own words say at greater
+        // length. (T482.)
+        isReady ? "work through the project backlog" : "Set the project's folder first"
     }
 
     private var help: String {

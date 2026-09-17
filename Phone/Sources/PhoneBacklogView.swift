@@ -18,7 +18,7 @@ struct PhoneBacklogView: View {
         Backlog.visible(for: project.id, in: model.snapshot.tasks, recentDone: showingAllDone ? Int.max : 3)
     }
     private var hiddenDone: Int {
-        max(0, model.snapshot.tasks.filter { $0.projectID == project.id && $0.state == .done }.count - 3)
+        max(0, model.snapshot.tasks.filter { $0.projectID == project.id && $0.state == .succeeded }.count - 3)
     }
     private var status: Dashboard.ProjectStatus? { model.dashboard.projects.first { $0.id == project.id } }
     private var questions: Escalations.Shown { Escalations.visible(for: project.id, in: model.snapshot.escalations) }
@@ -42,7 +42,7 @@ struct PhoneBacklogView: View {
                     ForEach(artifacts) { ArtifactCard(artifact: $0) }
                 }
             }
-            ForEach([FactoryTask.State.blocked, .inProgress, .backlog, .parked, .done], id: \.self) { state in
+            ForEach(Backlog.sections, id: \.self) { state in
                 let group = tasks.filter { $0.state == state }
                 if state == .backlog {
                     Section("Backlog") {
@@ -54,7 +54,7 @@ struct PhoneBacklogView: View {
                         else {
                             Text("Adding a task needs iCloud, which is not signed in on this phone.")
                                 .font(.callout)
-                                .foregroundStyle(Color(.quiet))
+                                .foregroundStyle(.secondary)
                         }
                     }
                 } else if state == .parked {
@@ -66,9 +66,12 @@ struct PhoneBacklogView: View {
                         if canAdd { parkedAddRow }
                     }
                 } else if !group.isEmpty {
-                    Section(state.word) {
+                    // The same heading the Mac draws, and the same one in colour: failed is
+                    // above the backlog, never capped, and not grey. (T509.)
+                    Section(header: Text(state.word)
+                        .foregroundStyle(state == .failed ? Color.orange : Color.secondary)) {
                         ForEach(group) { task in row(task) }
-                        if state == .done, hiddenDone > 0 {
+                        if state == .succeeded, hiddenDone > 0 {
                             Button(showingAllDone ? "Show less" : "Show more") {
                                 showingAllDone.toggle()
                             }
@@ -77,8 +80,6 @@ struct PhoneBacklogView: View {
                 }
             }
         }
-        .scrollContentBackground(.hidden)
-        .background(Color(.paper))
         .navigationTitle(project.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { EditButton() }
@@ -86,21 +87,16 @@ struct PhoneBacklogView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text(task.title)
                     .font(.headline)
-                    .strikethrough(task.state == .done)
-                if task.work != .implement && !task.work.isPrefix(of: task.title) {
-                    Text(task.work.word)
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(Color(.quiet))
-                }
+                    .strikethrough(task.state == .succeeded)
                 if let ending = task.note.split(whereSeparator: \.isNewline).last,
                    !ending.isEmpty,
                    ending != task.blockedWhy {
                     Text(ending)
-                        .foregroundStyle(Color(.quiet))
+                        .foregroundStyle(.secondary)
                 }
                 if task.state == .blocked, !task.blockers.isEmpty {
                     Text(task.blockedWhy)
-                        .foregroundStyle(Color(.alarm))
+                        .foregroundStyle(Color.orange)
                 }
                 Button("Edit") {
                     selectedTask = nil
@@ -124,18 +120,13 @@ struct PhoneBacklogView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if let label = task.label {
-                    Text(label).font(.caption.monospacedDigit()).foregroundStyle(Color(.faint))
+                    Text(label).font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
                 }
                 Text(task.title)
-                    .strikethrough(task.state == .done)
-                    .foregroundStyle(task.state == .done || task.state == .parked ? .secondary : .primary)
-                if task.work != .implement && !task.work.isPrefix(of: task.title) {
-                    Text(task.work.word)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(Color(.faint))
-                }
+                    .strikethrough(task.state == .succeeded)
+                    .foregroundStyle(task.state == .succeeded || task.state == .parked ? .secondary : .primary)
                 Spacer()
-                Text(task.state == .inProgress ? "In progress" : (task.state == .done ? "Done" : (task.state == .parked ? "Parked" : "")))
+                Text(task.state == .backlog ? "" : task.state.word)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(task.state == .inProgress ? .green : .secondary)
             }
@@ -144,11 +135,11 @@ struct PhoneBacklogView: View {
                ending != task.blockedWhy {
                 Text(ending)
                     .font(.caption)
-                    .foregroundStyle(Color(.quiet))
+                    .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
             if task.state == .blocked, !task.blockers.isEmpty {
-                Text(task.blockedWhy).font(.caption).foregroundStyle(Color(.alarm)).lineLimit(2)
+                Text(task.blockedWhy).font(.caption).foregroundStyle(Color.orange).lineLimit(2)
             }
         }
         .padding(.vertical, 2)
@@ -160,11 +151,11 @@ struct PhoneBacklogView: View {
                     _Concurrency.Task { await model.set(task, to: .backlog) }
                 }
                 .tint(.blue)
-            } else if task.state != .done {
+            } else if !task.state.isFinished {
                 Button("Park") {
                     _Concurrency.Task { await model.set(task, to: .parked) }
                 }
-                .tint(Color(.alarm))
+                .tint(Color.orange)
             }
         }
     }
@@ -172,7 +163,7 @@ struct PhoneBacklogView: View {
     private var addRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 8) {
-                WorkField(prompt: "Add a task", text: $newTitle)
+                TaskField(prompt: "Add a task", text: $newTitle)
                 Menu {
                     Button("Add to the top") { add(at: .top) }
                     Button("Add to the bottom") { add(at: .bottom) }
@@ -186,14 +177,14 @@ struct PhoneBacklogView: View {
             if model.source != .factory {
                 Text("Away from the Mac; this goes through iCloud and lands there in a moment, numbered once it does.")
                     .font(.caption)
-                    .foregroundStyle(Color(.quiet))
+                    .foregroundStyle(.secondary)
             }
         }
     }
 
     private var parkedAddRow: some View {
         HStack(alignment: .top, spacing: 8) {
-            WorkField(prompt: "Add a parked task", text: $newParkedTitle)
+            TaskField(prompt: "Add a parked task", text: $newParkedTitle)
             Button("Add") { addParked() }
         }
         .onSubmit { addParked() }
@@ -255,7 +246,7 @@ private struct PhoneTaskEditor: View {
     var body: some View {
         NavigationStack {
             Form {
-                WorkField(prompt: "Task", text: $title, lineLimit: 1...4)
+                TaskField(prompt: "Task", text: $title, lineLimit: 1...4)
                 TextField("Note", text: $note, axis: .vertical)
                     .lineLimit(3...8)
             }
@@ -291,14 +282,14 @@ struct PhoneDecidedRow: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(Color(.quiet))
+                    .foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(escalation.chosen?.title ?? escalation.decision?.note ?? "Decided")
                         .font(Style.Text.row.weight(.medium))
                         .lineLimit(1)
                     Text(escalation.question)
                         .font(.caption)
-                        .foregroundStyle(Color(.quiet))
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
@@ -311,7 +302,8 @@ extension FactoryTask.State {
         switch self {
         case .backlog: "Backlog"
         case .inProgress: "In progress"
-        case .done: "Done"
+        case .succeeded: "Succeeded"
+        case .failed: "Failed"
         case .parked: "Parked"
         case .blocked: "Blocked"
         }

@@ -90,12 +90,13 @@ import Testing
         #expect(heard.said == "Fix the timetable. It scrolls past the end and the header sticks.")
     }
 
-    /// The first word of a title is still the work, which WorkField and FactoryTask read.
-    @Test func theWorkFallsOutOfTheFirstWord() {
+    /// The first word of a title used to name a kind of work, and dictating "design the
+    /// seat picker" filed a Design without dictation knowing about work at all. The work is
+    /// gone (T417), so the words stay words: what was said is the title and nothing is read
+    /// out of its first token.
+    @Test func theFirstWordIsJustAWordNow() {
         let design = Spoken.heard("on Sleeper Train design the seat picker", projects: all)
-        #expect(FactoryTask.Work.reading(title: design.title).work == .design)
-        #expect(FactoryTask.Work.reading(title: "fix the timetable").work == .fix)
-        #expect(FactoryTask.Work.reading(title: "the timetable is wrong").work == .implement)
+        #expect(design.title == "design the seat picker")
     }
 
     @Test func nothingSaidIsNothingHeard() {

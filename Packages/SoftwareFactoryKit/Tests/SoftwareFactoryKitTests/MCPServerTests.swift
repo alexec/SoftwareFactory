@@ -814,7 +814,8 @@ private final class ResultBox: @unchecked Sendable {
         #expect(call(s, "task_remove", ["task_id": t0, "reason": "a test"]).text.hasPrefix("Removed: Urgent"))
         #expect(try s.store.loadRemovedTasks().first?.note.contains("removed: a test") == true)
         let mid = id(after: "", in: call(s, "task_add", ["project": "Where", "title": "Middle", "above_task_id": t2]).text)
-        let order = call(s, "task_list", ["project": "Where"]).text.split(separator: "\n").map { String($0.split(separator: "  ")[4]) }
+        // label, id, state, title: the work used to sit between state and title (T417).
+        let order = call(s, "task_list", ["project": "Where"]).text.split(separator: "\n").map { String($0.split(separator: "  ")[3]) }
         #expect(order == ["First", "Middle", "Second"])
         #expect(call(s, "task_status", ["task_id": mid, "state": "parked"]).text == "Middle: parked")
         #expect(call(s, "task_next", ["project": "Where"]).text.contains("First"))
@@ -832,7 +833,7 @@ private final class ResultBox: @unchecked Sendable {
         #expect(shownNote.contains(": the tap runs off the main actor") && shownNote.contains("inProgress"))
 
         let completed = call(s, "task_status", ["task_id": t1, "state": "done", "note": "fixed by splitting on pauses"]).text
-        #expect(completed.hasPrefix("First: done\nNext on the backlog: "))
+        #expect(completed.hasPrefix("First: succeeded\nNext on the backlog: "))
         #expect(completed.contains("Second") && completed.hasSuffix("\nYou should work on this next."))
         #expect(try s.store.load().agents.first?.taskID == nil)
         let snap = try s.store.load()
@@ -854,7 +855,7 @@ private final class ResultBox: @unchecked Sendable {
         _ = call(s, "task_claim", ["task_id": first, "agent_id": agentID])
         _ = call(s, "task_claim", ["task_id": other, "agent_id": agentID])
 
-        #expect(call(s, "task_status", ["task_id": first, "state": "done"]).text == "First: done")
+        #expect(call(s, "task_status", ["task_id": first, "state": "done"]).text == "First: succeeded")
         #expect(try s.store.load().agents.first?.taskID == UUID(uuidString: other))
         #expect(try s.store.load().tasks.first { $0.id == UUID(uuidString: next) }?.state == .backlog)
     }
@@ -1072,7 +1073,7 @@ private final class ResultBox: @unchecked Sendable {
                                            "state": "done", "note": "Both shipped"])
         #expect(!done.isError)
         let tasks = try s.store.load().tasks
-        #expect(tasks.filter { $0.state == .done }.count == 2)
+        #expect(tasks.filter { $0.state == .succeeded }.count == 2)
         #expect(tasks.filter { $0.note.contains("Both shipped") }.count == 2)
         // The one still waiting is what to do next, and the tasks just finished are not
         // read back out of the stale snapshot as still in progress.
@@ -1101,6 +1102,47 @@ private final class ResultBox: @unchecked Sendable {
         #expect(noted.text == "Noted on One.")
         let task = try #require(try s.store.load().tasks.first)
         #expect(task.note.components(separatedBy: "Said once").count == 2)
+    }
+
+    /// The factory has five states an agent may set and the tool advertised four, naming
+    /// the one word that is not a state. So no agent knew it could say a piece of work
+    /// failed, and failed is what T488 added. (T516.)
+    @Test func everyStateAnAgentMaySetIsOnTheTool() throws {
+        let tool = try #require(MCPServer.Tool.all.first { $0.name == "task_status" })
+        let state = tool.properties["state"] as? [String: Any]
+        #expect(state?["enum"] as? [String] == ["backlog", "inProgress", "succeeded", "failed", "parked"])
+        // The one-line description is what an agent reads in the list, and it named four.
+        for word in ["backlog", "inProgress", "succeeded", "failed", "parked"] {
+            #expect(tool.description.contains(word), "task_status does not mention \(word)")
+        }
+    }
+
+    /// Blocked is a state `State.parse` knows and this tool must not set: a block is a
+    /// state plus the thing it waits on, and one arriving here has no blocker, so
+    /// `Sweep.unblocked` passes over it and `task_unblock` has nothing to name. The task
+    /// would wait for ever on nothing. (T516.)
+    @Test func blockedIsNotAStateThisToolWillSet() throws {
+        let s = try server()
+        let a = try severalFactory(s, titles: ["One"])
+        let refused = call(s, "task_status", ["agent_id": a, "task_id": "T1", "state": "blocked"])
+        #expect(refused.isError)
+        #expect(refused.text.contains("task_block"))
+        #expect(try s.store.load().tasks.first?.state != .blocked)
+    }
+
+    /// "done" is taken everywhere or nowhere. `task_status` tells every agent it still
+    /// means succeeded, so an agent sends it to `task_list` as well, where the raw
+    /// initialiser answered nil and the filter quietly matched nothing. (T516.)
+    @Test func doneMeansSucceededWhereverItIsSaid() throws {
+        let s = try server()
+        let a = try severalFactory(s, titles: ["One", "Two"])
+        _ = call(s, "task_status", ["agent_id": a, "task_id": "T1", "state": "done"])
+        _ = call(s, "task_status", ["agent_id": a, "task_id": "T2", "state": "failed"])
+        let done = call(s, "task_list", ["project": "Several", "state": "done"]).text
+        #expect(done.contains("One") && !done.contains("Two"))
+        #expect(call(s, "task_list", ["project": "Several", "state": "succeeded"]).text == done)
+        let failed = call(s, "task_list", ["project": "Several", "state": "failed"]).text
+        #expect(failed.contains("Two") && !failed.contains("One"))
     }
 
     @Test func namingNothingIsStillRefused() throws {

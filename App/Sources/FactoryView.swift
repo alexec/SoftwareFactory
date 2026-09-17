@@ -15,12 +15,10 @@ struct FactoryView: View {
             VStack(alignment: .leading, spacing: 24) {
                 if let r = model.machine {
                     capacity(r)
-                    GlassEffectContainer(spacing: 16) {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 16)], spacing: 16) {
-                            systemCards(r)
-                            ForEach(model.dashboard.resources) { status in
-                                LeasableResourceCard(status: status)
-                            }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 16)], spacing: 16) {
+                        systemCards(r)
+                        ForEach(model.dashboard.resources) { status in
+                            LeasableResourceCard(status: status)
                         }
                     }
                 } else {
@@ -48,11 +46,11 @@ struct FactoryView: View {
         // page saying the Mac was in trouble while the kernel said it was fine. (T430.)
         ResourceCard(title: "Memory pressure", value: r.pressure == .normal ? 0.2 : (r.pressure == .warning ? 0.6 : 1),
               text: r.pressure.word,
-              tint: r.pressure == .critical ? .red : (r.pressure == .warning ? Color(.alarm) : .green))
+              tint: r.pressure == .critical ? .red : (r.pressure == .warning ? Color.orange : .green))
         ResourceCard(title: "Memory free", value: r.memoryFreeFraction, text: percent(r.memoryFreeFraction),
-              tint: Color(.quiet))
+              tint: Color.secondary)
         ResourceCard(title: "Swap", value: r.swapFraction, text: "\(gigabytes(r.swapUsed)) of \(gigabytes(r.swapTotal))",
-              tint: Color(.quiet))
+              tint: Color.secondary)
         ResourceCard(title: "Load", value: min(1, r.loadPerCore), text: "\(String(format: "%.1f", r.load)) on \(r.cores) cores",
               tint: r.loadPerCore >= 0.9 ? .orange : .green)
         ResourceCard(title: "Compiles", value: t.compileSlots == 0 ? 0 : Double(r.compiles) / Double(t.compileSlots),
@@ -72,7 +70,7 @@ struct FactoryView: View {
                     .font(.title2.weight(.semibold))
             }
             Text(Capacity.reason(r, throttle: t))
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
             HStack(spacing: 24) {
                 Room(number: h.compiles, label: h.compiles == 1 ? "more compile" : "more compiles", ok: h.compiles > 0)
                 Room(number: h.simulators, label: h.simulators == 1 ? "more simulator" : "more simulators", ok: h.simulators > 0)
@@ -80,13 +78,13 @@ struct FactoryView: View {
                     Text(gigabytes(h.memoryFree))
                         .font(Style.Text.gauge)
                         .monospacedDigit()
-                    Text("memory free").font(.callout).foregroundStyle(Color(.quiet))
+                    Text("memory free").font(.callout).foregroundStyle(.secondary)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(gigabytes(h.swapFree))
                         .font(Style.Text.gauge)
                         .monospacedDigit()
-                    Text("swap free").font(.callout).foregroundStyle(Color(.quiet))
+                    Text("swap free").font(.callout).foregroundStyle(.secondary)
                 }
             }
             HStack(spacing: 14) {
@@ -100,11 +98,11 @@ struct FactoryView: View {
             .font(.callout)
             Text("What an agent is told when it asks to start one.")
                 .font(.caption)
-                .foregroundStyle(Color(.faint))
+                .foregroundStyle(.tertiary)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular.tint(color(v).opacity(0.10)), in: .rect(cornerRadius: Style.card))
+        .cardSurface(tint: color(v))
     }
 
     private var addResource: some View {
@@ -121,7 +119,7 @@ struct FactoryView: View {
                 .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
         }
         .padding(16)
-        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
+        .cardSurface()
     }
 
     private func addResourceNow() {
@@ -184,7 +182,7 @@ private struct Room: View {
                 .font(Style.Text.gauge)
                 .foregroundStyle(ok ? Color.primary : Color.orange)
                 .contentTransition(.numericText())
-            Text(label).font(.callout).foregroundStyle(Color(.quiet))
+            Text(label).font(.callout).foregroundStyle(.secondary)
         }
     }
 }
@@ -216,7 +214,7 @@ private struct AgentSlotsCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Agents").font(.callout).foregroundStyle(Color(.quiet))
+                Text("Agents").font(.callout).foregroundStyle(.secondary)
                 Spacer()
                 Text("\(inUse) of \(cap)").font(.callout.weight(.medium)).monospacedDigit()
             }
@@ -226,7 +224,7 @@ private struct AgentSlotsCard: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
+        .cardSurface()
     }
 }
 
@@ -240,14 +238,14 @@ private struct ResourceCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(title).font(.callout).foregroundStyle(Color(.quiet))
+                Text(title).font(.callout).foregroundStyle(.secondary)
                 Spacer()
                 Text(text).font(.callout.weight(.medium)).monospacedDigit()
             }
             UtilizationBar(value: value, tint: tint)
         }
         .padding(16)
-        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
+        .cardSurface()
     }
 }
 
@@ -268,7 +266,7 @@ private struct LeasableResourceCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(status.resource.name).font(.callout).foregroundStyle(Color(.quiet))
+                Text(status.resource.name).font(.callout).foregroundStyle(.secondary)
                 Spacer()
                 Text(status.occupancy).font(.callout.weight(.medium)).monospacedDigit()
                 Menu {
@@ -293,6 +291,6 @@ private struct LeasableResourceCard: View {
             }
         }
         .padding(16)
-        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
+        .cardSurface()
     }
 }

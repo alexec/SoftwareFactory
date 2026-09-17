@@ -75,7 +75,8 @@ public enum LaunchPrompt {
         let label = task.label.map { "\($0), " } ?? ""
         return "You are working on the project \"\(project.name)\". The task"
             + " \(label)\"\(task.title)\" is waiting in your name."
-            + " Claim it, read its note. \(task.work.instruction)"
+            + " Claim it, read its note, and say when it is done."
+            + " The note says what to produce, where it matters."
     }
 
     /// An agent that works a project's backlog, in whatever order the backlog is in.

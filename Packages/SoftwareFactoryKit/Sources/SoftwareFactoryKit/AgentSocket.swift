@@ -62,7 +62,7 @@ public enum AgentSocket {
         guard let line = readLine(from: connection),
               let request = AgentDaemon.decode(AgentDaemon.Request.self, from: line)
         else {
-            write(connection, AgentDaemon.encode(AgentDaemon.Reply.no("That was not a request.")))
+            write(connection, AgentDaemon.encode(AgentDaemon.Reply.no(AgentDaemon.Reply.notARequest)))
             return
         }
         // The floor's work is async and this thread is not. A semaphore rather than

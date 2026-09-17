@@ -73,7 +73,7 @@ struct DictateButton: View {
             case .notAsked: primer
             case .denied: denied
             case .unavailable(let why):
-                Text(why).foregroundStyle(Color(.quiet))
+                Text(why).foregroundStyle(.secondary)
             }
         }
         .padding(Style.sheetPadding)
@@ -126,7 +126,7 @@ struct DictateButton: View {
         Label(dictation.isListening ? "Listening" : "Not listening",
               systemImage: dictation.isListening ? "waveform" : "mic.slash")
             .font(.caption)
-            .foregroundStyle(Color(.quiet))
+            .foregroundStyle(.secondary)
             .labelStyle(.titleAndIcon)
             .symbolEffect(.variableColor, isActive: dictation.isListening)
     }
@@ -140,7 +140,7 @@ struct DictateButton: View {
             Text("Talk to the factory and it works out which project you mean and what to put on its backlog. "
                  + "The words are recognised on this Mac and nothing is recorded.")
                 .font(.callout)
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
             HStack {
                 Spacer()
                 Button("Continue") { Task { await dictation.ask(); begin() } }
@@ -155,7 +155,7 @@ struct DictateButton: View {
                 .font(.headline)
             Text("Turn it on in System Settings, under Privacy & Security, and come back.")
                 .font(.callout)
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
             HStack {
                 Spacer()
                 Button("Open System Settings") {
@@ -261,12 +261,9 @@ struct DictateButton: View {
     private func add() {
         guard let projectID, canAdd else { return }
         // The first sentence is the title and the whole of it goes in the note, so a bad
-        // split loses nothing. The first word is the work, exactly as it is when the row
-        // is typed: saying "fix the timetable" files a Fix without dictation knowing
-        // about work at all.
+        // split loses nothing.
         let filed = Spoken.filing(words)
-        let parsed = FactoryTask.Work.reading(title: filed.title)
-        model.addTask(to: projectID, title: parsed.title, note: filed.note, work: parsed.work)
+        model.addTask(to: projectID, title: filed.title, note: filed.note)
         words = ""
         folded = dictation.settled
         tail = ""

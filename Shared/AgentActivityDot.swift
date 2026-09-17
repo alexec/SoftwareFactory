@@ -26,17 +26,17 @@ struct AgentActivityDot: View {
     /// and a black circle for stopped.)
     ///
     /// Stopped is drawn as an outline rather than a filled black dot, because a filled
-    /// black dot is invisible on the dark paper and a filled white one would be the
-    /// loudest thing on the row. An empty circle reads as absence both ways up, which is
-    /// what a black circle was being asked to say.
+    /// black dot is invisible in dark mode and a filled white one would be the loudest
+    /// thing on the row. An empty circle reads as absence both ways up, which is what a
+    /// black circle was being asked to say.
     static func color(_ activity: Dashboard.AgentActivity) -> Color {
         switch activity {
         case .working: .green
-        case .askingYou: Color(.alarm)
+        case .askingYou: Color.orange
         case .finished: .blue
         // Not red: a stopped agent is a normal end, and Start picks it back up. Red is
         // for a thing that went wrong.
-        case .stopped: Color(.quiet)
+        case .stopped: Color.secondary
         }
     }
 

@@ -102,6 +102,8 @@ public final class AgentFloor: @unchecked Sendable {
             return answerQuestion(request)
         case .mode:
             return chooseMode(request)
+        case .merge:
+            return merge(request)
         case .shutdown:
             for one in everythingHeld() { one.connection.stop() }
             return .yes
@@ -200,11 +202,25 @@ public final class AgentFloor: @unchecked Sendable {
         // The agent's own question. Blocked on it exactly like a permission request, and
         // never answered for it: a permission is a yes or no about a tool, and this is a
         // decision only the person has. (T373.)
+        // Taken back by the agent: the question stops being asked. The escalation on the
+        // floor is closed by the app, which sees `asking` go and does the same thing it
+        // does when the daemon gives up on one. (T493.)
+        connection.onWithdrawn = { [weak self] id in
+            guard let self else { return }
+            guarded.sync {
+                guard let held = self.held[agent] else { return }
+                guard id == nil || held.state.asking?.requestID == id else { return }
+                held.state.tookBack = id ?? held.state.asking?.requestID
+                held.asked = nil
+                held.state.asking = nil
+            }
+        }
         connection.onQuestion = { [weak self] id, asked in
             guard let self else { return }
             self.guarded.sync {
                 guard let held = self.held[agent] else { return }
                 held.asked = asked
+                held.state.tookBack = nil
                 held.state.asking = AgentDaemon.Question(
                     requestID: id,
                     question: asked.message.isEmpty ? (asked.about ?? "It wants your answer.") : asked.message,
@@ -290,6 +306,10 @@ public final class AgentFloor: @unchecked Sendable {
                 self.held[agent]?.mode = ACP.Modes.current(in: answered)
                 self.held[agent]?.state.modes = ACP.Modes.listed(in: answered)
                 self.held[agent]?.state.mode = ACP.Modes.current(in: answered)
+                // Everything else the agent says its session is set to: the model, the
+                // effort, fast mode. It has been sending these all along and nothing read
+                // them, so two of the four were reachable nowhere in the factory. (R69.)
+                self.held[agent]?.state.options = ACP.options(in: answered)
             }
             // A mode the person picked as they started it beats the floor's setting, and
             // goes on beating it: they said what this one agent is for while they were
@@ -373,6 +393,36 @@ public final class AgentFloor: @unchecked Sendable {
     /// Everything else in here says words and nothing else.
     private func prompt(_ agent: UUID, _ words: String) {
         prompt(agent, Said(words: words))
+    }
+
+    /// Everything waiting, joined into one thing to say.
+    ///
+    /// The queue exists because nothing is said to an agent mid-turn, and it sends one at a
+    /// time because two things said are two things said. But a person who has thought of
+    /// four more instructions while an agent works did not mean four turns: they meant the
+    /// next turn to have all four in it, and one at a time makes the agent do the first and
+    /// then be interrupted by the second, which is the shape this queue exists to avoid.
+    /// So this is offered rather than done: the queue stays one-at-a-time and the person
+    /// says when a run of them is really one instruction.
+    ///
+    /// Blank lines between them, because they were typed as separate thoughts and reading
+    /// them as one paragraph would join the end of one sentence to the start of another.
+    /// Files come along in the order their words did. (Alex, 16 Sep 2026, T541.)
+    func merge(_ request: AgentDaemon.Request) -> AgentDaemon.Reply {
+        guard let agent = request.agent else { return .no("A merge has to say which agent.") }
+        guard look(agent) != nil else { return .no("Nobody here by that name.") }
+        return guarded.sync {
+            guard let held = held[agent] else { return .no("Nobody here by that name.") }
+            guard held.pending.count > 1 else { return .no("There is nothing to merge.") }
+            let words = held.pending.map(\.words)
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .joined(separator: "\n\n")
+            let files = held.pending.flatMap(\.files)
+            held.pending = [Said(words: words, files: files)]
+            held.state.queued = 1
+            held.state.waitingToSay = [words]
+            return .yes
+        }
     }
 
     /// The next thing waiting, once a turn has finished. One at a time: they are separate

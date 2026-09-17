@@ -23,7 +23,7 @@ struct LaunchWords: View {
                     Button("Reset") { words = defaultWords }
                         .buttonStyle(.plain)
                         .font(.callout)
-                        .foregroundStyle(Color(.quiet))
+                        .foregroundStyle(.secondary)
                 }
             }
             TextField("What this agent is for", text: $words, axis: .vertical)
@@ -33,7 +33,7 @@ struct LaunchWords: View {
                 .background(.quaternary, in: .rect(cornerRadius: Style.panel))
             Text("It is told its name and its session on top of this.")
                 .font(.caption)
-                .foregroundStyle(Color(.faint))
+                .foregroundStyle(.tertiary)
         }
     }
 }
@@ -84,7 +84,7 @@ struct LaunchChooser<Extra: View>: View {
                 }
                 .buttonStyle(.plain)
                 .labelStyle(.iconOnly)
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
                 .help("How to install each agent and what to run once")
             }
 

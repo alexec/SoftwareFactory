@@ -88,21 +88,19 @@ import Testing
                      origin: "http://localhost:4747", headers: ["mcp-session-id": sessionID]).status == 200)
     }
 
-    @Test func theAppsAPIFilesWork() throws {
+    /// A phone built before T417 still sends `work`, on both the add and the edit. It is
+    /// read and thrown away rather than refused, so an old build goes on filing tasks.
+    @Test func aWorkSentByAnOlderPhoneIsIgnoredRatherThanRefused() throws {
         let r = try router()
-        let designed = post(r, "/api/task", ["project": "/tmp/P", "title": "The add row", "work": "design"])
-        #expect(designed.status == 200)
-        let task = try FileStore.decoder.decode(FactoryTask.self, from: designed.body)
-        #expect(task.work == .design)
-        let planned = post(r, "/api/task/edit", ["id": task.id.uuidString, "title": "The add row", "note": "", "work": "plan"])
-        #expect(try FileStore.decoder.decode(FactoryTask.self, from: planned.body).work == .plan)
-        #expect(post(r, "/api/task", ["project": "/tmp/P", "title": "No", "work": "feature"]).status == 400)
-        let plain = post(r, "/api/task", ["project": "/tmp/P", "title": "Do it"])
-        #expect(try FileStore.decoder.decode(FactoryTask.self, from: plain.body).work == .implement)
-        let coded = post(r, "/api/task", ["project": "/tmp/P", "title": "Do it", "work": "code"])
-        #expect(try FileStore.decoder.decode(FactoryTask.self, from: coded.body).work == .implement)
-        let fromTitle = post(r, "/api/task", ["project": "/tmp/P", "title": "Design a sheet"])
-        #expect(try FileStore.decoder.decode(FactoryTask.self, from: fromTitle.body).work == .design)
+        let filed = post(r, "/api/task", ["project": "/tmp/P", "title": "The add row", "work": "design"])
+        #expect(filed.status == 200)
+        let task = try FileStore.decoder.decode(FactoryTask.self, from: filed.body)
+        #expect(task.title == "The add row")
+        let edited = post(r, "/api/task/edit",
+                          ["id": task.id.uuidString, "title": "The add row", "note": "", "work": "plan"])
+        #expect(edited.status == 200)
+        // Even a word that was never a kind of work: there is nothing to be wrong about.
+        #expect(post(r, "/api/task", ["project": "/tmp/P", "title": "No", "work": "feature"]).status == 200)
     }
 
     @Test func theAppsAPI() throws {
@@ -114,7 +112,6 @@ import Testing
         #expect(edited.status == 200)
         #expect(try FileStore.decoder.decode(FactoryTask.self, from: edited.body).title == "Do it well")
         #expect(post(r, "/api/task/edit", ["id": task.id.uuidString, "title": " ", "note": ""]).status == 400)
-        #expect(task.work == .implement)
 
         var e = Escalation(projectID: "/tmp/P", question: "q", options: [.init(title: "A", recommended: true), .init(title: "B")])
         try r.store.save(e)
@@ -158,5 +155,92 @@ import Testing
         #expect(moved.status == 200)
         let ordered = try r.store.load().tasks.filter { $0.state == .backlog }.sorted(by: Backlog.order)
         #expect(ordered.first?.title == "Third")
+    }
+}
+
+/// The phone reading an agent's conversation, both ways of asking where to carry on from.
+/// (T506.)
+@Suite struct TranscriptOverHTTPTests {
+    private func router() throws -> HTTPRouter {
+        HTTPRouter(server: MCPServer(store: try temporaryStore(), pollInterval: 0.01))
+    }
+
+    private func get(_ r: HTTPRouter, _ path: String) -> HTTPResponse {
+        r.respond(to: HTTPRequest(method: "GET", path: path))
+    }
+
+    private func read(_ response: HTTPResponse) throws -> HTTPRouter.Conversation {
+        try JSONDecoder().decode(HTTPRouter.Conversation.self, from: response.body)
+    }
+
+    private func write(_ text: String, for agent: UUID, in store: FileStore) throws {
+        let file = store.transcriptFile(for: agent)
+        if FileManager.default.fileExists(atPath: file.path) {
+            let handle = try FileHandle(forWritingTo: file)
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data(text.utf8))
+        } else {
+            try text.write(to: file, atomically: true, encoding: .utf8)
+        }
+    }
+
+    @Test func askingByTheByteCarriesOnlyWhatIsNew() throws {
+        let r = try router()
+        let agent = UUID()
+        try write("one\ntwo\n", for: agent, in: r.store)
+        let first = try read(get(r, "/api/transcript?agent=\(agent.uuidString)&from=0"))
+        #expect(first.lines == ["one", "two"])
+        #expect(first.next == 8)
+        #expect(first.total == nil)
+        #expect(first.startedAgain == false)
+        try write("three\n", for: agent, in: r.store)
+        let second = try read(get(r, "/api/transcript?agent=\(agent.uuidString)&from=8"))
+        #expect(second.lines == ["three"])
+        #expect(second.next == 14)
+    }
+
+    /// A phone built before this asks by the line and must go on working exactly as it did:
+    /// the Mac and the phone are released separately. It sends no `from`, so it gets the
+    /// whole file and a count of lines, which is the shape it decodes.
+    @Test func askingByTheLineStillAnswersTheOldShape() throws {
+        let r = try router()
+        let agent = UUID()
+        try write("one\ntwo\nthree\n", for: agent, in: r.store)
+        let all = try read(get(r, "/api/transcript?agent=\(agent.uuidString)&after=0"))
+        #expect(all.lines == ["one", "two", "three"])
+        #expect(all.total == 3)
+        #expect(all.next == nil)
+        let rest = try read(get(r, "/api/transcript?agent=\(agent.uuidString)&after=2"))
+        #expect(rest.lines == ["three"])
+        #expect(rest.total == 3)
+    }
+
+    /// A phone that has updated talking to a Mac that has not sends both, and the old Mac
+    /// reads the one it knows. That is why `from` and `after` go up together.
+    @Test func bothOffsetsTogetherReadAsWhicheverTheMacKnows() throws {
+        let r = try router()
+        let agent = UUID()
+        try write("one\ntwo\n", for: agent, in: r.store)
+        let new = try read(get(r, "/api/transcript?agent=\(agent.uuidString)&from=0&after=0"))
+        #expect(new.next == 8 && new.total == nil)
+    }
+
+    @Test func aLogStartedAgainSaysSo() throws {
+        let r = try router()
+        let agent = UUID()
+        try write("one\ntwo\nthree\n", for: agent, in: r.store)
+        #expect(try read(get(r, "/api/transcript?agent=\(agent.uuidString)&from=0")).startedAgain == false)
+        // Started again: a shorter file where a longer one was.
+        try "new\n".write(to: r.store.transcriptFile(for: agent), atomically: true, encoding: .utf8)
+        let after = try read(get(r, "/api/transcript?agent=\(agent.uuidString)&from=14"))
+        #expect(after.startedAgain == true)
+        #expect(after.lines == ["new"])
+    }
+
+    @Test func anAgentThatIsNotOneIsRefused() throws {
+        let r = try router()
+        #expect(get(r, "/api/transcript?agent=nonsense").status == 400)
+        #expect(get(r, "/api/transcript").status == 400)
     }
 }

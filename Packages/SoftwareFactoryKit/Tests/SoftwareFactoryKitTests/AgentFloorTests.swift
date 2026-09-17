@@ -352,6 +352,44 @@ struct AgentFloorTests {
         _ = await floor.handle(AgentDaemon.Request(op: .stop, agent: agent))
     }
 
+    /// Four instructions thought of while an agent works are usually one instruction, and
+    /// sent one at a time they become the agent doing the first and being interrupted by
+    /// the second, which is what the queue exists to avoid. Merging joins them, and they
+    /// still wait for the turn to end: the never-mid-turn rule is not what is being relaxed.
+    /// (Alex, 16 Sep 2026, T541.)
+    @Test func severalThingsWaitingCanBeSentAsOne() async throws {
+        let (store, root) = try Self.scratch()
+        let release = root.appending(path: "let-it-finish")
+        let floor = Self.floor(store, mode: "hold", release: release)
+        let agent = UUID()
+        #expect(await Self.start(floor, agent: agent, cwd: root, words: "first").ok)
+        await Self.until("the first to be written down") { Self.asked(agent, in: store) == ["first"] }
+
+        // Nothing to merge until there are two.
+        #expect(await floor.handle(AgentDaemon.Request(op: .merge, agent: agent)).ok == false)
+        #expect(await floor.handle(AgentDaemon.Request(op: .say, agent: agent, text: "second")).ok)
+        #expect(await floor.handle(AgentDaemon.Request(op: .merge, agent: agent)).ok == false)
+        #expect(await floor.handle(AgentDaemon.Request(op: .say, agent: agent, text: "third")).ok)
+        #expect(floor.everything().first?.queued == 2)
+
+        #expect(await floor.handle(AgentDaemon.Request(op: .merge, agent: agent)).ok)
+        // One thing waiting now, and it is both of them with a blank line between: they
+        // were typed as separate thoughts and running them together would join the end of
+        // one sentence to the start of the next.
+        #expect(floor.everything().first?.queued == 1)
+        #expect(floor.everything().first?.waitingToSay == ["second\n\nthird"])
+        // Still waiting. Merging is about how many turns they take, not about saying
+        // something to an agent in the middle of one.
+        #expect(Self.asked(agent, in: store) == ["first"])
+
+        FileManager.default.createFile(atPath: release.path, contents: nil)
+        await Self.until("the merged one to be said", 30) {
+            Self.asked(agent, in: store) == ["first", "second\n\nthird"]
+        }
+        #expect(floor.everything().first?.queued == 0)
+        _ = await floor.handle(AgentDaemon.Request(op: .stop, agent: agent))
+    }
+
     @Test func aStoppedAgentForgetsWhatWasWaitingForIt() async throws {
         let (store, root) = try Self.scratch()
         let floor = Self.floor(store, mode: "hold", release: root.appending(path: "never"))
@@ -436,6 +474,38 @@ struct AgentDaemonWireTests {
         let back = try #require(AgentDaemon.decode(AgentDaemon.Reply.self, from: AgentDaemon.encode(sent)))
         #expect(back == sent)
         #expect(back.agents?.first?.startedAt == running.startedAt)
+    }
+
+    /// Every field, filled in with something that is not its default, and asserted equal
+    /// on the way back. `Running.init(from:)` is hand-written, so a field added to the
+    /// struct is not read until somebody adds a line to it, and nothing says so: the
+    /// daemon sends it, the socket carries it, and the app quietly uses the default.
+    /// `waitingToSay` and `tookBack` were both lost that way, which is words queued for a
+    /// busy agent and a question it took back, neither of them reaching the page. One
+    /// equality is the whole guard: the next field somebody forgets fails here rather than
+    /// going quiet. (T501.)
+    @Test func everyFieldSurvivesTheRoundTrip() throws {
+        var full = AgentDaemon.Running(agent: UUID(), state: .running, pid: 42, session: "s",
+                                       startedAt: Date(timeIntervalSince1970: 1_758_000_000),
+                                       exit: 9,
+                                       waiting: .init(requestID: 3, title: "Write Models.swift",
+                                                      kind: "edit",
+                                                      options: [.init(optionID: "allow_once", name: "Allow once",
+                                                                      kind: .allowOnce)],
+                                                      asked: Date(timeIntervalSince1970: 1_758_000_100)),
+                                       isPrompting: true, line: "Editing Models.swift", queued: 2,
+                                       asking: .init(requestID: 5, question: "Which one?",
+                                                     options: [.init(value: "a", title: "A", detail: "The first")],
+                                                     takesWords: true,
+                                                     asked: Date(timeIntervalSince1970: 1_758_000_200)),
+                                       modes: [.init(id: "default", name: "Default", detail: "Asks")],
+                                       mode: "default")
+        full.takes = ACP.Attachments(image: true, embeddedContext: true)
+        full.commands = [ACP.Command(name: "review", description: "Review the diff.")]
+        full.waitingToSay = ["do the other one next", "and file a report"]
+        full.tookBack = 5
+        let back = try #require(AgentDaemon.decode(AgentDaemon.Running.self, from: AgentDaemon.encode(full)))
+        #expect(back == full)
     }
 
     /// The daemon outlives the app, so a rebuilt app reads a daemon started hours ago. A

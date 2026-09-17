@@ -78,96 +78,47 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
 /// taken by concurrency; it is a task everywhere a person reads it.
 public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
     public enum State: String, Codable, CaseIterable, Sendable {
-        case backlog, inProgress, done
-        /// Seen by the person and set aside: not next, not done, not forgotten.
+        case backlog, inProgress
+        /// Finished, and it worked.
+        case succeeded
+        /// Finished, and it did not. A task that failed is as finished as one that worked:
+        /// it is off the backlog, nobody is on it, and what happened is in its note. It is
+        /// not blocked, which is waiting on something nameable, and it is not parked, which
+        /// is set aside on purpose. Saying so is the point: "done" covered both and the
+        /// only way to tell them apart was to read the note. (T488, Alex, 15 Sep 2026.)
+        case failed
+        /// Seen by the person and set aside: not next, not finished, not forgotten.
         case parked
         /// Waiting on something named in `blocker`. Not next; an agent moves on.
         case blocked
-    }
 
-    /// What the agent is being asked to do. Named `work` so it never collides with the
-    /// old `kind` (feature, bug, chore) that may still sit on a version-1 record.
-    public enum Work: String, Codable, CaseIterable, Sendable {
-        /// Produce a design brief, then stop for a look.
-        case design
-        /// Plan the implementation, then stop for approval.
-        case plan
-        /// Do the work. The default.
-        case implement
-        /// Find the cause and fix it.
-        case fix
-        /// Look at the result. Fix what the review says to fix; log the rest.
-        case review
-        /// Find out. Don't change anything.
-        case investigate
-        /// Put a build in someone's hands: the device, testers, or the store.
-        case ship
-
-        /// The word on the row and at the start of a title. Implement is "Code"
-        /// (T181): that is what you type, and what the row used to call Implement.
-        public var word: String {
-            switch self {
-            case .design: "Design"
-            case .plan: "Plan"
-            case .implement: "Code"
-            case .fix: "Fix"
-            case .review: "Review"
-            case .investigate: "Investigate"
-            case .ship: "Ship"
-            }
+        /// Every record written before T488 says "done", which meant an agent had
+        /// finished. It reads as succeeded, because that is what it was taken to mean
+        /// everywhere: off the backlog, out of the counts, nobody on it.
+        public init(from decoder: Decoder) throws {
+            let raw = try decoder.singleValueContainer().decode(String.self)
+            self = State(rawValue: raw) ?? (raw == "done" ? .succeeded : .backlog)
         }
 
-        /// The first word of a title, if it names a kind of work. "Code" and the
-        /// older "Implement" both mean implement. Anything else is nil.
-        public static func named(_ token: String) -> Work? {
-            let t = token.trimmingCharacters(in: .punctuationCharacters)
-            guard !t.isEmpty else { return nil }
-            if t.compare("code", options: .caseInsensitive) == .orderedSame { return .implement }
-            if t.compare("implement", options: .caseInsensitive) == .orderedSame { return .implement }
-            return allCases.first { $0.word.compare(t, options: .caseInsensitive) == .orderedSame }
-        }
+        /// Finished, either way. What nearly every rule actually means when it asks.
+        public var isFinished: Bool { self == .succeeded || self == .failed }
 
-        /// MCP and HTTP: the stored raw value, the word, or "code".
-        public static func parse(_ raw: String) -> Work? {
-            if let work = Work(rawValue: raw) { return work }
-            return named(raw)
-        }
-
-        /// Work from the first token of a title, defaulting to implement when there
-        /// is none. The title is kept as typed, prefix and all.
-        public static func reading(title: String) -> (work: Work, title: String) {
-            let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
-            let token = title.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
-            return (named(token) ?? .implement, title)
-        }
-
-        /// True when `title` already begins with this word, so the row should not
-        /// print it again.
-        public func isPrefix(of title: String) -> Bool {
-            Self.named(title.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? "") == self
-        }
-
-        /// One line for an agent, a tooltip, the full task view.
-        public var brief: String {
-            switch self {
-            case .design: "Produce a design brief, put it on the project with artifact_add, then stop. Don't implement."
-            case .plan: "Plan the implementation, put the plan on the project with artifact_add, then stop. Don't implement."
-            case .implement: "Do the work."
-            case .fix: "Find the cause and fix it."
-            case .review: "Look at the result. Fix what the review says to fix; log the rest."
-            case .investigate: "Find out. Put what you found on the project with artifact_add. Don't change anything."
-            case .ship: "Put a build in someone's hands: the device, testers, or the store."
-            }
-        }
-
-        /// Fits after "Claim it, read its note." in the launch words.
-        public var instruction: String {
-            switch self {
-            case .implement: "Do it, and say when it is done."
-            default: "\(brief) Say when it is done."
-            }
+        /// A state as a caller says it. "done" is still taken and means succeeded, so
+        /// every agent and every script written before tonight goes on working. (T488.)
+        public static func parse(_ raw: String) -> State? {
+            if let state = State(rawValue: raw) { return state }
+            return raw == "done" ? .succeeded : nil
         }
     }
+
+    // `FactoryTask.Work` stood here: design, plan, implement, fix, review, investigate,
+    // ship, with the first word of a title naming one and `instruction` putting "produce a
+    // brief, then stop" or "find out, change nothing" into the words an agent started with.
+    // Alex asked for it to go (T417) and was asked again with the numbers in front of him,
+    // because it was in use and rising: 76 of 586 tasks carried one, almost all filed by
+    // agents for each other. He said remove it as asked, so it is written down as a decision
+    // rather than a tidy-up. A task is a title and a note now, and what to produce is said
+    // in the note like anything else. (T417, Alex, 17 Sep 2026.)
 
     /// What a blocked task waits on. A decision or a task clears on its own; a person or
     /// anything else clears when someone says so.
@@ -211,10 +162,6 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
     /// Position on the backlog. Lower comes first.
     public var rank: Int
     public var note: String
-    /// What the agent should produce. Not the old feature/bug/chore kind, which came out
-    /// because nothing read it: this one is read. Default implement, which is what every
-    /// task was before the field existed. (T166, 13 Sep 2026.)
-    public var work: Work
     /// The agent on it, when one is.
     public var agentID: UUID?
     /// Everything the task waits on while the state is `blocked`. It clears when the
@@ -235,7 +182,7 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
     public var label: String? { number.map { "T\($0)" } }
 
     enum CodingKeys: String, CodingKey {
-        case version, id, number, projectID, title, state, rank, note, work, agentID, blockers, removed, created, updated
+        case version, id, number, projectID, title, state, rank, note, agentID, blockers, removed, created, updated
         case legacyBlocker = "blocker"
     }
 
@@ -249,7 +196,6 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         try c.encode(state, forKey: .state)
         try c.encode(rank, forKey: .rank)
         try c.encode(note, forKey: .note)
-        try c.encode(work, forKey: .work)
         try c.encodeIfPresent(agentID, forKey: .agentID)
         if !blockers.isEmpty { try c.encode(blockers, forKey: .blockers) }
         try c.encodeIfPresent(removed, forKey: .removed)
@@ -259,7 +205,7 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
 
     public init(
         id: UUID = UUID(), number: Int? = nil, projectID: String, title: String,
-        state: State = .backlog, rank: Int, note: String = "", work: Work = .implement,
+        state: State = .backlog, rank: Int, note: String = "",
         agentID: UUID? = nil, created: Date = .now
     ) {
         self.id = id
@@ -269,7 +215,6 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         self.state = state
         self.rank = rank
         self.note = note
-        self.work = work
         self.agentID = agentID
         self.created = created
         self.updated = created
@@ -284,7 +229,9 @@ public struct FactoryTask: Codable, Identifiable, Hashable, Sendable {
         state = try c.decode(State.self, forKey: .state)
         rank = try c.decode(Int.self, forKey: .rank)
         note = try c.decode(String.self, forKey: .note)
-        work = try c.decodeIfPresent(Work.self, forKey: .work) ?? .implement
+        // A record written before T417 carries `work`. It is read and thrown away, the
+        // same as `kind` before it, so an older record still decodes and nothing is kept
+        // that nothing reads.
         agentID = try c.decodeIfPresent(UUID.self, forKey: .agentID)
         // Version 1 wrote one `blocker`; it reads as a list of one.
         blockers = try c.decodeIfPresent([Blocker].self, forKey: .blockers)
@@ -790,8 +737,10 @@ public enum Sweep {
                         }
                     } else { remaining.append(b) }
                 case .task:
-                    if let id = b.id, let t = snapshot.tasks.first(where: { $0.id == id }), t.state == .done {
-                        cleared.append("\(t.title) is done")
+                    // Finished either way clears it: a task waiting on one that failed is
+                    // not waiting any more, and the note says which it was. (T488.)
+                    if let id = b.id, let t = snapshot.tasks.first(where: { $0.id == id }), t.state.isFinished {
+                        cleared.append("\(t.title) \(t.state == .failed ? "failed" : "is done")")
                     } else { remaining.append(b) }
                 case .person, .other:
                     remaining.append(b)

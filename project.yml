@@ -97,10 +97,12 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         # Without this the catalog's AppIcon is never compiled in (Alex, 12 Sep 2026: no icon).
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        # And without this the catalog's AccentColor is never used either, so the sidebar
-        # selection was macOS blue while the rest of the window was paper and rust. The
-        # colorset was already there and had never been pointed at. (T406.)
-        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        # No accent of our own. T406 pointed this at a rust colorset so the sidebar
+        # selection would match a window painted paper and rust; the window is the
+        # system's now, and so is the accent, which on the Mac is the one the person
+        # chose in Appearance. An app that overrides it is one that has decided its
+        # own colour matters more than theirs.
+        # (Alex, 16 Sep 2026: conventional Liquid Glass.)
         ENABLE_HARDENED_RUNTIME: YES
         COMBINE_HIDPI_IMAGES: YES
         CODE_SIGN_ENTITLEMENTS: App/SoftwareFactory.entitlements
@@ -153,7 +155,6 @@ targets:
         SUPPORTED_PLATFORMS: iphoneos iphonesimulator
         IPHONEOS_DEPLOYMENT_TARGET: "26.0"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: NO
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO

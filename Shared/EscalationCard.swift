@@ -28,24 +28,60 @@ struct EscalationCard: View {
     var escalation: Escalation
     /// Whose question it is. Off on a project's own page, where the name is the heading.
     var showsProject = false
+    var place = Place.inAList
     var model: any Deciding
     @State private var words = ""
 
+    /// Where this card is being drawn, which is what decides how much of it is needed.
+    ///
+    /// In a list it is one question among several, on a page about something else, and it
+    /// has to be picked out and placed: its own edges, the alarm colour, a line saying
+    /// whose it is and when, and which task it is stopping.
+    ///
+    /// At the foot of an agent's page every one of those is already on screen. The
+    /// conversation that led to the question is directly above it, the sidebar says whose
+    /// page this is and what it holds, it is the only thing down there so nothing has to be
+    /// picked out from anything, and the field it replaced had no card around it. What was
+    /// left was eight nested boxes to ask one question in. (Alex, 16 Sep 2026: the card is
+    /// complex looking.)
+    enum Place {
+        case inAList
+        case atTheFoot
+
+        var isInAList: Bool { self == .inAList }
+    }
+
     var body: some View {
+        if place.isInAList {
+            asked
+                .padding(Style.cardPadding)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .cardSurface(tint: escalation.isOpen ? .orange : nil)
+                .animation(.snappy, value: escalation.decision)
+        } else {
+            asked
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .animation(.snappy, value: escalation.decision)
+        }
+    }
+
+    private var asked: some View {
         VStack(alignment: .leading, spacing: 12) {
-            heading
+            if place.isInAList {
+                heading
+            }
             Text(escalation.question)
                 .font(.headline)
                 .fixedSize(horizontal: false, vertical: true)
-            if let stops {
+            if place.isInAList, let stops {
                 Label("Stops: \(stops)", systemImage: "arrow.turn.down.right")
                     .font(.caption)
-                    .foregroundStyle(Color(.alarm))
+                    .foregroundStyle(Color.orange)
             }
             if !escalation.context.isEmpty {
                 Text(escalation.context)
                     .font(.callout)
-                    .foregroundStyle(Color(.quiet))
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             // The thing to read before deciding, on the question rather than somewhere
@@ -58,12 +94,6 @@ struct EscalationCard: View {
             options
             note
         }
-        .padding(Style.cardPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(
-            escalation.isOpen ? .regular.tint(Color(.alarm).opacity(0.14)) : .regular,
-            in: .rect(cornerRadius: Style.card))
-        .animation(.snappy, value: escalation.decision)
     }
 
     private var heading: some View {
@@ -77,7 +107,7 @@ struct EscalationCard: View {
             }
             Text("\(escalation.raisedBy) · \(escalation.raised, format: .relative(presentation: .named))")
                 .font(.caption)
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer(minLength: 0)
             if let decision = escalation.decision {
@@ -90,16 +120,26 @@ struct EscalationCard: View {
         }
     }
 
+    /// The choices. One surface with the options ruled off inside it, rather than each on a
+    /// sheet of its own: three choices used to be three pieces of glass stacked inside a
+    /// tinted card inside a page, which is four materials deep to answer a yes or no. A list
+    /// of choices is one list. The edges come off altogether at the foot of an agent's page,
+    /// where there is nothing to tell them apart from. (Alex, 16 Sep 2026.)
     private var options: some View {
-        GlassEffectContainer(spacing: 8) {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(escalation.options) { option in
-                    OptionButton(option: option, isChosen: option.id == escalation.decision?.optionID) {
-                        model.chose(escalation, option, note: words)
-                        words = ""
-                    }
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(escalation.options.enumerated()), id: \.element.id) { index, option in
+                if index > 0 { Divider() }
+                OptionButton(option: option, number: index + 1,
+                             isChosen: option.id == escalation.decision?.optionID) {
+                    model.chose(escalation, option, note: words)
+                    words = ""
                 }
             }
+        }
+        .background(place.isInAList ? AnyShapeStyle(.background.secondary) : AnyShapeStyle(.clear),
+                    in: .rect(cornerRadius: Style.panel))
+        .overlay {
+            RoundedRectangle(cornerRadius: Style.panel).strokeBorder(.separator, lineWidth: 1)
         }
     }
 
@@ -110,19 +150,25 @@ struct EscalationCard: View {
         if let decision = escalation.decision, !decision.note.isEmpty {
             Label(decision.note, systemImage: escalation.answeredInOwnWords ? "text.bubble" : "note.text")
                 .font(.callout)
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         } else {
+            // The same send the prompt field has. It was a button reading "Answer with
+            // this", which is a sentence where every other field in the app has an arrow,
+            // and the longest thing on the row was the label on the control rather than
+            // what you typed. (Alex, 16 Sep 2026: "use the same send icon as the normal
+            // prompt input".)
             HStack(alignment: .bottom, spacing: 8) {
                 TextField("A note for the agent, or your own answer", text: $words, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...4)
                     .font(.callout)
-                Button("Answer with this") {
+                Button("Send", systemImage: "arrow.up.circle.fill") {
                     model.answered(escalation, with: words)
                     words = ""
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.borderless)
+                .labelStyle(.iconOnly)
                 .disabled(words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .help("Send these words as the answer instead of an option")
             }
@@ -142,16 +188,31 @@ struct EscalationCard: View {
 }
 
 /// One option. The recommendation is marked and never chosen for you.
+///
+/// **Numbered, and no radio button** (Alex, 16 Sep 2026: "Show a number next to each
+/// answer. and don't show the radio button. These are normal buttons."). A radio circle
+/// says pick one of these and then confirm, and there is nothing to confirm with: pressing
+/// one answers the question and the agent is told. So it is a numbered button, and the
+/// number is what you refer to it by when you say "the second one" to somebody.
+///
+/// The tick stays on the one that was chosen, because a card with a decision on it is a
+/// record of what you decided rather than a question, and that is the only state left.
 private struct OptionButton: View {
     var option: Escalation.Option
+    var number: Int
     var isChosen: Bool
     var action: () -> Void
 
     var body: some View {
         Button(action: action) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Image(systemName: isChosen ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(isChosen ? .green : .secondary)
+                if isChosen {
+                    Image(systemName: "checkmark").foregroundStyle(.green)
+                } else {
+                    Text("\(number)")
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 8) {
                         Text(option.title)
@@ -167,7 +228,7 @@ private struct OptionButton: View {
                     if !option.detail.isEmpty {
                         Text(option.detail)
                             .font(.callout)
-                            .foregroundStyle(Color(.quiet))
+                            .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -181,8 +242,9 @@ private struct OptionButton: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .glassEffect(isChosen ? .regular.tint(.green.opacity(0.15)).interactive() : .regular.interactive(),
-                     in: .rect(cornerRadius: Style.panel))
+        // The one chosen, marked on the row rather than by a sheet of tinted glass under
+        // it. The green tick beside it already says which it was.
+        .background(isChosen ? Color.green.opacity(0.12) : .clear)
         .help(option.recommended ? "The agent's recommendation" : "Choose this")
     }
 }

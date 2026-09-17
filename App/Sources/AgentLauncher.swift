@@ -102,7 +102,10 @@ enum StartAgent {
         /// they started it from. Empty means the floor's own answer: the model Settings
         /// holds for that CLI, and the mode that matches what agents may do. (T466.)
         runOn: String? = nil,
-        mode: String = ""
+        mode: String = "",
+        /// What to open once it is running. The agent is written down before anything is
+        /// spawned, so this is the id the page will be keyed on. (T485.)
+        focus: ((UUID) -> Void)? = nil
     ) async -> String? {
         let cap = Agents.cap(model.throttle)
         if Agents.atCap(model.snapshot.agents, cap: cap) { return Agents.fullMessage(cap: cap) }
@@ -138,6 +141,7 @@ enum StartAgent {
                 return wrong
             }
             model.rememberACPSession(floor.running(reserved.id)?.session, for: reserved)
+            focus?(reserved.id)
             return nil
         }
         let command = agent.command(for: prompt, session: session)
@@ -150,6 +154,7 @@ enum StartAgent {
             case .embedded:
                 try terminals.start(in: project, command: command, session: session.uuidString, agentID: reserved.id)
                 model.findTheProcess(for: reserved)
+                focus?(reserved.id)
             case .terminal: try AgentLauncher.launch(project, command: command)
             }
             return nil

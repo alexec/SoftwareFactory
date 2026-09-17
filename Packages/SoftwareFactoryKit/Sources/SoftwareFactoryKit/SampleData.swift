@@ -13,7 +13,7 @@ public enum SampleData {
         packedLead.lastSeen = now.addingTimeInterval(-1700)
 
         var rooms = FactoryTask(projectID: where_.id, title: "Rooms run together when dictated",
-                                state: .inProgress, rank: 0, work: .fix, agentID: agent1.id,
+                                state: .inProgress, rank: 0, agentID: agent1.id,
                                 created: now.addingTimeInterval(-7200))
         rooms.updated = now.addingTimeInterval(-2500)
         agent1.taskID = rooms.id
@@ -21,13 +21,13 @@ public enum SampleData {
         let tasks = [
             rooms,
             FactoryTask(projectID: where_.id, title: "Search across every box", rank: 1,
-                        work: .design, created: now.addingTimeInterval(-6000)),
+                        created: now.addingTimeInterval(-6000)),
             FactoryTask(projectID: where_.id, title: "Regenerate the icon from the script", rank: 2,
                         created: now.addingTimeInterval(-5000)),
             FactoryTask(projectID: packed.id, title: "Weather for the trip's first day", rank: 0,
                         created: now.addingTimeInterval(-4000)),
             FactoryTask(projectID: packed.id, title: "Ticking a bag item skips one", rank: 1,
-                        work: .fix, created: now.addingTimeInterval(-3000)),
+                        created: now.addingTimeInterval(-3000)),
         ]
 
         let weather = Artifact(

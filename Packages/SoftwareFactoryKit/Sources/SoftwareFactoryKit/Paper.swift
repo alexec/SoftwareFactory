@@ -5,8 +5,10 @@ import Foundation
 /// Everything a person reads on this floor is markdown when it is written: a brief, a
 /// plan, a finding, a status report. It is a web page when it is read, and one renderer
 /// does all of them, so a note an agent typed, a page on the web and a file in the repo
-/// come out looking the same. The styling is paper: a warm ground, a serif, a line
-/// length you can read to the end of. (T311.)
+/// come out looking the same. The styling is the system's own: its ground, its ink, its
+/// letters, and a line length you can read to the end of. It was a warm ground and a
+/// serif until 16 Sep 2026, which was the house theme and went with the rest of it.
+/// (T311, then Alex, 16 Sep 2026: conventional Liquid Glass, documents included.)
 public enum Paper {
     /// The markdown as an HTML fragment: no document around it, nothing styled.
     public static func html(_ markdown: String) -> String {
@@ -222,89 +224,33 @@ public enum Paper {
         return out
     }
 
-    /// Paper, in both appearances. The ground is warm rather than white, the type is a
-    /// serif at a size you read rather than scan, and the column stops at a measure so a
-    /// wide window does not run a sentence off the far side. Dark is ink and paper the
-    /// The colours paper is made of, light and dark, in one place.
-    ///
-    /// A warm near-white ground, a warm near-black ink, and one rust mark.
-    ///
-    /// Three others were tried on the way here and this is the one Alex picked with all
-    /// of them in front of him: cool drafting paper read as technical rather than
-    /// readable, and buff manila came out too orange. It is close to what Claude is set
-    /// on, and that was weighed and settled rather than overlooked. (Alex, 16 Sep 2026.)
-    ///
-    /// Written down once, because the documents are HTML in a web view and the agent's
-    /// conversation is SwiftUI, and two sources drift the first time either is touched.
-    ///
-    /// One place, because the documents are HTML in a web view and the agent's page is
-    /// SwiftUI, and two sources would have drifted the first time either was touched.
-    /// (Alex, 16 Sep 2026: papery, but not Claude papery, and used everywhere.)
-    public enum Tone: String, CaseIterable, Sendable {
-        /// The ground. Warm, not white.
-        case paper
-        /// What is written on it.
-        case ink
-        /// A second voice: a caption, a date, something said quietly.
-        case quiet
-        /// A third voice, quieter still: a hint, a count, something you read only when
-        /// you go looking. The system's `.tertiary` in the theme's own colour.
-        case faint
-        /// A line across the page.
-        case rule
-        /// The edge of something sitting on the page.
-        case edge
-        /// A block set into the page: code, a quote, a tool call.
-        case block
-        /// The one colour on the page, for a link or a mark.
-        case mark
-        /// A person is needed. Not a second mark and not a shade of the ground: it is the
-        /// loudest thing the app has, and it is spent only on a question waiting, a task
-        /// blocked, a report gone stale and an agent asking permission.
-        ///
-        /// It was `Color.orange` in thirty-three places and in the palette in none, so
-        /// nobody was managing it. On dark paper the system's orange washed at 12 percent
-        /// sampled `#6F5A43`, which is a warm brown a shade off the ground: the one signal
-        /// in the app, drawn so that it read as more paper. This is saturated enough to
-        /// survive being a small mark on either ground. (T408, off T395.)
-        case alarm
-
-        /// Light, then dark. Six digits, no hash.
-        public var hex: (light: String, dark: String) {
-            switch self {
-            case .paper: ("fbfaf6", "1b1a18")
-            case .ink: ("22201c", "e6e1d8")
-            case .quiet: ("6d675d", "9c958a")
-            case .faint: ("968f83", "77716a")
-            case .rule: ("e0dbd0", "35322d")
-            case .edge: ("cfc8ba", "45413a")
-            case .block: ("f1ede4", "26241f")
-            case .mark: ("8a5a2b", "d0a271")
-            case .alarm: ("c2410c", "fb923c")
-            }
-        }
-    }
-
     /// The measure: how wide a line may be before it is hard to find the next one.
-    /// 46em of a 15px serif, which is what the documents are set to.
+    /// 46em of the 15px body type, which is what the documents are set to. The one thing
+    /// kept when the theme went, because it is a measurement rather than a look: a
+    /// sentence running the width of a wide window is hard to read whatever it is set in.
     public static let measure = 690.0
 
-    static var lightTones: String {
-        Tone.allCases.map { "--\($0.rawValue): #\($0.hex.light);" }.joined(separator: " ")
-    }
-
-    static var darkTones: String {
-        Tone.allCases.map { "--\($0.rawValue): #\($0.hex.dark);" }.joined(separator: " ")
-    }
-
-    /// other way up, not a white page dimmed.
+    /// A document, in the system's own colours and the system's own type.
+    ///
+    /// It was a palette of nine warm colours and a serif, written down here because the
+    /// same theme was painted under the whole app and the two had to agree. The app does
+    /// not paint a ground any more, so there is nothing for this to agree with, and a
+    /// document set in one house's colours inside a window drawn in the person's own is
+    /// the seam that theme existed to close, moved rather than removed.
+    ///
+    /// So: `Canvas` and `CanvasText`, which are the ground and the ink of whatever
+    /// appearance the person is in; the system font, the same letters as every other word
+    /// in both apps; `LinkText` for a link; and everything quieter than the body mixed out
+    /// of `CanvasText` rather than named, so light and dark are one rule and not two
+    /// palettes that can drift. Dark is the system's dark rather than a light page dimmed,
+    /// because `color-scheme` says so and the colours follow it.
+    /// (Alex, 16 Sep 2026: conventional Liquid Glass, documents included.)
     static var style: String {
     """
-    :root { color-scheme: light dark; \(lightTones) }
-    @media (prefers-color-scheme: dark) { :root { \(darkTones) } }
-    html { -webkit-text-size-adjust: 100%; background: var(--paper); }
-    body { margin: 0 auto; padding: 30px 32px 56px; max-width: 46em; background: var(--paper); \
-    color: var(--ink); font: 15px/1.65 ui-serif, "New York", Georgia, "Times New Roman", serif; \
+    :root { color-scheme: light dark; }
+    html { -webkit-text-size-adjust: 100%; background: Canvas; }
+    body { margin: 0 auto; padding: 30px 32px 56px; max-width: 46em; background: Canvas; \
+    color: CanvasText; font: 15px/1.65 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; \
     -webkit-font-smoothing: antialiased; word-wrap: break-word; }
     h1, h2, h3, h4, h5, h6 { line-height: 1.25; margin: 1.6em 0 0.5em; font-weight: 600; }
     h1 { font-size: 1.7em; margin-top: 0; }
@@ -316,19 +262,21 @@ public enum Paper {
     ul, ol { padding-left: 1.4em; }
     li { margin: 0.25em 0; }
     li > ul, li > ol { margin: 0.25em 0 0.25em; }
-    blockquote { margin-left: 0; padding: 0.1em 0 0.1em 1em; border-left: 3px solid var(--edge); \
-    color: var(--quiet); font-style: italic; }
+    blockquote { margin-left: 0; padding: 0.1em 0 0.1em 1em; \
+    border-left: 3px solid color-mix(in srgb, CanvasText 25%, Canvas); \
+    color: color-mix(in srgb, CanvasText 60%, Canvas); }
     blockquote p { margin: 0.5em 0; }
-    a { color: var(--mark); text-decoration: underline; text-underline-offset: 2px; }
+    a { color: LinkText; text-decoration: underline; text-underline-offset: 2px; }
     code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.88em; \
-    background: var(--block); padding: 0.12em 0.34em; border-radius: 4px; }
-    pre { background: var(--block); padding: 12px 14px; border-radius: 8px; overflow-x: auto; }
+    background: color-mix(in srgb, CanvasText 8%, Canvas); padding: 0.12em 0.34em; border-radius: 4px; }
+    pre { background: color-mix(in srgb, CanvasText 8%, Canvas); padding: 12px 14px; \
+    border-radius: 8px; overflow-x: auto; }
     pre code { background: none; padding: 0; font-size: 0.85em; line-height: 1.5; }
-    hr { border: none; border-top: 1px solid var(--rule); margin: 2em 0; }
+    hr { border: none; border-top: 1px solid color-mix(in srgb, CanvasText 18%, Canvas); margin: 2em 0; }
     img { max-width: 100%; height: auto; }
     table { border-collapse: collapse; }
-    td, th { border: 1px solid var(--rule); padding: 4px 8px; text-align: left; }
-    th { font-weight: 600; background: var(--block); }
+    td, th { border: 1px solid color-mix(in srgb, CanvasText 18%, Canvas); padding: 4px 8px; text-align: left; }
+    th { font-weight: 600; background: color-mix(in srgb, CanvasText 8%, Canvas); }
     """
     }
 }

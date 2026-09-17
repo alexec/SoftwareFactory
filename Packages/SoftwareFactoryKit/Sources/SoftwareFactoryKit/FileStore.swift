@@ -90,9 +90,13 @@ public struct FileStore: Sendable {
     /// Removed tasks and projects stay on disk and out of the snapshot; a removed
     /// project's tasks and artifacts go with it. `loadRemovedTasks` reads the tasks back.
     public func load() throws -> Snapshot {
-        let projects = (try loadAll("projects") as [Project]).filter { $0.removed == nil }
+        // Read once and split. It read the folder twice, once for the live projects and
+        // once for the removed ones, which is the same files decoded twice on a call the
+        // app makes every two seconds. (T521.)
+        let everyProject = try loadAll("projects") as [Project]
+        let projects = everyProject.filter { $0.removed == nil }
         let live = Set(projects.map(\.id))
-        let gone = Set((try loadAll("projects") as [Project]).filter { $0.removed != nil }.map(\.id))
+        let gone = Set(everyProject.filter { $0.removed != nil }.map(\.id))
         return Snapshot(
             projects: projects,
             tasks: (try loadAll("tasks") as [FactoryTask]).filter { $0.removed == nil && (live.contains($0.projectID) || !gone.contains($0.projectID)) },
@@ -103,6 +107,58 @@ public struct FileStore: Sendable {
             leases: try loadAll("leases")
         )
     }
+
+    /// Whether anything in the store has changed, cheaply enough to ask every second.
+    ///
+    /// A tool that waits, `task_next` or `escalation_await`, polls until what it wants
+    /// appears, and what it polled was `load()`: nine hundred files read and decoded, every
+    /// second, for up to ten minutes, per waiting agent. This is the same question for a
+    /// tenth of the cost, so the expensive look only happens when there is something new to
+    /// look at. (R67, T524.)
+    ///
+    /// **Not the folders' own modification dates**, which is the obvious version and is
+    /// wrong. A folder's date moves when a file is added or removed and not when one is
+    /// overwritten in place, and overwriting in place is exactly what a task changing state
+    /// is. A tool waiting for that would have waited for ever. Measured rather than assumed,
+    /// and the assumption was mine: it was written down in R67 as the cheapest option.
+    ///
+    /// The count comes along because a deletion moves no date: remove a record and the
+    /// newest is whatever it already was.
+    public struct Stamp: Equatable, Sendable {
+        public var newest: Date
+        public var count: Int
+
+        public init(newest: Date = .distantPast, count: Int = 0) {
+            self.newest = newest
+            self.count = count
+        }
+    }
+
+    public func stamp() -> Stamp {
+        var newest = Date.distantPast
+        var count = 0
+        for folder in Self.recordFolders {
+            let files = (try? FileManager.default.contentsOfDirectory(
+                at: root.appending(path: folder),
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles])) ?? []
+            count += files.count
+            for file in files {
+                // Asked for in the listing above, so this is reading what was already
+                // fetched rather than a stat each.
+                if let when = try? file.resourceValues(forKeys: [.contentModificationDateKey])
+                    .contentModificationDate, when > newest {
+                    newest = when
+                }
+            }
+        }
+        return Stamp(newest: newest, count: count)
+    }
+
+    /// The folders `load()` reads. Named once so a stamp cannot come to cover a different
+    /// set from the thing it is a stamp of.
+    static let recordFolders = ["projects", "tasks", "escalations", "artifacts",
+                                "agents", "resources", "leases"]
 
     /// The agent numbers already given out. One file per number, so taking one is
     /// atomic between the app and the server, and a deleted agent never frees its name.
@@ -148,6 +204,194 @@ public struct FileStore: Sendable {
         guard let text = try? String(contentsOf: transcriptFile(for: agent), encoding: .utf8)
         else { return [] }
         return text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+    }
+
+    /// What has been appended to an agent's log since the last read, and where to read
+    /// from next.
+    ///
+    /// A transcript is the one record here that only ever grows, and a busy one reaches
+    /// tens of megabytes in a day. Reading the whole of it to find the line that arrived a
+    /// second ago is the page's largest cost by far: 30 MB measured at about 580 ms to read
+    /// and fold, against one millisecond for everything the daemon is asked. So the reader
+    /// keeps a byte offset and takes the tail. (T503.)
+    ///
+    /// Two things make this safe rather than clever. **Only whole lines are taken**: the
+    /// daemon is appending while this reads, so the last line can be half written, and the
+    /// offset stops at the last newline so the rest is picked up next time. And a file
+    /// shorter than the offset has been started again, which is what a fresh start does, so
+    /// `startedAgain` says to throw away what was folded rather than folding new lines onto
+    /// an old conversation.
+    public func transcriptTail(for agent: UUID, from: Int) -> TranscriptTail {
+        let file = transcriptFile(for: agent)
+        guard let handle = try? FileHandle(forReadingFrom: file) else {
+            // No file at all is an agent that has not started. If one had been read before,
+            // it has been taken away, which is the same as being started again.
+            return TranscriptTail(lines: [], next: 0, startedAgain: from > 0)
+        }
+        defer { try? handle.close() }
+        let size = Int((try? handle.seekToEnd()) ?? 0)
+        let startedAgain = size < from
+        let start = startedAgain ? 0 : from
+        guard size > start else { return TranscriptTail(lines: [], next: start, startedAgain: startedAgain, from: start) }
+        try? handle.seek(toOffset: UInt64(start))
+        guard let data = try? handle.readToEnd(), !data.isEmpty else {
+            return TranscriptTail(lines: [], next: start, startedAgain: startedAgain, from: start)
+        }
+        guard let lastBreak = data.lastIndex(of: UInt8(ascii: "\n")) else {
+            // Nothing but half a line so far. Nothing read, nothing moved on.
+            return TranscriptTail(lines: [], next: start, startedAgain: startedAgain, from: start)
+        }
+        let whole = data[data.startIndex...lastBreak]
+        let lines = String(decoding: whole, as: UTF8.self)
+            .split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+        return TranscriptTail(lines: lines, next: start + whole.count, startedAgain: startedAgain, from: start)
+    }
+
+    /// How far back a page looks when it opens.
+    ///
+    /// One megabyte, picked off the five biggest logs on this Mac rather than chosen: at a
+    /// quarter of that the busiest page came out at three rows, and at four times it was
+    /// reading a tenth of a 38 MB log for the same eleven. A megabyte is the knee.
+    /// `ACPTranscript.opening` has the whole table. (T511.)
+    public static let transcriptOpeningBytes = 1024 * 1024
+
+    /// Where a page starts when it opens an agent that has been working all day.
+    ///
+    /// It started at the beginning, which is what a first look was. The busiest log on this
+    /// Mac is 39 MB over 14,472 lines and folding it measured 235 ms, to draw the last sixty
+    /// entries: thirteen thousand lines folded, sixty shown, and the page blank for the
+    /// whole of it. (T503 made every read after the first one cheap and left this one
+    /// alone.)
+    ///
+    /// **The cut is not a byte count.** Cut a log anywhere and two things break. A tool
+    /// call's opening line carries its title and the updates that follow only merge into
+    /// it, so a call opened above the cut comes out as a bare id in the one row somebody is
+    /// looking at. And `used` and `size` come from the last `usage_update`, which may be
+    /// above the cut too. So the cut goes where the agent had nothing open, which is just
+    /// after a turn ended (`ACP.endsATurn`).
+    ///
+    /// **The rule, in one line:** the earliest turn boundary in the window with something
+    /// after it, and the window doubles until there is one. Both halves matter. Earliest,
+    /// because that keeps the most conversation. With something after it, because a window
+    /// that catches only the last turn's ending would cut after the whole log and open the
+    /// page on nothing. And when there is nothing left to widen into, the log is folded
+    /// whole, which is what every log did before: an agent still on its first turn has
+    /// nowhere safe to cut, and that is the honest answer rather than a guess. (T511.)
+    public func transcriptOpening(for agent: UUID, want: Int = FileStore.transcriptOpeningBytes) -> TranscriptTail {
+        let file = transcriptFile(for: agent)
+        guard let handle = try? FileHandle(forReadingFrom: file) else {
+            return TranscriptTail(lines: [], next: 0)
+        }
+        let size = Int((try? handle.seekToEnd()) ?? 0)
+        try? handle.close()
+        guard size > 0 else { return TranscriptTail(lines: [], next: 0) }
+        var window = max(want, 1)
+        while true {
+            let from = max(0, size - window)
+            if let start = firstTurnBoundary(in: file, from: from) {
+                let tail = transcriptTail(for: agent, from: start)
+                if !tail.lines.isEmpty { return tail }
+            }
+            if from == 0 { return transcriptTail(for: agent, from: 0) }
+            window *= 2
+        }
+    }
+
+    /// The stretch of log immediately before what has already been folded, cut at a turn
+    /// boundary so it can be folded on its own and put in front.
+    ///
+    /// This is scrolling back. A page opens at the end (`transcriptOpening`) and says
+    /// "Earlier turns are in the log"; this is how the earlier turns come out of it, a
+    /// window at a time, going backwards. `from` on the answer is where this stretch starts,
+    /// which is what to pass as `before` next time. Empty lines mean the top of the log has
+    /// been reached and there is nothing further back.
+    ///
+    /// The cut is the same rule as opening at the end, and it has to be: both ends of a
+    /// stretch must fall where the agent had nothing open, or a tool call is split across
+    /// the join and loses the line that names it. The far end is guaranteed because the
+    /// stretch after it was cut the same way. (T542.)
+    public func transcriptBefore(for agent: UUID, before: Int,
+                                 want: Int = FileStore.transcriptOpeningBytes) -> TranscriptTail {
+        guard before > 0 else { return TranscriptTail(lines: [], next: 0) }
+        let file = transcriptFile(for: agent)
+        var window = max(want, 1)
+        while true {
+            let from = max(0, before - window)
+            if from == 0 {
+                return lines(in: file, from: 0, to: before)
+            }
+            if let start = firstTurnBoundary(in: file, from: from, notPast: before) {
+                let stretch = lines(in: file, from: start, to: before)
+                if !stretch.lines.isEmpty { return stretch }
+            }
+            window *= 2
+        }
+    }
+
+    /// Whole lines in `[from, to)`, with where they start and where they end.
+    private func lines(in file: URL, from: Int, to: Int) -> TranscriptTail {
+        guard to > from, let handle = try? FileHandle(forReadingFrom: file) else {
+            return TranscriptTail(lines: [], next: from, from: from)
+        }
+        defer { try? handle.close() }
+        try? handle.seek(toOffset: UInt64(from))
+        guard let data = try? handle.read(upToCount: to - from), !data.isEmpty else {
+            return TranscriptTail(lines: [], next: from, from: from)
+        }
+        let text = String(decoding: data, as: UTF8.self)
+        return TranscriptTail(lines: text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init),
+                              next: to, from: from)
+    }
+
+    /// The first point in `[from, end)` at which a turn had just ended, as an absolute
+    /// byte offset. Nil when no turn ends in that stretch.
+    private func firstTurnBoundary(in file: URL, from: Int, notPast: Int? = nil) -> Int? {
+        guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
+        defer { try? handle.close() }
+        try? handle.seek(toOffset: UInt64(from))
+        let data: Data?
+        if let notPast {
+            data = try? handle.read(upToCount: max(0, notPast - from))
+        } else {
+            data = try? handle.readToEnd()
+        }
+        guard let data, !data.isEmpty else { return nil }
+        var offset = from
+        var index = data.startIndex
+        var isFirst = true
+        while let breakAt = data[index...].firstIndex(of: UInt8(ascii: "\n")) {
+            let line = data[index...breakAt]
+            let after = offset + line.count
+            // A window that does not begin at the start of the file begins in the middle of
+            // a line, and half a line is not a turn however it reads.
+            let readable = !(isFirst && from > 0)
+            if readable, ACP.endsATurn(line: String(decoding: line, as: UTF8.self)) { return after }
+            isFirst = false
+            offset = after
+            index = data.index(after: breakAt)
+        }
+        return nil
+    }
+
+    /// The lines appended since last time, and where the next read starts.
+    public struct TranscriptTail: Sendable, Equatable {
+        public var lines: [String]
+        /// The offset to pass as `from` next time. Only whole lines are counted.
+        public var next: Int
+        /// The log is not the one that was being read: it is shorter than where the reader
+        /// had got to, so it has been started again or taken away.
+        public var startedAgain: Bool
+        /// Where these lines begin in the file. Zero is the top of the log, and anything
+        /// else means a page folded from them starts partway through a conversation and
+        /// should say so. (T511.)
+        public var from: Int
+
+        public init(lines: [String], next: Int, startedAgain: Bool = false, from: Int = 0) {
+            self.lines = lines
+            self.next = next
+            self.startedAgain = startedAgain
+            self.from = from
+        }
     }
 
     /// Whether the transcript folder is really there and really writable. The store is a
@@ -214,6 +458,50 @@ public struct FileStore: Sendable {
         try (loadAll("messages") as [AgentMessage])
             .filter { $0.recipientID == recipientID }
             .sorted { $0.sent < $1.sent }
+    }
+
+    /// Every message waiting, by who it is for, in one pass over the folder.
+    ///
+    /// `messages(for:)` reads the whole folder and filters it, which is the right shape
+    /// for one agent and the wrong one for eighty-seven: the app asked it once per agent
+    /// on every refresh, so the folder was listed and decoded eighty-seven times to answer
+    /// a question one pass answers. Measured at 13 ms of a 33 ms refresh, with nine
+    /// messages in the folder, so nearly all of it was the listing rather than the reading.
+    /// (T522.)
+    public func messagesByRecipient() throws -> [UUID: [AgentMessage]] {
+        var out: [UUID: [AgentMessage]] = [:]
+        for message in try loadAll("messages") as [AgentMessage] {
+            out[message.recipientID, default: []].append(message)
+        }
+        for id in out.keys {
+            out[id]?.sort { $0.sent < $1.sent }
+        }
+        return out
+    }
+
+    /// The snapshot and every agent's mail together, which is what the app reads on its
+    /// own clock and the only thing that reads both.
+    public struct Everything: Sendable, Equatable {
+        public var snapshot: Snapshot
+        /// One entry per agent in the snapshot, oldest first. An agent with nothing
+        /// waiting has an empty list rather than no entry, and mail addressed to an agent
+        /// that has gone is not carried around by the floor.
+        public var messages: [UUID: [AgentMessage]]
+
+        public init(snapshot: Snapshot, messages: [UUID: [AgentMessage]]) {
+            self.snapshot = snapshot
+            self.messages = messages
+        }
+    }
+
+    /// One read of the whole store, safe to call off the main actor: `FileStore` is a
+    /// path and nothing else, so it crosses to a detached task with the rest of it.
+    public func loadEverything() throws -> Everything {
+        let snapshot = try load()
+        let byRecipient = try messagesByRecipient()
+        var mail: [UUID: [AgentMessage]] = [:]
+        for agent in snapshot.agents { mail[agent.id] = byRecipient[agent.id] ?? [] }
+        return Everything(snapshot: snapshot, messages: mail)
     }
 
     private func loadAll<T: Decodable>(_ folder: String) throws -> [T] {

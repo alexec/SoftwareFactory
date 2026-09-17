@@ -48,7 +48,7 @@ struct PhoneIntroSheet: View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: "arrow.turn.down.right")
                 .font(.caption)
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
             Text(text)
         }
     }

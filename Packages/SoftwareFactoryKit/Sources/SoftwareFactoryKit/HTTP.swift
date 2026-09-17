@@ -201,15 +201,30 @@ public struct HTTPRouter: Sendable {
         return host == "localhost" || host == "127.0.0.1" || host == "::1"
     }
 
-    /// One agent's conversation, folded, and how many raw lines it was folded from so the
-    /// caller can ask for the rest next time.
+    /// One agent's conversation, and where the caller should carry on from next time.
+    ///
+    /// Two ways of saying where, because the first one was wrong and a phone already
+    /// shipped speaking it. `total` is a count of lines and `next` is a count of bytes;
+    /// the caller sends back whichever it understands, and gets the matching one.
+    /// (T506; the line count was Alex, 16 Sep 2026.)
     public struct Conversation: Codable, Sendable {
         public var lines: [String]
-        public var total: Int
+        /// How many lines the log is, for a caller asking with `after`. Absent for one
+        /// asking with `from`, because counting them means reading the whole file, which
+        /// is the thing `from` exists to avoid.
+        public var total: Int?
+        /// The byte offset to ask `from` next time.
+        public var next: Int?
+        /// The log is not the one this caller was reading: it is shorter than where they
+        /// had got to, so it has been started again or taken away, and what they have
+        /// folded so far is somebody else's conversation.
+        public var startedAgain: Bool?
 
-        public init(lines: [String], total: Int) {
+        public init(lines: [String], total: Int? = nil, next: Int? = nil, startedAgain: Bool? = nil) {
             self.lines = lines
             self.total = total
+            self.next = next
+            self.startedAgain = startedAgain
         }
     }
 
@@ -224,6 +239,17 @@ public struct HTTPRouter: Sendable {
         guard let raw = wanted["agent"], let agent = UUID(uuidString: raw) else {
             return .text("agent is required", status: 400)
         }
+        // By the byte, which is what the Mac's own page does. A busy agent's log is tens of
+        // megabytes and the caller wants the three lines that arrived since it last asked:
+        // measured at 459 ms to read the whole of one against 0.24 ms to take its tail, and
+        // the phone asks every three seconds. (T506, off T503's measurement.)
+        if let from = wanted["from"].flatMap(Int.init) {
+            let tail = store.transcriptTail(for: agent, from: max(from, 0))
+            return .encoded(Conversation(lines: tail.lines, next: tail.next,
+                                         startedAgain: tail.startedAgain))
+        }
+        // By the line, for a phone built before there was another way to ask. It reads the
+        // whole file, which is what this cost before and what that build expects.
         let all = store.transcriptLines(for: agent)
         let after = wanted["after"].flatMap(Int.init) ?? 0
         let from = min(max(after, 0), all.count)
@@ -389,30 +415,23 @@ public struct HTTPRouter: Sendable {
         var title: String
         var position: Backlog.Position?
         var note: String?
+        /// Read and thrown away. A phone from before T417 still sends it.
         var work: String?
     }
 
     func task(_ body: Data) -> HTTPResponse {
         guard let t = try? FileStore.decoder.decode(TaskBody.self, from: body) else {
-            return .text("Body: {project (name or id), title, position?, note?, work?}", status: 400)
+            return .text("Body: {project (name or id), title, position?, note?}", status: 400)
         }
         do {
             let snap = try store.load()
             let project = try server.resolveProject(t.project, in: snap, create: true)
             let position = t.position ?? .bottom
-            let work: FactoryTask.Work
-            if t.work == nil {
-                work = FactoryTask.Work.reading(title: t.title).work
-            } else if let parsed = parsedWork(t.work, defaulting: false) {
-                work = parsed
-            } else {
-                return .text("work must be design, plan, code, implement, fix, review, investigate or ship.", status: 400)
-            }
             let task = FactoryTask(number: Backlog.nextNumber(in: (try? store.loadEveryTask()) ?? snap.tasks),
                                    projectID: project.id, title: t.title,
                                    state: Backlog.state(for: position),
                                    rank: Backlog.rank(for: position, projectID: project.id, in: snap.tasks),
-                                   note: t.note ?? "", work: work, created: server.now())
+                                   note: t.note ?? "", created: server.now())
             try store.save(task)
             return .encoded(task)
         } catch let e as MCPServer.ToolError {
@@ -424,27 +443,19 @@ public struct HTTPRouter: Sendable {
         var id: UUID
         var title: String
         var note: String
+        /// Read and thrown away, as above.
         var work: String?
     }
 
     func editTask(_ body: Data) -> HTTPResponse {
         guard let edited = try? FileStore.decoder.decode(EditTaskBody.self, from: body) else {
-            return .text("Body: {id, title, note, work?}", status: 400)
+            return .text("Body: {id, title, note}", status: 400)
         }
         do {
             guard let task = try store.load().tasks.first(where: { $0.id == edited.id }) else {
                 return .text("No such task", status: 404)
             }
-            let work: FactoryTask.Work?
-            if edited.work != nil {
-                guard let parsed = parsedWork(edited.work, defaulting: false) else {
-                    return .text("work must be design, plan, code, implement, fix, review, investigate or ship.", status: 400)
-                }
-                work = parsed
-            } else {
-                work = FactoryTask.Work.reading(title: edited.title).work
-            }
-            let updated = Backlog.edit(task, title: edited.title, note: edited.note, work: work, at: server.now())
+            let updated = Backlog.edit(task, title: edited.title, note: edited.note, at: server.now())
             guard updated.title == edited.title.trimmingCharacters(in: .whitespacesAndNewlines) else {
                 return .text("A task needs a title", status: 400)
             }
@@ -455,11 +466,6 @@ public struct HTTPRouter: Sendable {
         }
     }
 
-    func parsedWork(_ raw: String?, defaulting: Bool) -> FactoryTask.Work? {
-        guard let raw, !raw.isEmpty else { return defaulting ? .implement : nil }
-        return FactoryTask.Work.parse(raw)
-    }
-
     struct SetTaskBody: Decodable {
         var id: UUID
         var state: String
@@ -467,7 +473,7 @@ public struct HTTPRouter: Sendable {
 
     func setTask(_ body: Data) -> HTTPResponse {
         guard let asked = try? FileStore.decoder.decode(SetTaskBody.self, from: body),
-              let state = FactoryTask.State(rawValue: asked.state)
+              let state = FactoryTask.State.parse(asked.state)
         else {
             return .text("Body: {id, state (backlog or parked)}", status: 400)
         }
@@ -529,7 +535,7 @@ public struct HTTPRouter: Sendable {
 
     func moveTask(_ body: Data) -> HTTPResponse {
         guard let asked = try? FileStore.decoder.decode(MoveTaskBody.self, from: body),
-              let state = FactoryTask.State(rawValue: asked.state)
+              let state = FactoryTask.State.parse(asked.state)
         else {
             return .text("Body: {ids, to, state (backlog or parked)}", status: 400)
         }

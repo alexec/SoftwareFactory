@@ -77,12 +77,12 @@ import Testing
         #expect(CloudRecords.taskChangesToAdopt(local: [local], cloud: [local]).isEmpty)
 
         var done = local
-        done.state = .done
+        done.state = .succeeded
         done.updated = now
         var fromPhone = done
         fromPhone.state = .parked
         fromPhone.updated = now.addingTimeInterval(10)
-        #expect(CloudRecords.taskChangesToAdopt(local: [done], cloud: [fromPhone]).map(\.state) == [.done])
+        #expect(CloudRecords.taskChangesToAdopt(local: [done], cloud: [fromPhone]).map(\.state) == [.succeeded])
         #expect(CloudRecords.taskChangesToAdopt(local: [done], cloud: [fromPhone]).first?.updated == fromPhone.updated)
 
         var claimed = local

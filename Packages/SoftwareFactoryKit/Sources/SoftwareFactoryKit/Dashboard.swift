@@ -13,7 +13,6 @@ public struct Dashboard: Sendable, Equatable {
         /// Nobody is on it, so it draws no dot at all.
         public var isEmpty: Bool { agents.isEmpty }
         public var agents: [Agent]
-        public var openEscalations: Int
         public var backlogCount: Int
         public var blockedCount: Int
         public var inProgressCount: Int
@@ -208,12 +207,16 @@ public struct Dashboard: Sendable, Equatable {
         let statuses = projects.values.map { project -> ProjectStatus in
             let agents = registered.filter { $0.projectID == project.id }
             // A project on hold shows its name and nothing else: no activity, no counts, no
-            // current task. Its open questions still count, since a question still needs
-            // an answer. (Alex, 12 Sep 2026: hide info about projects on hold.)
-            let questions = open.filter { $0.projectID == project.id }.count
+            // current task. (Alex, 12 Sep 2026: hide info about projects on hold.) Its open
+            // questions used to be the exception, counted even here, and that was for the
+            // number on the sidebar row, which came off in T507: a question is answered on
+            // the Needs you strip, in the agent's own chat, in a banner, on the phone and on
+            // the Lock Screen, and the project row could do nothing about it. The questions
+            // themselves are on the dashboard, `Dashboard.openEscalations`, which is what
+            // all five of those read.
             if project.onHold {
                 return ProjectStatus(
-                    project: project, activity: .finished, agents: agents, openEscalations: questions,
+                    project: project, activity: .finished, agents: agents,
                     backlogCount: 0, blockedCount: 0, inProgressCount: 0, doneCount: 0)
             }
             // One rule for both dots: whatever its agents are doing, the project is. The
@@ -232,22 +235,14 @@ public struct Dashboard: Sendable, Equatable {
                 project: project,
                 activity: activity,
                 agents: agents,
-                openEscalations: questions,
                 backlogCount: tasks.filter { $0.state == .backlog }.count,
                 blockedCount: tasks.filter { $0.state == .blocked }.count,
                 inProgressCount: tasks.filter { $0.state == .inProgress }.count,
-                doneCount: tasks.filter { $0.state == .done }.count
+                doneCount: tasks.filter { $0.state.isFinished }.count
             )
         }
         .sorted { a, b in
-            // Three bands, and the order is the order you look in: projects somebody is
-            // on, then projects nobody is on, then the ones set aside. Inside a band, the
-            // busiest first and then by name. An empty project used to sort by an activity
-            // it did not have, so one nobody was on could sit above one being worked on.
-            // (T437, Alex, 15 Sep 2026.)
-            if a.project.onHold != b.project.onHold { return !a.project.onHold }
-            let manned = { (p: ProjectStatus) in p.agents.contains { !$0.hasExited } }
-            if manned(a) != manned(b) { return manned(a) }
+            if band(a) != band(b) { return band(a) < band(b) }
             if a.activity != b.activity { return rank(a.activity) < rank(b.activity) }
             return a.project.name.localizedCaseInsensitiveCompare(b.project.name) == .orderedAscending
         }
@@ -281,8 +276,34 @@ public struct Dashboard: Sendable, Equatable {
         )
     }
 
-    /// The order projects sit in: working first, then what is stuck, then what waits,
-    /// then what is quiet.
+    /// Where a project sits in the sidebar, as four bands read top down: somebody is on it,
+    /// somebody was on it and has stopped, nobody has ever been on it, it is set aside.
+    ///
+    /// A project whose agents have all exited used to fall in with the ones nobody has ever
+    /// started anything on, because the only question asked was whether somebody was on it.
+    /// Those are not the same thing: a project with a stopped agent is work that was going
+    /// and is not, which is something to pick back up, and a project with no agents is one
+    /// that has not been started. The first is worth seeing sooner. (T437, then T499.)
+    ///
+    /// **Four, not five** (T513, Alex, 15 Sep 2026: "projects with any alive tasks, projects
+    /// with any stopped tasks, projects with no tasks, projects on hold"). There used to be
+    /// a band between the first two for a project whose live agents had all finished, and
+    /// nothing is lost by merging it: the sort falls through to `rank(activity)` inside a
+    /// band, which already puts working above asking above finished, so a project with
+    /// somebody working still sits above one whose agent has finished. The band was saying a
+    /// second time what the activity rank was already saying, and a rule that repeats
+    /// another rule is a rule that can disagree with it.
+    ///
+    /// Read as agents rather than tasks, because a task is never stopped: a project's tasks
+    /// are backlog, in progress, done, parked or blocked. An agent is what stops.
+    public static func band(_ p: ProjectStatus) -> Int {
+        // On hold is set aside on purpose, so it goes last however busy it was.
+        if p.project.onHold { return 3 }
+        // Anybody still there, whatever they are doing. The activity rank sorts within.
+        if p.agents.contains(where: { !$0.hasExited }) { return 0 }
+        return p.agents.isEmpty ? 2 : 1
+    }
+
     private static func rank(_ a: ProjectActivity) -> Int {
         switch a {
         case .working: 0

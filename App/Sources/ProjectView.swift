@@ -25,7 +25,7 @@ struct ProjectView: View {
         Backlog.visible(for: project.id, in: model.snapshot.tasks, recentDone: showingAllDone ? Int.max : 3)
     }
     private var hiddenDone: Int {
-        max(0, model.snapshot.tasks.filter { $0.projectID == project.id && $0.state == .done }.count - 3)
+        max(0, model.snapshot.tasks.filter { $0.projectID == project.id && $0.state == .succeeded }.count - 3)
     }
     private var questions: Escalations.Shown { Escalations.visible(for: project.id, in: model.snapshot.escalations) }
     /// How wide the documents are here, remembered across launches. Its own setting
@@ -55,7 +55,40 @@ struct ProjectView: View {
                 }
             }
         }
+        // The project's own facts live in the window's top row, beside its name, rather
+        // than in a card taking the first two inches of the page. There is one thing on
+        // this page and it is the backlog; where the project lives and whether it is active
+        // are about the project, which the title already names. (T492, Alex, 15 Sep 2026.)
         .toolbar {
+            ToolbarItem(placement: .navigation) {
+                ActivityDot(activity: model.status(for: project.id)?.activity ?? .finished,
+                            isEmpty: model.status(for: project.id)?.isEmpty ?? true,
+                            onHold: project.onHold)
+            }
+            ToolbarItem {
+                // The path opens the folder, because that is what clicking a path means
+                // anywhere else; changing it is the rarer thing and says so. A project with
+                // no folder yet has the one button, which sets it. (T300.)
+                if let url = OpenFolder.url(for: project) {
+                    Button(pathDisplay) { OpenFolder.open(url) }
+                        .help("Show \(pathDisplay) in the Finder")
+                } else {
+                    Button(pathDisplay) { chooseFolder() }
+                        .help("Set the folder an agent should run in")
+                }
+            }
+            ToolbarItem {
+                Button("Change the folder", systemImage: "folder") { chooseFolder() }
+                    .labelStyle(.iconOnly)
+                    .help("Choose a different folder for an agent to run in")
+            }
+            ToolbarItem {
+                Toggle("Active", isOn: Binding(get: { !project.onHold },
+                                               set: { model.setOnHold(project, !$0) }))
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .help("Off puts the project on hold: its agents are stopped and nothing is handed out from its backlog")
+            }
             ToolbarItem {
                 Button("Documents", systemImage: "doc.richtext") {
                     withAnimation(.snappy) { showsDocuments.toggle() }
@@ -70,13 +103,6 @@ struct ProjectView: View {
 
     private var backlog: some View {
         List {
-            Section {
-                header
-                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 12, trailing: 0))
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-            }
-
             // No list of agents here. The sidebar hangs every agent under the project it
             // is on, with the tasks in its name under that, so a grid of the same cards
             // halfway down this page was the same fact drawn twice and pushed the backlog,
@@ -107,7 +133,7 @@ struct ProjectView: View {
             // Backlog and Parked rows are draggable, onto each other (crossing the line
             // moves the row) and onto their own section (reordering it); dragging past
             // the last row of a section, or into an empty one, lands at its bottom.
-            ForEach([FactoryTask.State.blocked, .inProgress, .backlog, .parked, .done], id: \.self) { state in
+            ForEach(Backlog.sections, id: \.self) { state in
                 let group = tasks.filter { $0.state == state }
                 if state == .backlog {
                     Section("Backlog") {
@@ -122,21 +148,26 @@ struct ProjectView: View {
                     }
                     .dropDestination(for: String.self) { ids, _ in drop(ids, atEndOf: .parked) }
                 } else if !group.isEmpty {
-                    Section(state.word) {
+                    // Failed is the one heading that is not grey. It sits above the backlog
+                    // rather than at the foot with what worked, and it is never capped, so
+                    // a task that went wrong is on the page until somebody does something
+                    // about it. Finished is two states and only one of them is good news.
+                    // (T509, Alex, 15 Sep 2026.)
+                    Section(header: Text(state.word)
+                        .foregroundStyle(state == .failed ? Color.orange : Color.secondary)) {
                         ForEach(group) { task in row(task, reorderable: false) }
-                        if state == .done, hiddenDone > 0 {
+                        if state == .succeeded, hiddenDone > 0 {
                             Button(showingAllDone ? "Show less" : "Show more") {
                                 showingAllDone.toggle()
                             }
                             .buttonStyle(.plain)
-                            .foregroundStyle(Color(.quiet))
+                            .foregroundStyle(.secondary)
                         }
                     }
                 }
             }
         }
         .listStyle(.inset)
-        .scrollContentBackground(.hidden)
     }
 
     @ViewBuilder
@@ -180,7 +211,7 @@ struct ProjectView: View {
 
     private var addRow: some View {
         HStack(alignment: .top, spacing: 8) {
-            WorkField(prompt: "Add a task", text: newTitle)
+            TaskField(prompt: "Add a task", text: newTitle)
             Menu {
                 Button("Add to the top") { add(at: .top) }
                 Button("Add to the bottom") { add(at: .bottom) }
@@ -202,7 +233,7 @@ struct ProjectView: View {
     /// backlog's own add row lands there. (Alex, 12 Sep 2026.)
     private var parkedAddRow: some View {
         HStack(alignment: .top, spacing: 8) {
-            WorkField(prompt: "Add a parked task", text: $newParkedTitle)
+            TaskField(prompt: "Add a parked task", text: $newParkedTitle)
             Button("Add") { addParked() }
                 .buttonStyle(.glassProminent)
                 .fixedSize()
@@ -211,60 +242,6 @@ struct ProjectView: View {
         .padding(.vertical, 4)
     }
 
-    // The top row: the dot, the name, the hold toggle, nothing else — no summary
-    // numbers. (Alex, 12 Sep 2026.) Editing happens in a popover, so the backlog
-    // underneath never jumps.
-
-    private var header: some View {
-        let status = model.status(for: project.id)
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                // No name here: the window's own title says which project this is, and
-                // saying it twice, eight points apart and in two sizes, reads as two
-                // headings rather than one. (T476, Alex, 15 Sep 2026.)
-                ActivityDot(activity: status?.activity ?? .finished, isEmpty: status?.isEmpty ?? true, onHold: project.onHold)
-                if project.onHold {
-                    Text("on hold")
-                        .font(.callout)
-                        .foregroundStyle(Color(.quiet))
-                }
-                Spacer()
-                Toggle("Active", isOn: Binding(get: { !project.onHold }, set: { model.setOnHold(project, !$0) }))
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .help("Off puts the project on hold: its agents are stopped and nothing is handed out from its backlog")
-            }
-            // Where it lives. Who is on it, and starting another, are the cards below.
-            HStack(spacing: 10) {
-                // The path opens the folder, because that is what clicking a path means
-                // anywhere else; changing it is the rarer thing and says so. A project
-                // with no folder yet has the one button, which sets it. (T300.)
-                if let url = OpenFolder.url(for: project) {
-                    Button(pathDisplay) { OpenFolder.open(url) }
-                        .buttonStyle(.borderless)
-                        .help("Show \(pathDisplay) in the Finder")
-                    Button("Change…") { chooseFolder() }
-                        .buttonStyle(.borderless)
-                        .help("Choose a different folder for an agent to run in")
-                } else {
-                    Button(pathDisplay) { chooseFolder() }
-                        .buttonStyle(.borderless)
-                        .help("Set the folder an agent should run in")
-                }
-                Spacer()
-            }
-            .font(.caption)
-            .foregroundStyle(Color(.quiet))
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
-        .alert("The agent did not start", isPresented: Binding(get: { launchError != nil }, set: { if !$0 { launchError = nil } })) {
-            Button("OK") { launchError = nil }
-        } message: {
-            Text(launchError ?? "")
-        }
-    }
 
     /// Sessions started here that no agent has registered against yet.
     private var starting: [TerminalSessions.Session] {
@@ -282,11 +259,9 @@ struct ProjectView: View {
             // came out a third of the page wide, which is a sentence in a letterbox.
             // (T444, Alex, 15 Sep 2026.)
             if !starting.isEmpty {
-                GlassEffectContainer(spacing: 16) {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 16)], spacing: 16) {
-                        ForEach(starting) { session in
-                            StartingAgentCard(started: session.started, ended: session.ended)
-                        }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 16)], spacing: 16) {
+                    ForEach(starting) { session in
+                        StartingAgentCard(started: session.started, ended: session.ended)
                     }
                 }
             }
@@ -303,10 +278,16 @@ struct ProjectView: View {
         // The agent is written down first, so it has a name before it starts and the
         // card, the transcript and the prompt all say the same thing.
         Task {
+            // Straight to it when it starts. Starting an agent is the beginning of a
+            // conversation, and you were left on the page you started it from, with the
+            // new one a click away in the sidebar. A terminal the factory opened is not
+            // focused this way: it has a window of its own, which the person went looking
+            // for. (T485, Alex, 15 Sep 2026.)
             launchError = await StartAgent.run(project: project, agent: started.kind, style: started.style,
                                                model: model, terminals: terminals, floor: floor,
                                                words: started.words,
-                                               runOn: started.model, mode: started.mode)
+                                               runOn: started.model, mode: started.mode,
+                                               focus: { selectAgent($0) })
         }
     }
 
@@ -373,13 +354,13 @@ struct StartingAgentCard: View {
             }
             Text(ended == nil ? "Waiting for it to register." : "It stopped before registering.")
                 .font(.callout)
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .frame(height: AgentCard.height, alignment: .topLeading)
-        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
+        .cardSurface()
         .opacity(faded && ended == nil ? 0.5 : 1)
         .animation(ended == nil ? .easeInOut(duration: 1.2).repeatForever(autoreverses: true) : .default, value: faded)
         .onAppear { faded = true }
@@ -400,19 +381,19 @@ struct DecidedRow: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(Color(.quiet))
+                    .foregroundStyle(.secondary)
                 Text(escalation.chosen?.title ?? escalation.decision?.note ?? "Decided")
                     .lineLimit(1)
                     .font(.callout.weight(.medium))
                 Text(escalation.question)
                     .font(.callout)
-                    .foregroundStyle(Color(.quiet))
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer()
                 if let at = escalation.decision?.at {
                     Text(at, format: .relative(presentation: .named))
                         .font(.caption)
-                        .foregroundStyle(Color(.faint))
+                        .foregroundStyle(.tertiary)
                 }
             }
         }
@@ -455,7 +436,7 @@ struct TaskRow: View {
             if let label = task.label {
                 Text(label)
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(Color(.faint))
+                    .foregroundStyle(.tertiary)
                     .frame(minWidth: 34, alignment: .trailing)
                     .textSelection(.enabled)
                     .help("The task's number: say it, type it, or give it to an agent")
@@ -474,28 +455,27 @@ struct TaskRow: View {
                         .onExitCommand { editingInline = false }
                         .onAppear { title = task.title }
                 } else {
+                // Struck through and greyed for what worked, and for neither of those a
+                // task that failed. Both of those marks say the same thing, that there is
+                // nothing here to do, and a failure is the one finished task where there
+                // is. It was drawn exactly like a success because `isFinished` covers both
+                // and this asked the wrong question of it. (T509.)
                 Text(task.title)
-                    .strikethrough(task.state == .done)
-                    .foregroundStyle(task.state == .done || task.state == .parked ? .secondary : .primary)
-                }
-                if task.work != .implement && !task.work.isPrefix(of: task.title) {
-                    Text(task.work.word)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(Color(.faint))
-                        .help(task.work.brief)
+                    .strikethrough(task.state == .succeeded)
+                    .foregroundStyle(task.state == .succeeded || task.state == .parked ? .secondary : .primary)
                 }
                 if let ending = task.note.split(whereSeparator: \.isNewline).last,
                    !ending.isEmpty,
                    ending != task.blockedWhy {
                     Text(ending)
                         .font(.caption)
-                        .foregroundStyle(Color(.quiet))
+                        .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
                 if task.state == .blocked, !task.blockers.isEmpty {
                     Text(task.blockedWhy)
                         .font(.caption)
-                        .foregroundStyle(Color(.alarm))
+                        .foregroundStyle(Color.orange)
                         .lineLimit(2)
                 }
             }
@@ -532,7 +512,7 @@ struct TaskRow: View {
                     // For an agent that gave up, went quiet, or was never coming back.
                     Button("Take it back to the backlog") { model.takeBack(task) }
                     Button("Park") { model.set(task, to: .parked) }
-                } else if task.state != .done {
+                } else if !task.state.isFinished {
                     Button("Park") { model.set(task, to: .parked) }
                 }
                 // Whose it is. An assigned task is handed to that agent by task_next and
@@ -566,7 +546,7 @@ struct TaskRow: View {
                 Button("Delete", role: .destructive) { model.delete(task) }
             } label: {
                 Image(systemName: "ellipsis.circle")
-                    .foregroundStyle(Color(.quiet))
+                    .foregroundStyle(.secondary)
             }
             .menuIndicator(.hidden)
             .fixedSize()
@@ -603,9 +583,12 @@ struct TaskRow: View {
         choosingAgent = false
         guard let project else { return }
         Task {
+            // Start an agent on this task, and go to it: the same as starting one on the
+            // project, because it is the same beginning. (T485.)
             launchError = await StartAgent.run(project: project, task: task, agent: agent,
                                                style: model.launchStyle, model: model,
-                                               terminals: terminals, floor: floor, words: words)
+                                               terminals: terminals, floor: floor, words: words,
+                                               focus: { selectAgent($0) })
         }
     }
 
@@ -639,7 +622,7 @@ struct TaskRow: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Edit task")
                 .font(.headline)
-            WorkField(prompt: "Task", text: $title, lineLimit: 1...4)
+            TaskField(prompt: "Task", text: $title, lineLimit: 1...4)
             TextField("Note", text: $note, axis: .vertical)
                 .lineLimit(3...8)
             HStack {
@@ -658,26 +641,20 @@ struct TaskRow: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(task.title)
                 .font(.headline)
-                .strikethrough(task.state == .done)
+                .strikethrough(task.state == .succeeded)
                 .fixedSize(horizontal: false, vertical: true)
-            if task.work != .implement && !task.work.isPrefix(of: task.title) {
-                Text(task.work.word)
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(Color(.quiet))
-                    .help(task.work.brief)
-            }
             if let ending = task.note.split(whereSeparator: \.isNewline).last,
                !ending.isEmpty,
                ending != task.blockedWhy {
                 Text(ending)
                     .font(.callout)
-                    .foregroundStyle(Color(.quiet))
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if task.state == .blocked, !task.blockers.isEmpty {
                 Text(task.blockedWhy)
                     .font(.callout)
-                    .foregroundStyle(Color(.alarm))
+                    .foregroundStyle(Color.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -692,7 +669,8 @@ extension FactoryTask.State {
         switch self {
         case .backlog: "Backlog"
         case .inProgress: "In progress"
-        case .done: "Done"
+        case .succeeded: "Succeeded"
+        case .failed: "Failed"
         case .parked: "Parked"
         case .blocked: "Blocked"
         }

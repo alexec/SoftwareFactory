@@ -30,7 +30,7 @@ struct DictateIntoField: View {
         Button(action: tapped) {
             Image(systemName: listening ? "waveform" : "mic")
                 .symbolEffect(.variableColor, isActive: listening)
-                .foregroundStyle(listening ? Color(.alarm) : Color(.quiet))
+                .foregroundStyle(listening ? Color.orange : Color.secondary)
         }
         .buttonStyle(.borderless)
         .help(listening ? "Stop listening" : "Say it instead of typing it")
@@ -48,7 +48,7 @@ struct DictateIntoField: View {
                 .font(.headline)
             Text(about)
                 .font(.callout)
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Spacer()

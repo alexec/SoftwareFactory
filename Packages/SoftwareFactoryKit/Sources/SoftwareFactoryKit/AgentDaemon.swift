@@ -100,6 +100,9 @@ public enum AgentDaemon {
             case answer
             /// Put this agent in this mode, whatever the rest of the floor is doing.
             case mode
+            /// Join everything waiting into one thing to say, so it goes as one turn
+            /// instead of one turn each. (T541.)
+            case merge
             /// Are you there? Answers before anything else is touched.
             case ping
             /// Go away, once nothing is running.
@@ -127,6 +130,13 @@ public enum AgentDaemon {
         }
 
         public static func no(_ why: String) -> Reply { Reply(ok: false, error: why) }
+
+        /// What a daemon says to a line it cannot decode. Named because it is also what an
+        /// older daemon says to an op added since it started: the daemon holds the agents,
+        /// so it is not restarted when the app is rebuilt and can be hours older than the
+        /// app talking to it. The caller matches on this to say something better than the
+        /// wire's own words. (T541.)
+        public static let notARequest = "That was not a request."
         public static var yes: Reply { Reply(ok: true) }
     }
 
@@ -141,9 +151,6 @@ public enum AgentDaemon {
         public var startedAt: Date
         /// Set when the child has gone, with what it said on the way out.
         public var exit: Int32?
-        /// A question the agent has put to the person, `elicitation/create`. Blocked on
-        /// it exactly like a permission request, and put in front of a person the same
-        /// way. Only Claude Code sends these. (T373.)
         /// What it will take in a prompt, off its own handshake. (T427.)
         public var takes = ACP.Attachments()
         /// What it can be asked to do, as it lists them. (T436.)
@@ -152,7 +159,15 @@ public enum AgentDaemon {
         /// said. A count said how many and not what, which is the one thing you want to
         /// know before adding a third. (T465.)
         public var waitingToSay: [String] = []
+        /// A question the agent has put to the person, `elicitation/create`. Blocked on
+        /// it exactly like a permission request, and put in front of a person the same
+        /// way. Only Claude Code sends these. (T373.)
         public var asking: Question?
+        /// The request id of a question the agent took back, `elicitation/complete`. It is
+        /// not the same as one nobody answered: the agent has said never mind, so the
+        /// question stops being asked rather than staying open for a person. Cleared when
+        /// the next question arrives. (T493.)
+        public var tookBack: Int?
         /// A question it is blocked on. Until this is answered the agent does nothing,
         /// which is what makes it different from every other question on the floor.
         public var waiting: Pending?
@@ -174,6 +189,10 @@ public enum AgentDaemon {
         /// these CLIs has its own words for it. (Alex, 16 Sep 2026.)
         public var modes: [ACP.Mode] = []
         public var mode: String?
+        /// What the agent says its session is set to: the model, the effort, whatever else
+        /// it lists. Read rather than set, and empty for an agent that says nothing.
+        /// (R69, T546.)
+        public var options: [ACP.ConfigOption] = []
 
         public var id: UUID { agent }
 
@@ -203,6 +222,13 @@ public enum AgentDaemon {
         /// took the whole `list` reply down and left the app with no agents at all: no
         /// mode, no commands, no line, on a floor that was working. A field nobody sent
         /// is its default. (Alex, 15 Sep 2026; the same rule as `Records.version`.)
+        ///
+        /// **Every field goes in here**, or the daemon sends it and the app silently
+        /// reads the default instead. `waitingToSay` and `tookBack` were both missed, so
+        /// the words queued for a busy agent and a question it took back never reached
+        /// the page: the daemon was right, the socket carried it, and the decoder threw
+        /// it away. `everyFieldSurvivesTheRoundTrip` fills one of these in and asserts it
+        /// comes back equal, which fails for the next field somebody forgets. (T501.)
         public init(from decoder: any Decoder) throws {
             let box = try decoder.container(keyedBy: CodingKeys.self)
             agent = try box.decode(UUID.self, forKey: .agent)
@@ -213,13 +239,16 @@ public enum AgentDaemon {
             exit = try box.decodeIfPresent(Int32.self, forKey: .exit)
             takes = try box.decodeIfPresent(ACP.Attachments.self, forKey: .takes) ?? ACP.Attachments()
             commands = try box.decodeIfPresent([ACP.Command].self, forKey: .commands) ?? []
+            waitingToSay = try box.decodeIfPresent([String].self, forKey: .waitingToSay) ?? []
             asking = try box.decodeIfPresent(Question.self, forKey: .asking)
+            tookBack = try box.decodeIfPresent(Int.self, forKey: .tookBack)
             waiting = try box.decodeIfPresent(Pending.self, forKey: .waiting)
             isPrompting = try box.decodeIfPresent(Bool.self, forKey: .isPrompting) ?? false
             line = try box.decodeIfPresent(String.self, forKey: .line)
             queued = try box.decodeIfPresent(Int.self, forKey: .queued) ?? 0
             modes = try box.decodeIfPresent([ACP.Mode].self, forKey: .modes) ?? []
             mode = try box.decodeIfPresent(String.self, forKey: .mode)
+            options = try box.decodeIfPresent([ACP.ConfigOption].self, forKey: .options) ?? []
         }
 
         public enum State: String, Codable, Sendable {

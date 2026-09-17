@@ -28,15 +28,17 @@ import Testing
         let task = FactoryTask(projectID: project.id, title: "Move the add row to the bottom", rank: 1)
         let words = LaunchPrompt.task(task, in: project, as: "A7", session: Self.session)
         #expect(words.contains("The task \"Move the add row to the bottom\" is waiting"))
-        #expect(words.contains("Do it, and say when it is done."))
+        #expect(words.contains("Claim it, read its note, and say when it is done."))
         #expect(!words.contains("T,"))
     }
 
-    @Test func taskPromptTellsADesignToStop() {
-        let task = FactoryTask(projectID: project.id, title: "The add row", rank: 1, work: .design)
+    /// What to produce used to come from the task's work: design meant "a brief, then stop".
+    /// The work is gone (T417) and the note carries it, so the words point at the note
+    /// rather than naming a kind of work that no longer exists.
+    @Test func taskPromptSendsTheAgentToTheNote() {
+        let task = FactoryTask(projectID: project.id, title: "The add row", rank: 1)
         let words = LaunchPrompt.task(task, in: project, as: "A7", session: Self.session)
-        #expect(words.contains("Produce a design brief, put it on the project with artifact_add, then stop. Don't implement."))
-        #expect(!words.contains("Do it, and say when it is done."))
+        #expect(words.contains("The note says what to produce"))
     }
 
     @Test func freePromptCarriesWhatThePersonTyped() {

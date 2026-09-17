@@ -19,27 +19,10 @@ enum OpenFolder {
     }
 }
 
-/// Nothing is drawn for a project with no folder set: a button that cannot do anything is
-/// worse than no button, and the project's header already says how to set one.
-///
-/// It sits in the row of small icons above an agent's side column, beside the one that
-/// opens a shell. It was up in the header next to the project's name, where it was a
-/// word and an icon among words: the Finder, a shell and the agent's own documents are
-/// three ways into the same folder, so they are one set of icons in one place rather than
-/// one of them sitting apart from the other two. (Alex, 15 Sep 2026.)
-struct OpenFolderButton: View {
-    var project: Project?
-
-    var body: some View {
-        if let url = OpenFolder.url(for: project) {
-            Button { OpenFolder.open(url) } label: {
-                Image(systemName: "folder")
-                    .font(.callout)
-                    .frame(width: 26, height: 22)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help("Show \(Projects.shortPath(url.path)) in the Finder")
-        }
-    }
-}
+// `OpenFolderButton` stood here: the folder icon above an agent's side column, which opened
+// the Finder. The icon is still there and opens `FileBrowser` in the column beside the
+// agent instead, because leaving the app to see what is in a repo you are watching an agent
+// work on is a poor default. `OpenFolder.open` is what the browser's own Finder button
+// calls, and what everything else that really wants the Finder calls.
+// (Alex, 16 Sep 2026: make the folder icon show an in-app file browser rather than opening
+// Finder.)

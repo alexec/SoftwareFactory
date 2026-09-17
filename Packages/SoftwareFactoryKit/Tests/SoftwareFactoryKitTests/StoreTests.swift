@@ -57,6 +57,98 @@ func wholeSecond() -> Date {
         #expect(try #require(store.escalation(escalation.id)) == escalation)
     }
 
+    /// The app read the store once per tick and then asked for each agent's mail one
+    /// agent at a time, and each of those asks read the whole messages folder: eighty-seven
+    /// agents, eighty-seven listings, one answer. `loadEverything` is the one pass, and it
+    /// has to come out exactly as the old pair did or the sweeps that count mail change
+    /// their minds. (T521, T522.)
+    @Test func everythingIsTheSameAnswerTheOldPairGave() throws {
+        let store = try temporaryStore()
+        let now = wholeSecond()
+        let project = Project(name: "Where", added: now)
+        let busy = Agent(number: 1, projectID: project.id, registered: now)
+        let quiet = Agent(number: 2, projectID: project.id, registered: now)
+        try store.save(project)
+        try store.save(busy)
+        try store.save(quiet)
+        let second = AgentMessage(recipientID: busy.id, from: "A9", subject: "Then",
+                                  contents: "and this", sent: now.addingTimeInterval(60))
+        let first = AgentMessage(recipientID: busy.id, from: "A9", subject: "First",
+                                 contents: "this", sent: now)
+        // Saved newest first, so the ordering cannot come from the folder.
+        try store.save(second)
+        try store.save(first)
+        // Mail for somebody who is not on the floor any more.
+        try store.save(AgentMessage(recipientID: UUID(), from: "A9", subject: "Gone",
+                                    contents: "nobody", sent: now))
+
+        let everything = try store.loadEverything()
+        #expect(everything.snapshot == (try store.load()))
+        // Oldest first, and the one who has nothing has an empty list rather than none.
+        #expect(everything.messages[busy.id] == [first, second])
+        #expect(everything.messages[quiet.id] == [])
+        // Keyed on the agents that are here, so mail to somebody gone is not carried.
+        #expect(everything.messages.count == 2)
+        for agent in everything.snapshot.agents {
+            #expect(everything.messages[agent.id] == (try store.messages(for: agent.id)))
+        }
+    }
+
+    /// A tool that waits polls until what it wants appears, and polling used to mean reading
+    /// the whole store every second. The stamp is the cheap version of the same question.
+    ///
+    /// **The case that matters is the overwrite**, because it is the one the obvious
+    /// shortcut gets wrong: a folder's own modification date moves when a file is added or
+    /// removed and not when one is overwritten in place, and a task changing state is an
+    /// overwrite. `task_next` waiting for exactly that would have waited for ever. (T524.)
+    @Test func theStampMovesWhenARecordIsOverwrittenInPlace() throws {
+        let store = try temporaryStore()
+        let project = Project(name: "Where")
+        var task = FactoryTask(projectID: project.id, title: "Fix it", rank: 1)
+        try store.save(project)
+        try store.save(task)
+
+        let before = store.stamp()
+        #expect(before.count == 2)
+        // Sleep past the filesystem's own resolution rather than trusting it to be finer
+        // than the test is fast.
+        Thread.sleep(forTimeInterval: 0.02)
+        task.state = FactoryTask.State.inProgress
+        try store.save(task)
+        let after = store.stamp()
+        #expect(after != before, "a record changing state has to move the stamp")
+        #expect(after.count == before.count, "and it is the date that moved, not the count")
+    }
+
+    @Test func theStampMovesWhenARecordArrivesOrGoes() throws {
+        let store = try temporaryStore()
+        let project = Project(name: "Where")
+        try store.save(project)
+        let one = store.stamp()
+
+        let task = FactoryTask(projectID: project.id, title: "Fix it", rank: 1)
+        try store.save(task)
+        let two = store.stamp()
+        #expect(two.count == one.count + 1)
+        #expect(two != one)
+
+        // A deletion moves no date, which is why the count is part of it: the newest record
+        // is whatever it already was.
+        try store.delete(task)
+        let three = store.stamp()
+        #expect(three.count == one.count)
+        #expect(three != two)
+    }
+
+    /// Nothing happening has to read as nothing happening, or the cheap check saves nothing.
+    @Test func aStoreThatHasNotChangedStampsTheSame() throws {
+        let store = try temporaryStore()
+        try store.save(Project(name: "Where"))
+        let first = store.stamp()
+        Thread.sleep(forTimeInterval: 0.02)
+        #expect(store.stamp() == first)
+    }
+
     @Test func everyRecordCarriesAVersionAndReadsWithoutOne() throws {
         let store = try temporaryStore()
         let project = Project(name: "a", id: "/a")
@@ -557,7 +649,7 @@ func wholeSecond() -> Date {
     @Test func theHourRunsFromItsLastTask() throws {
         let project = Project(name: "Sleeper Train")
         let old = try idle(1, on: project.id, since: hour * 5)
-        let justFinished = task("Done", on: project.id, state: .done, agentID: old.id, ago: 60)
+        let justFinished = task("Done", on: project.id, state: .succeeded, agentID: old.id, ago: 60)
         let snapshot = Snapshot(projects: [project], tasks: [justFinished], agents: [old])
         #expect(Sweep.idleAgentsToStop(in: snapshot, messages: [], now: .now).isEmpty)
     }

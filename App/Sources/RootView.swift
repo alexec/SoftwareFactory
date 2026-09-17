@@ -11,6 +11,39 @@ enum Destination: Hashable {
     case noProject
     case project(String)
     case agent(UUID)
+
+    /// Written down so the app opens where it was left. One string rather than a Codable
+    /// enum, because this is a preference and not a record: an unreadable one is a
+    /// dashboard, which is where the app opened before anybody thought to remember.
+    /// (T486, Alex, 15 Sep 2026.)
+    var written: String {
+        switch self {
+        case .dashboard: "dashboard"
+        case .statusReports: "status"
+        case .factory: "capacity"
+        case .noProject: "no-project"
+        case .project(let id): "project:\(id)"
+        case .agent(let id): "agent:\(id.uuidString)"
+        }
+    }
+
+    init?(written: String) {
+        switch written {
+        case "dashboard": self = .dashboard
+        case "status": self = .statusReports
+        case "capacity": self = .factory
+        case "no-project": self = .noProject
+        default:
+            if written.hasPrefix("project:") {
+                self = .project(String(written.dropFirst("project:".count)))
+            } else if written.hasPrefix("agent:"),
+                      let id = UUID(uuidString: String(written.dropFirst("agent:".count))) {
+                self = .agent(id)
+            } else {
+                return nil
+            }
+        }
+    }
 }
 
 struct RootView: View {
@@ -18,7 +51,11 @@ struct RootView: View {
     @Environment(TerminalSessions.self) private var terminals
     @Environment(Floor.self) private var floor
     @Environment(AgentShells.self) private var shells
-    @State private var selection: Destination? = .dashboard
+    /// Where the app opens: where it was left, if that place is still there. A project
+    /// that has been removed or an agent that has been deleted falls back to the
+    /// dashboard, which `detail` already does for a selection it cannot draw. (T486.)
+    @AppStorage("lastPage") private var lastPage = ""
+    @State private var selection: Destination?
     /// Where the agent page was opened from, so its back button returns there.
     @State private var cameFrom: Destination?
     // The macOS place for this is a right-click on the row, not a button on its own
@@ -60,7 +97,7 @@ struct RootView: View {
                         Text(model.dashboard.unassignedAgents.count, format: .number)
                             .font(.caption.weight(.semibold))
                             .monospacedDigit()
-                            .foregroundStyle(Color(.quiet))
+                            .foregroundStyle(.secondary)
                     }
                     .tag(Destination.noProject)
                     ForEach(model.dashboard.agents(on: nil)) { agentRow($0, under: true) }
@@ -72,17 +109,26 @@ struct RootView: View {
                 // control was one page away from the thing it adds to.
                 Section {
                     ForEach(model.dashboard.projects) { status in
-                        // The name, how much is waiting on its backlog, and whether it
-                        // wants you.
+                        // The name, and how much is waiting on its backlog.
                         //
                         // The counts of blocked and in progress came off in T358, because
                         // a sidebar is a list of places to go and a row that reports on
                         // the work makes you read twelve small numbers to find the one
                         // project you were looking for. The backlog count is back because
                         // it answers a different question: not how the work is going, but
-                        // where there is work left to pick up. It is quiet, grey and to
-                        // the left of the orange, so the one thing you cannot act on
-                        // anywhere else still reads first. (Alex, 16 Sep 2026.)
+                        // where there is work left to pick up. (Alex, 16 Sep 2026.)
+                        //
+                        // The orange count of open questions went the same way in T507,
+                        // which reverses T408. That put it here as the one number in the
+                        // sidebar that has to be seen from across the room; what has
+                        // changed since is where a question is dealt with. The Dashboard's
+                        // Needs you strip is the page you land on, the blocking ones are
+                        // drawn in the agent's own chat (T481), and the banner, the phone
+                        // and the Lock Screen carry it to wherever you are. This was a
+                        // fourth telling, on a row that cannot answer it. The same
+                        // argument as T434 and T473, which took the waiting chips off the
+                        // title bar. (Alex, 15 Sep 2026: "we can also remove the number
+                        // for open questions by the project.")
                         HStack(spacing: 6) {
                             Text(status.project.name)
                                 .foregroundStyle(status.project.onHold ? .secondary : .primary)
@@ -90,27 +136,11 @@ struct RootView: View {
                             if status.backlogCount > 0 {
                                 Text(status.backlogCount, format: .number)
                                     .font(.caption)
-                                    .foregroundStyle(Color(.quiet))
+                                    .foregroundStyle(.secondary)
                                     .monospacedDigit()
                                     .help(status.backlogCount == 1
                                           ? "1 task on the backlog"
                                           : "\(status.backlogCount) tasks on the backlog")
-                            }
-                            if status.openEscalations > 0 {
-                                // A solid mark rather than a wash. A quarter-strength
-                                // orange over dark paper is a shade of the ground, and
-                                // this is the one number in the sidebar that has to be
-                                // seen from across the room. (T408.)
-                                Text(status.openEscalations, format: .number)
-                                    .font(.caption.weight(.semibold))
-                                    .monospacedDigit()
-                                    .foregroundStyle(Color(.paper))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color(.alarm), in: .capsule)
-                                    .help(status.openEscalations == 1
-                                          ? "1 question waiting on you"
-                                          : "\(status.openEscalations) questions waiting on you")
                             }
                         }
                         .tag(Destination.project(status.id))
@@ -149,8 +179,6 @@ struct RootView: View {
                 }
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 220)
-            .scrollContentBackground(.hidden)
-            .background(Color(.paper))
             .confirmationDialog("Remove \(removing?.name ?? "") from the factory?",
                                  isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
                 Button("Remove", role: .destructive) {
@@ -211,19 +239,25 @@ struct RootView: View {
         // with th…" under the microphone, which is the one control on that card you press.
         // A safe area inset does it for every page at once, and keeps the button where
         // T340 wanted it. (T471.)
+        // Only for the pages that end in their own content. An agent's page has a field of
+        // its own along the bottom, and the room it reserves is measured from that field;
+        // adding the microphone's inset underneath as well left a strip of conversation
+        // below the field, visible under the glass and unreachable. (T471, corrected while
+        // checking T486 on screen.)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            Color.clear.frame(height: Self.microphone)
+            if !isOnAnAgent { Color.clear.frame(height: Self.microphone) }
         }
         .overlay(alignment: .bottomTrailing) {
             DictateButton(lookingAt: lookingAtProject)
                 .padding(20)
         }
-        // The house paper, under the whole window. Liquid Glass keeps its translucency
-        // and sits on this rather than replacing it, so the theme is what shows through
-        // the glass instead of a second idea beside it, and the rust is the app's tint so
-        // every control picks it up. (Alex, 16 Sep 2026: use it everywhere.)
-        .background(Color(.paper))
-        .tint(Color(.mark))
+        // Nothing painted under the window. A warm ground and a rust tint used to sit
+        // here, and Liquid Glass spent itself sampling them: what showed through the
+        // glass was one flat colour this app had chosen, which is the one thing glass
+        // cannot do anything with. The window, the sidebar and the sheets draw
+        // themselves now, the accent is the person's own, and the glass has the desktop
+        // and the content under it to work from.
+        // (Alex, 16 Sep 2026: conventional Liquid Glass.)
         .safeAreaInset(edge: .top) { writeFailure }
         .navigationTitle(title)
         // Nothing in the middle of the title bar. The two counts that lived there,
@@ -234,7 +268,19 @@ struct RootView: View {
         // the main thread so the cards can say so without anybody waiting on tmux or ps.
         // A process dies between one look and the next, so this is on a clock rather
         // than waiting for the set of agents to change. (Alex, 13 Sep 2026.)
+        .onChange(of: selection) { _, now in
+            guard let now else { return }
+            lastPage = now.written
+        }
         .onAppear {
+            if selection == nil {
+                let opening = Destination(written: lastPage) ?? .dashboard
+                selection = opening
+                // Written on the way in as well as on every change: nothing else proves
+                // the round trip, and a preference that is only written when you move is
+                // one that is empty until you do.
+                lastPage = opening.written
+            }
             terminals.onTitle = { model.setTitle(session: $0, title: $1) }
             terminals.onBell = { model.ring(session: $0) }
         }
@@ -296,7 +342,7 @@ struct RootView: View {
                 if !under {
                     Text(status.project?.name ?? "No project")
                         .font(.caption)
-                        .foregroundStyle(Color(.quiet))
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -310,11 +356,11 @@ struct RootView: View {
                     if let number = line.number {
                         Text(number)
                             .font(.caption.monospacedDigit())
-                            .foregroundStyle(Color(.faint))
+                            .foregroundStyle(.tertiary)
                     }
                     Text(line.words)
                         .font(.caption)
-                        .foregroundStyle(Color(.quiet))
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         // The front of a sentence is what you read. Middle truncation is
                         // for a path, where both ends identify it, and it was cutting
@@ -389,7 +435,7 @@ struct RootView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("A project is a name: an app, a role across apps, a piece of tooling. Agents file against it by that name.")
                 .font(.callout)
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             TextField("Project name", text: $newProjectName)
                 .onSubmit(addProject)
@@ -416,7 +462,7 @@ struct RootView: View {
     /// is not working. (T415.)
     private func archivedRow(_ agent: Agent) -> some View {
         Text(agent.label)
-            .foregroundStyle(Color(.quiet))
+            .foregroundStyle(.secondary)
             .lineLimit(1)
             .truncationMode(.middle)
             .help("Archived \(agent.archivedAt?.formatted(date: .abbreviated, time: .shortened) ?? "")")
@@ -473,13 +519,13 @@ struct RootView: View {
         if let error = model.writeError {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Color(.alarm))
+                    .foregroundStyle(Color.orange)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("That change was not saved.")
                         .font(.headline)
                     Text(error)
                         .font(.callout)
-                        .foregroundStyle(Color(.quiet))
+                        .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 12)
                 Button("OK") { model.clearWriteError() }
@@ -496,6 +542,12 @@ struct RootView: View {
 
     /// The project whose page is open, if one is. An agent's page counts: the project it
     /// is on is the project you are looking at.
+    /// Whether the page showing has a field of its own at the foot of it.
+    private var isOnAnAgent: Bool {
+        if case .agent = selection { return true }
+        return false
+    }
+
     private var lookingAtProject: String? {
         if case .project(let id) = selection { return id }
         if case .agent(let id) = selection {
@@ -538,12 +590,10 @@ struct NoProjectView: View {
                 }
                 Text("These were started before a project was required. Nothing new lands here.")
                     .font(.callout)
-                    .foregroundStyle(Color(.quiet))
-                GlassEffectContainer(spacing: 16) {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 16)], spacing: 16) {
-                        ForEach(agents) { status in
-                            AgentCard(status: status, select: selectAgent)
-                        }
+                    .foregroundStyle(.secondary)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 16)], spacing: 16) {
+                    ForEach(agents) { status in
+                        AgentCard(status: status, select: selectAgent)
                     }
                 }
             }

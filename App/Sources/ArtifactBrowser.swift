@@ -80,13 +80,13 @@ struct ArtifactBrowser: View {
                 if let label = showing.label {
                     Text(label)
                         .font(.caption.monospacedDigit())
-                        .foregroundStyle(Color(.faint))
+                        .foregroundStyle(.tertiary)
                         .textSelection(.enabled)
                         .help("Its number: say it, type it, or give it to an agent")
                 }
                 Text("\(showing.kind.title) · \(when(showing), format: .relative(presentation: .named))")
                     .font(.caption)
-                    .foregroundStyle(Color(.quiet))
+                    .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
                 ArtifactSourceLine(artifact: showing)
                 if let onDelete {
@@ -94,7 +94,7 @@ struct ArtifactBrowser: View {
                         .buttonStyle(.borderless)
                         .labelStyle(.iconOnly)
                         .font(.caption)
-                        .foregroundStyle(Color(.quiet))
+                        .foregroundStyle(.secondary)
                         .help("Take this document off the project. The record is kept, out of the lists.")
                 }
             }

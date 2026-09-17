@@ -192,12 +192,23 @@ public struct MCPServer: Sendable {
         let deadline = now().addingTimeInterval(seconds)
         let waiter = waiters.begin()
         defer { waiters.end(waiter) }
+        // Look once whatever the store says: what is being waited for may already be there,
+        // and the stamp only answers whether anything has changed since we looked.
+        var seen = store.stamp()
+        if let found = try body() { return found }
         while true {
-            if let found = try body() { return found }
             if now() >= deadline { return nil }
             if waiter.wait(for: pollInterval) {
                 throw ToolError(message: "Factory needs this connection for other waiting work. Call \(tool) again in a few minutes.")
             }
+            // The body reads the whole store, which is 22 ms, and it was doing it every
+            // second per waiting agent for up to ten minutes. The stamp is the same question
+            // for a tenth of that, so the expensive look happens when there is something new
+            // to look at rather than on a clock. (R67, T524.)
+            let stamp = store.stamp()
+            guard stamp != seen else { continue }
+            seen = stamp
+            if let found = try body() { return found }
         }
     }
 
@@ -218,9 +229,9 @@ public struct MCPServer: Sendable {
         Work from the \
         backlog. Read the backlog (task_list) and take the work in the order it \
         is in; tasks that belong together sit together, and you may claim several at once when they \
-        are one piece of work. Ask the factory to start another agent (agent_create); the person sets how many may be on the floor, and the one over that is refused. Say something to another agent (message_send). A task's work says what to produce: design a brief and stop, plan \
-        and stop, implement, fix a cause, review, investigate without changing anything, or ship a \
-        build. task_next hands you the top task nobody is on when you would rather be \
+        are one piece of work. Ask the factory to start another agent (agent_create); the person sets how many may be on the floor, and the one over that is refused. Say something to another agent (message_send). A task's note says what to produce where it is \
+        not obvious: a brief and stop, a plan and stop, a finding and nothing changed. Read it \
+        before you start. task_next hands you the top task nobody is on when you would rather be \
         handed one, and never a parked one — parked is set aside on purpose, not yours to start on \
         your own. Claim what you are on (task_claim) and say when each is done (task_status). If a reply says a project is \
         on hold, finish what you are on and start nothing new on it. When you cannot decide \
@@ -384,7 +395,7 @@ public struct MCPServer: Sendable {
             Tool(name: "task_list", description: "A project's backlog in rank order: blocked first, then in progress, the backlog, parked and done. Read this before you work: tasks that belong together sit together. Give task_id for everything about one task, state to see only one kind, or mine to see what is in your name.",
                  properties: ["project": str("Project name"),
                               "task_id": str("One task in full: its whole note, its blockers, and the questions it raised"),
-                              "state": ["type": "string", "enum": ["backlog", "inProgress", "done", "parked", "blocked"], "description": "Only tasks in this state"],
+                              "state": ["type": "string", "enum": ["backlog", "inProgress", "succeeded", "failed", "parked", "blocked"], "description": "Only tasks in this state"],
                               "mine": ["type": "boolean", "description": "Only tasks in your name"]],
                  required: [], kind: .query),
             Tool(name: "task_next", description: "Hands you the top task nobody is on, or one put in your name, when you would rather be handed one than read the list. Waits until there is one, and answers 'nothing waiting' after timeout_seconds so you can call again. Never hands out a parked task.",
@@ -396,19 +407,16 @@ public struct MCPServer: Sendable {
                               "position": ["type": "string", "enum": ["top", "bottom", "parked"], "description": "Defaults to bottom"],
                               "above_task_id": str("Put it directly above this task instead"),
                               "note": str("Why, and anything the next reader needs"),
-                              "work": ["type": "string",
-                                       "enum": ["design", "plan", "implement", "code", "fix", "review", "investigate", "ship"],
-                                       "description": "What the agent should do. Defaults to implement (Code)."],
                               "number": ["type": "integer", "description": "A short number of your choosing (T509), to match a number already in use elsewhere; otherwise the next free one is given"]],
                  required: ["project", "title"]),
             Tool(name: "task_claim", description: "You are on this task now, or on several that are one piece of work. Marks them in progress under your name. Read task_list first: tasks that belong together are usually next to each other.",
                  properties: ["task_id": str("The task"),
                               "task_ids": ["type": "array", "items": ["type": "string"], "description": "Several tasks to take together, when they are one piece of work"]],
                  required: []),
-            Tool(name: "task_status", description: "Change a task's state, or several at once: backlog, inProgress, done or parked, with a note on how they ended up.",
+            Tool(name: "task_status", description: "Change a task's state, or several at once: backlog, inProgress, succeeded, failed or parked, with a note on how they ended up. Succeeded and failed are both finished. Failed means the work is over and it did not work, which is neither blocked (waiting on something nameable, use task_block) nor parked (set aside on purpose).",
                  properties: ["task_id": str("The task"),
                               "task_ids": ["type": "array", "items": ["type": "string"], "description": "Several tasks that ended the same way"],
-                              "state": ["type": "string", "enum": ["backlog", "inProgress", "done", "parked"]],
+                              "state": ["type": "string", "enum": ["backlog", "inProgress", "succeeded", "failed", "parked"], "description": "Succeeded and failed are both finished: say which, because the note is the only other place it shows. \"done\" is still taken and means succeeded."],
                               "note": str("What happened")],
                  required: ["state"]),
             Tool(name: "task_note", description: "Add a line to a task's note without changing its state: a finding, a question for the person, what you tried. Give several task_ids when one finding belongs on all of them. The line is signed with your name and dated.",
@@ -416,13 +424,10 @@ public struct MCPServer: Sendable {
                               "task_ids": ["type": "array", "items": ["type": "string"], "description": "Several tasks the line belongs on"],
                               "text": str("What to add")],
                  required: ["text"]),
-            Tool(name: "task_set", description: "Change what a task is rather than where it stands: its title, its number, the work the agent should do, where it sits on the backlog, or whose name is on it. Give only what you are changing. A task stays on the project it was filed on.",
+            Tool(name: "task_set", description: "Change what a task is rather than where it stands: its title, its number, where it sits on the backlog, or whose name is on it. Give only what you are changing. A task stays on the project it was filed on.",
                  properties: ["task_id": str("The task"),
                               "title": str("A new title"),
                               "number": ["type": "integer", "description": "A short number (T509), unique across every project"],
-                              "work": ["type": "string",
-                                       "enum": ["design", "plan", "implement", "code", "fix", "review", "investigate", "ship"],
-                                       "description": "What the agent should do"],
                               "above_task_id": str("Put it directly above this task on the same backlog"),
                               "assign_to": str("An agent's A<n> id: the task is theirs, and task_next passes over it for everyone else. Empty takes the name off")],
                  required: ["task_id"]),
@@ -460,7 +465,7 @@ public struct MCPServer: Sendable {
                  properties: ["project": str("Project name"), "title": str("The document, in one line"),
                               "body": str("The document itself, markdown"),
                               "kind": ["type": "string", "enum": ["note", "brief", "status report"],
-                                       "description": "What kind of document. A note is the default: a plan, a finding, anything worth writing down. A brief is what the work is, before it is done, which is what a design task produces. A status report is the one document you keep about your own work, and filing another replaces it."],
+                                       "description": "What kind of document. A note is the default: a plan, a finding, anything worth writing down. A brief is what the work is, before it is done. A status report is the one document you keep about your own work, and filing another replaces it."],
                               "link": str("Optional: what this document is, rather than the body. An http or https URL, including a server running here such as http://localhost:3000; or the path of a file on this Mac: markdown, HTML, an image or a PDF. File a screenshot this way."),
                               "replace": ["type": "boolean", "description": "Write this over the document already there rather than returning it. A status report always replaces yours, whether you ask or not."],
                               "task_id": str("The task that produced it, if any")],
@@ -683,7 +688,6 @@ public struct MCPServer: Sendable {
             if let ref = args["task_id"] as? String, !ref.isEmpty {
                 guard let task = taskRef(ref, in: snap) else { throw ToolError(message: "No task \(ref).") }
                 var lines = [Self.line(task),
-                             "work: \(task.work.rawValue): \(task.work.brief)",
                              "note: \(task.note.isEmpty ? "(none)" : task.note)"]
                 if let agent = task.agentID.flatMap({ id in snap.agents.first { $0.id == id } }) { lines.append("agent: \(agent.label)") }
                 for (n, b) in task.blockers.enumerated() { lines.append("blocker \(n + 1): \(b.kind.rawValue)\(b.id.map { " \($0.uuidString)" } ?? ""): \(b.why)") }
@@ -695,7 +699,11 @@ public struct MCPServer: Sendable {
             }
             let project = try resolveProject(try string("project", args), in: snap, create: false)
             var tasks = Backlog.tasks(for: project.id, in: snap.tasks)
-            if let wanted = (args["state"] as? String).flatMap(FactoryTask.State.init(rawValue:)) {
+            // Through `parse`, not the raw value: `task_status` tells every agent that
+            // "done" is still taken and means succeeded, so an agent sends it here too,
+            // and the raw initialiser answered nil and quietly filtered to nothing. One
+            // word, two tools, two readings. (T516.)
+            if let wanted = (args["state"] as? String).flatMap(FactoryTask.State.parse) {
                 tasks = tasks.filter { $0.state == wanted }
             }
             if args["mine"] as? Bool == true {
@@ -740,7 +748,7 @@ public struct MCPServer: Sendable {
             var task = FactoryTask(number: number, projectID: project.id, title: try string("title", args),
                                    state: Backlog.state(for: position),
                                    rank: Backlog.rank(for: position, projectID: project.id, in: snap.tasks),
-                                   note: args["note"] as? String ?? "", work: try taskWork(args), created: now())
+                                   note: args["note"] as? String ?? "", created: now())
             if let aboveRef = args["above_task_id"] as? String, !aboveRef.isEmpty {
                 guard let above = taskRef(aboveRef, in: snap), above.projectID == project.id
                 else { throw ToolError(message: "above_task_id is not a task on that backlog") }
@@ -758,11 +766,6 @@ public struct MCPServer: Sendable {
             if let title = (args["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
                 task.title = title
                 said.append("is now called \(title)")
-            }
-            if args["work"] != nil {
-                let work = try taskWork(args, defaulting: false)
-                task.work = work
-                said.append("is \(work.rawValue) work")
             }
             if let wanted = args["number"] as? Int {
                 guard wanted > 0 else { throw ToolError(message: "number must be a whole number above 0") }
@@ -790,7 +793,7 @@ public struct MCPServer: Sendable {
             if args["project"] != nil {
                 throw ToolError(message: "A task stays on the project it was filed on.")
             }
-            guard !said.isEmpty else { throw ToolError(message: "Say what to change: title, number, work, above_task_id or assign_to.") }
+            guard !said.isEmpty else { throw ToolError(message: "Say what to change: title, number, above_task_id or assign_to.") }
             task.updated = now()
             try store.save(task)
             return "\(task.title) \(said.joined(separator: ", "))."
@@ -814,8 +817,16 @@ public struct MCPServer: Sendable {
 
         case "task_status":
             let ending = try tasks(args, in: snap)
-            guard let state = FactoryTask.State(rawValue: try string("state", args)) else {
-                throw ToolError(message: "state must be backlog, inProgress, done or parked")
+            guard let state = FactoryTask.State.parse(try string("state", args)) else {
+                throw ToolError(message: "state must be backlog, inProgress, succeeded, failed or parked. Succeeded and failed are both finished: say which.")
+            }
+            // Blocked is a state `State.parse` knows and this tool must not set. A block
+            // is a state plus the thing it waits on, and one set here would arrive with no
+            // blocker: `Sweep.unblocked` passes over a task with an empty list and
+            // `task_unblock` has nothing to name, so the task waits for ever on nothing.
+            // (T516.)
+            guard state != .blocked else {
+                throw ToolError(message: "Use task_block to block a task: it needs to say what it waits on, or nothing can ever clear it.")
             }
             let note = args["note"] as? String ?? ""
             for var task in ending {
@@ -830,7 +841,7 @@ public struct MCPServer: Sendable {
             // what is left has to leave them out rather than reading them as they were.
             let changed = Set(ending.map(\.id))
             let whose = Set(ending.compactMap(\.agentID))
-            guard state == .done, !whose.isEmpty else { return said }
+            guard state.isFinished, !whose.isEmpty else { return said }
             // Each agent gets its name back, if what it was holding is one of these.
             for agentID in whose {
                 guard var agent = snap.agents.first(where: { $0.id == agentID }),
@@ -1192,7 +1203,7 @@ public struct MCPServer: Sendable {
     static func line(_ t: FactoryTask) -> String {
         let blocked = t.blockers.isEmpty ? "" : "  [blocked on " + t.blockers.map { "\($0.kind.rawValue): \($0.why)" }.joined(separator: "; ") + "]"
         let last = t.note.split(whereSeparator: \.isNewline).last.map { "  — \($0)" } ?? ""
-        return "\(t.label ?? "T-")  \(t.id.uuidString)  \(t.state.rawValue)  \(t.work.rawValue)  \(t.title)\(blocked)\(last)"
+        return "\(t.label ?? "T-")  \(t.id.uuidString)  \(t.state.rawValue)  \(t.title)\(blocked)\(last)"
     }
 
     func string(_ key: String, _ args: [String: Any]) throws -> String {
@@ -1200,16 +1211,6 @@ public struct MCPServer: Sendable {
         return v
     }
 
-    func taskWork(_ args: [String: Any], defaulting: Bool = true) throws -> FactoryTask.Work {
-        guard let raw = args["work"] as? String, !raw.isEmpty else {
-            if defaulting { return .implement }
-            throw ToolError(message: "work must be design, plan, code, implement, fix, review, investigate or ship.")
-        }
-        guard let work = FactoryTask.Work.parse(raw) else {
-            throw ToolError(message: "work must be design, plan, code, implement, fix, review, investigate or ship.")
-        }
-        return work
-    }
 
     /// Resolves the caller. Reading only: the heartbeat is stamped once per call, at
     /// the top of `call`.

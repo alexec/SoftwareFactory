@@ -155,17 +155,39 @@ final class PhoneModel: Deciding {
     /// network: a transcript is a file on the Mac and there is no copy in iCloud, so away
     /// from home the page says so rather than showing an empty conversation.
     /// (Alex, 16 Sep 2026.)
-    func conversation(with agent: UUID, after: Int) async -> (lines: [String], total: Int)? {
+    /// Asked by the byte rather than by the line: `from` is where the last answer said to
+    /// carry on, and the Mac takes the tail of the file instead of reading the whole of it
+    /// to find the three lines that arrived since. (T506.)
+    ///
+    /// **Both offsets go up, and the answer says which one it used.** The Mac and the phone
+    /// are released separately, so a phone that has updated can be talking to a Mac that has
+    /// not; that one ignores `from`, reads `after` and answers with a count of lines, which
+    /// is exactly what it did before. Sending only `from` to it would have asked for the
+    /// whole log on every poll and folded it onto the page again each time.
+    func conversation(with agent: UUID, from: Int, after: Int) async -> Caught? {
         guard let client else { return nil }
         do {
             let response = try await client.send(HTTPRequest(
-                method: "GET", path: "/api/transcript?agent=\(agent.uuidString)&after=\(after)"))
+                method: "GET",
+                path: "/api/transcript?agent=\(agent.uuidString)&from=\(from)&after=\(after)"))
             guard response.status == 200 else { return nil }
             let read = try JSONDecoder().decode(HTTPRouter.Conversation.self, from: response.body)
-            return (read.lines, read.total)
+            return Caught(lines: read.lines, next: read.next, total: read.total,
+                          startedAgain: read.startedAgain ?? false)
         } catch {
             return nil
         }
+    }
+
+    /// What came back, and where to carry on from. Whichever of the two the Mac answered
+    /// with is the one that moves.
+    struct Caught {
+        var lines: [String]
+        /// Bytes, from a Mac that speaks T506.
+        var next: Int?
+        /// Lines, from one that does not.
+        var total: Int?
+        var startedAgain: Bool
     }
 
     /// Words for an agent. It goes down as a message, which the Mac delivers the way it
@@ -255,12 +277,10 @@ final class PhoneModel: Deciding {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
         let drafted = await TaskTitler.draft(from: title)
-        let parsed = FactoryTask.Work.reading(title: drafted.title)
         if source == .factory, let client {
             let body = (try? JSONSerialization.data(withJSONObject: [
-                "project": project.id, "title": parsed.title,
+                "project": project.id, "title": drafted.title,
                 "note": drafted.note, "position": position.rawValue,
-                "work": parsed.work.rawValue,
             ])) ?? Data()
             do {
                 let response = try await client.send(HTTPRequest(
@@ -274,23 +294,21 @@ final class PhoneModel: Deciding {
         }
         guard cloud.isReady else { return }
         let task = FactoryTask(
-            projectID: project.id, title: parsed.title,
+            projectID: project.id, title: drafted.title,
             state: Backlog.state(for: position),
             rank: Backlog.rank(for: position, projectID: project.id, in: snapshot.tasks),
-            note: drafted.note, work: parsed.work)
+            note: drafted.note)
         await cloud.push(task: task)
         snapshot.tasks.append(task)
         dashboard = Dashboard.make(snapshot: snapshot)
     }
 
-    func editTask(_ task: FactoryTask, title: String, note: String, work: FactoryTask.Work? = nil) async {
-        let parsed = FactoryTask.Work.reading(title: title)
-        let edited = Backlog.edit(task, title: parsed.title, note: note, work: work ?? parsed.work)
+    func editTask(_ task: FactoryTask, title: String, note: String) async {
+        let edited = Backlog.edit(task, title: title, note: note)
         guard edited != task else { return }
         if source == .factory, let client {
             let body = (try? JSONSerialization.data(withJSONObject: [
                 "id": edited.id.uuidString, "title": edited.title, "note": edited.note,
-                "work": edited.work.rawValue,
             ])) ?? Data()
             do {
                 let response = try await client.send(HTTPRequest(

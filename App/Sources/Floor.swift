@@ -27,7 +27,21 @@ final class Floor {
     @ObservationIgnored private var watching: Set<UUID> = []
     @ObservationIgnored private var asking = false
     @ObservationIgnored private var startingDaemon = false
-    @ObservationIgnored private var lengths: [UUID: Int] = [:]
+    /// How far into each agent's log the fold has got, in bytes. (T503.)
+    @ObservationIgnored private var read: [UUID: Int] = [:]
+    /// Where each agent's folded page starts, in bytes. Zero once the top of the log is on
+    /// it. This is what scrolling back walks down. (T542.)
+    @ObservationIgnored private var begins: [UUID: Int] = [:]
+    /// One walk back at a time per agent, so a page that keeps asking while the first read
+    /// is still running does not fold the same stretch twice.
+    @ObservationIgnored private var walkingBack: Set<UUID> = []
+    /// The agents whose log has been read at least once, so a page can tell an empty
+    /// conversation from one it has not opened yet.
+    @ObservationIgnored private var haveRead: Set<UUID> = []
+    /// One fold at a time per agent. A fold now runs off the main actor, so a second look
+    /// can start while the first is still reading, and both would fold the same bytes onto
+    /// the same page.
+    @ObservationIgnored private var folding: Set<UUID> = []
 
     init(store: FileStore?) {
         self.store = store
@@ -39,14 +53,27 @@ final class Floor {
 
     /// The page for this agent is open, so its transcript is worth folding on every
     /// refresh. Nothing else is: there may be sixteen agents and only one page.
-    func watch(_ agent: UUID) { watching.insert(agent) }
+    ///
+    /// The first fold starts here rather than on the next poll. A poll is two seconds away,
+    /// and the page's own call to `look()` gives up when one is already running, so opening
+    /// an agent could sit on an empty page for two seconds having asked for nothing.
+    /// (T511.)
+    func watch(_ agent: UUID) {
+        let isNew = watching.insert(agent).inserted
+        guard isNew, read[agent] == nil else { return }
+        Task { await refold(agent) }
+    }
     func stopWatching(_ agent: UUID) { watching.remove(agent) }
 
-    /// The whole transcript for an agent, folded now. For a page that has just opened and
-    /// does not want to wait for the next refresh.
+    /// What has been folded for this agent so far. Empty for one whose log has not been
+    /// read yet, which `hasBeenRead` tells apart from one with nothing in it.
     func transcript(_ agent: UUID) -> ACPTranscript {
-        transcripts[agent] ?? fold(agent)
+        transcripts[agent] ?? ACPTranscript()
     }
+
+    /// Whether this agent's log has been read at all. A page that says "Nothing yet" before
+    /// anybody has looked is saying something it does not know. (T503.)
+    func hasBeenRead(_ agent: UUID) -> Bool { haveRead.contains(agent) }
 
     // MARK: The refresh
 
@@ -69,33 +96,87 @@ final class Floor {
             daemonPID = nil
             trouble = reply.error == AgentSocket.floorIsDown ? nil : reply.error
         }
-        for agent in watching { refold(agent) }
+        for agent in watching { await refold(agent) }
     }
 
-    /// Folds an agent's log again, but only when the file has grown. Folding is cheap and
-    /// reading a megabyte off disk every two seconds for a page nobody is scrolling is
-    /// not. (T373.)
-    private func refold(_ agent: UUID) {
+    /// Folds what has arrived since the last look onto what is already folded, off the main
+    /// actor.
+    ///
+    /// It used to read the whole log and fold it from the beginning, on the main actor,
+    /// every two seconds. Measured on this Mac: a busy agent's log is 30 MB over twelve
+    /// thousand lines, and reading it takes 384 ms with 200 ms to fold, against about a
+    /// millisecond for the daemon call beside it. So the page hitched for half a second
+    /// twice a second while the window drew, which is the beachball tmux taught us about,
+    /// arriving from the one direction nothing was watching. (T503.)
+    ///
+    /// Two fixes, and both are needed. The read and the fold are a pure function of a file,
+    /// so they happen on a detached task and only the answer comes back. And a log only
+    /// ever has lines appended, so only the new bytes are read and folded onto the page
+    /// that is already there: an agent that has been running all day now costs the same as
+    /// one that started a minute ago.
+    private func refold(_ agent: UUID) async {
         guard let store else { return }
-        let size = (try? FileManager.default.attributesOfItem(
-            atPath: store.transcriptFile(for: agent).path)[.size] as? Int) ?? 0
-        guard lengths[agent] != size else { return }
-        lengths[agent] = size
-        _ = fold(agent)
+        guard !folding.contains(agent) else { return }
+        folding.insert(agent)
+        defer { folding.remove(agent) }
+        // The first look at an agent opens at the end of its log rather than the start.
+        // Every look after it takes what has arrived since, which is what T503 built.
+        // (T511.)
+        let opening = read[agent] == nil
+        let from = read[agent] ?? 0
+        let have = transcripts[agent] ?? ACPTranscript()
+        let folded = await Task.detached(priority: .utility) { () -> (ACPTranscript, Int, Int?) in
+            if opening {
+                let open = ACPTranscript.opening(for: agent, in: store)
+                return (open.page, open.read, open.from)
+            }
+            let tail = store.transcriptTail(for: agent, from: from)
+            // Started again is a different conversation, so it is folded from nothing
+            // rather than onto the one that was there.
+            let base = tail.startedAgain ? ACPTranscript() : have
+            guard !tail.lines.isEmpty else { return (base, tail.next, tail.startedAgain ? 0 : nil) }
+            return (base.folding(more: tail.lines), tail.next, tail.startedAgain ? 0 : nil)
+        }.value
+        read[agent] = folded.1
+        if let begin = folded.2 { begins[agent] = begin }
+        haveRead.insert(agent)
+        // Only when it is different: assigning the same page again is a redraw of every
+        // row for nothing, and most looks bring no new lines.
+        if transcripts[agent] != folded.0 { transcripts[agent] = folded.0 }
     }
 
-    @discardableResult
-    private func fold(_ agent: UUID) -> ACPTranscript {
-        guard let store else { return ACPTranscript() }
-        let page = ACPTranscript.folding(store.transcriptLines(for: agent))
-        transcripts[agent] = page
-        return page
+    /// Whether there is more of this agent's conversation further back than the page holds.
+    func hasEarlier(_ agent: UUID) -> Bool { (begins[agent] ?? 0) > 0 }
+
+    /// Reads the stretch before the page and puts it in front. One step of scrolling back:
+    /// call it again for the one before that, and `hasEarlier` says when to stop.
+    ///
+    /// Off the main actor like every other read, and one at a time per agent, because a page
+    /// that asks again while the first read is still running would fold the same stretch
+    /// twice and show every turn in it twice. (T542.)
+    func readEarlier(_ agent: UUID) async {
+        guard let store, !walkingBack.contains(agent) else { return }
+        guard let before = begins[agent], before > 0 else { return }
+        walkingBack.insert(agent)
+        defer { walkingBack.remove(agent) }
+        let have = transcripts[agent] ?? ACPTranscript()
+        let grown = await Task.detached(priority: .utility) { () -> (ACPTranscript, Int) in
+            let earlier = ACPTranscript.earlier(for: agent, in: store, before: before)
+            return (have.following(earlier.page), earlier.from)
+        }.value
+        // The log may have been started again under us while this read: the page we grew
+        // is the old conversation's and putting it back would undo the fresh start.
+        guard begins[agent] == before else { return }
+        begins[agent] = grown.1
+        if transcripts[agent] != grown.0 { transcripts[agent] = grown.0 }
     }
 
     /// Forgets an agent's transcript, for one that has been deleted.
     func forget(_ agent: UUID) {
         transcripts[agent] = nil
-        lengths[agent] = nil
+        read[agent] = nil
+        begins[agent] = nil
+        haveRead.remove(agent)
         watching.remove(agent)
     }
 
@@ -117,11 +198,18 @@ final class Floor {
     }
 
     /// Words for an agent: a nudge, a message, the status report ask. The same call for
-    /// all of them, which is what the typed line was.
+    /// all of them, which is what the typed line was. Answers why it did not go, or nil
+    /// when it went.
+    ///
+    /// It used to answer yes or no, and the page that a person types on threw the no away:
+    /// the field emptied, nothing appeared, and "It is not running" was known here and said
+    /// nowhere. The reason is the daemon's own words and they are the ones worth showing.
+    /// (T495.)
     @discardableResult
-    func say(_ words: String, to agent: UUID, files: [String] = []) async -> Bool {
-        await ask(AgentDaemon.Request(op: .say, agent: agent, text: words,
-                                      files: files.isEmpty ? nil : files)).ok
+    func say(_ words: String, to agent: UUID, files: [String] = []) async -> String? {
+        let reply = await ask(AgentDaemon.Request(op: .say, agent: agent, text: words,
+                                                  files: files.isEmpty ? nil : files))
+        return reply.ok ? nil : (reply.error ?? "The daemon would not take it.")
     }
 
     func stop(_ agent: UUID) async {
@@ -131,6 +219,26 @@ final class Floor {
 
     func cancel(_ agent: UUID) async {
         _ = await ask(AgentDaemon.Request(op: .cancel, agent: agent))
+    }
+
+    /// Joins everything waiting for this agent into one thing to say, so it goes as one
+    /// turn rather than one turn each. Answers why it did not, or nil when it did.
+    ///
+    /// It answers rather than going quiet because the daemon outlives the app: it holds the
+    /// agents, so it is not restarted when the app is rebuilt, and one running from before
+    /// this op existed cannot decode the request and says so. A button that silently does
+    /// nothing is worse than one that tells you why. (T541.)
+    @discardableResult
+    func merge(_ agent: UUID) async -> String? {
+        let reply = await ask(AgentDaemon.Request(op: .merge, agent: agent))
+        await look()
+        if reply.ok { return nil }
+        // A daemon from before this op existed cannot decode the request at all, and its
+        // own words are about the wire rather than about anything the person can do.
+        if reply.error == AgentDaemon.Reply.notARequest {
+            return "The floor is holding your agents on an older daemon, which cannot do this yet. It picks it up when it next starts."
+        }
+        return reply.error ?? "The daemon would not merge them."
     }
 
     /// The person picked this agent's mode. From here it stops following the floor's own

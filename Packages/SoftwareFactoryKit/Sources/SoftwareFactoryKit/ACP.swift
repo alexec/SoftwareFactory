@@ -13,6 +13,35 @@ import Foundation
 /// disagrees with the wire in a few places that matter: the permission outcome is
 /// `selected` and not `Approved`, a stop reason is `end_turn` and not `Completed`.
 /// `Tests/ACPTranscriptTests` replays that recording. (T373.)
+///
+/// **What is out, and why.** Audited against the protocol's own method list on
+/// 15 September 2026 and written down here so the next reader finds a decision rather than
+/// a hole. (T493.)
+///
+/// - `fs/read_text_file`, `fs/write_text_file` and every `terminal/*` method: declared
+///   false at the handshake and meant to stay that way. These agents are local CLIs
+///   standing in the project's folder with their own file tools and their own shell.
+///   A call for one of them is an agent ignoring what we said, so it is refused with
+///   -32601 and the refusal is written to the agent's complaints file. (T491.)
+/// - `authenticate`: read but never called. `ACP.WayIn` takes `authMethods` off the
+///   handshake and uses it to say which command to run when a start fails, which is the
+///   whole of what a person needs today (T435). Doing it properly wants `auth.terminal`
+///   declared and the terminal methods we just declined, so it is a decision to take
+///   rather than a gap to fill.
+/// - `logout` and `session/delete`: never called. Deleting an agent kills its process and
+///   leaves whatever session state its CLI keeps on disk. Worth having when a person
+///   complains about the disk, and not before.
+/// - `providers` and model selection: not in the version we target. A model is chosen at
+///   launch instead, as a flag or an environment variable per CLI, which is where it is
+///   possible at all (T462).
+/// - `session.configOptions`: newer than what we read.
+/// - `PlanEntry.priority`, and `rawInput`/`rawOutput` on a tool call: decoded or not and
+///   drawn nowhere. A plan is already a row of chips that tick themselves off, and the raw
+///   arguments of a tool call are the machine talking to itself.
+/// - Images and audio coming back from an agent are still the strings `[image]` and
+///   `[audio]`. We send images up (T427) and this is the way back down; it is the one
+///   thing on this list worth building next, because a screenshot an agent hands over
+///   should be a screenshot. See T317.
 public enum ACP {
     /// The version the factory speaks. An integer, not a date string like MCP's.
     public static let protocolVersion = 1
@@ -198,6 +227,65 @@ public enum ACP {
         ["sessionId": session, "modeId": mode]
     }
 
+    /// One thing about a session the agent says is set, and to what: how much it may do,
+    /// which model it is on, how hard it is thinking.
+    ///
+    /// Read rather than set. The agent lists these at `session/new` with a current value
+    /// each, and the factory shows them so a person can see how an agent is configured
+    /// without reading a launch command. Setting one is a different piece of work and needs
+    /// a method we have not seen an agent offer. (R69, T546.)
+    public struct ConfigOption: Codable, Sendable, Equatable, Identifiable {
+        public var id: String
+        public var name: String
+        public var detail: String?
+        /// What it is set to, in the agent's own words where it gave them: the name of the
+        /// chosen option rather than its id, because "Bypass permissions" is what a person
+        /// reads and "bypassPermissions" is what the wire carries.
+        public var value: String?
+        /// What else it could be, for a person judging whether the current value is the
+        /// interesting one. Names, not ids, for the same reason.
+        public var choices: [String] = []
+
+        public init(id: String, name: String, detail: String? = nil,
+                    value: String? = nil, choices: [String] = []) {
+            self.id = id
+            self.name = name
+            self.detail = detail
+            self.value = value
+            self.choices = choices
+        }
+    }
+
+    /// The session options in a `session/new` or `session/load` answer.
+    ///
+    /// `ACP.swift`'s own audit said of `configOptions` that it was "newer than what we
+    /// read". It was not: the adapter on this Mac has been sending it on every session all
+    /// along, four options with their current values, and two of them, effort and fast
+    /// mode, are reachable nowhere else in the factory. Measured off 44 transcripts rather
+    /// than read, which is how the note turned out to be wrong. (R69.)
+    ///
+    /// An agent that sends none gets an empty list and the panel says it did not say, the
+    /// same as everything else here: only Claude Code's adapter is known to send these, and
+    /// three of the four CLIs have never been asked.
+    public static func options(in result: [String: Any]) -> [ConfigOption] {
+        guard let listed = result["configOptions"] as? [[String: Any]] else { return [] }
+        return listed.compactMap { one in
+            guard let id = one["id"] as? String else { return nil }
+            let choices = (one["options"] as? [[String: Any]]) ?? []
+            let current = one["currentValue"]
+            let named = choices.first { option in
+                guard let value = option["value"] else { return false }
+                return String(describing: value) == String(describing: current ?? "")
+            }
+            return ConfigOption(
+                id: id,
+                name: one["name"] as? String ?? id,
+                detail: one["description"] as? String,
+                value: named?["name"] as? String ?? (current.map { String(describing: $0) }),
+                choices: choices.compactMap { $0["name"] as? String ?? $0["value"] as? String })
+        }
+    }
+
     /// The modes an agent offered at `session/new`, and which one asks the fewest
     /// questions.
     ///
@@ -279,9 +367,14 @@ public enum ACP {
         /// The agent asking the person a question, `elicitation/create`. Blocked on this
         /// id the same way, and put in front of a person the same way.
         case question(id: Int, Elicitation)
-        /// Something else addressed to us that expects an answer. We answer it empty
-        /// rather than leaving the agent waiting on a method we have not written yet.
+        /// Something else addressed to us that expects an answer. We answer it with
+        /// -32601 rather than leaving the agent waiting, and rather than the empty success
+        /// it used to get, which told a caller its file had been read. (T491.)
         case request(id: Int, method: String)
+        /// The agent has taken its question back. No answer is wanted; the question should
+        /// stop being asked. Nil when it did not say which, which means the one it is
+        /// blocked on, because it can only be blocked on one. (T493.)
+        case withdrawn(id: Int?)
         /// Something the agent is telling us that wants no answer, like
         /// `_auth/status_update`. Nothing to do, and not the same thing as a line we
         /// could not read: answering it would be wrong and worrying about it is noise.
@@ -331,6 +424,12 @@ public enum ACP {
                       let decoded = try? decoder.decode(PermissionRequest.self, from: body)
                 else { return .unrecognised(line) }
                 return .permission(id: id, decoded)
+            // An agent withdrawing a question it asked. It arrives as a notification, so
+            // there is nothing to answer; what it needs is the question taken down, or it
+            // sits on the Needs you strip and the Lock Screen with nobody on the other end.
+            // (T493, off A82's audit.)
+            case "elicitation/complete":
+                return .withdrawn(id: (object["params"] as? [String: Any])?["id"] as? Int)
             default:
                 guard let id else { return .notification(method: method) }
                 return .request(id: id, method: method)
@@ -387,12 +486,42 @@ public enum ACP {
     public struct Command: Codable, Sendable, Equatable, Identifiable {
         public var name: String
         public var description: String?
+        /// What the command takes after its name, in the agent's own words: `/loop` says
+        /// `[interval] [prompt]`, `/code-review` says its levels and flags. A quarter of the
+        /// commands on this Mac carry one and nothing drew it, so a list of commands said
+        /// what each was called and not how to use it. (R69, T546.)
+        public var hint: String?
 
         public var id: String { name }
 
-        public init(name: String, description: String? = nil) {
+        public init(name: String, description: String? = nil, hint: String? = nil) {
             self.name = name
             self.description = description
+            self.hint = hint
+        }
+
+        enum Keys: String, CodingKey { case name, description, input, hint }
+
+        /// The hint arrives nested, as `input: { hint: … }`, and is written back flat,
+        /// because the daemon's socket is ours and a second level of box on it buys nothing.
+        /// An agent that sends `input: null`, which is three quarters of them, has no hint
+        /// rather than a broken record.
+        public init(from decoder: any Decoder) throws {
+            let box = try decoder.container(keyedBy: Keys.self)
+            name = try box.decode(String.self, forKey: .name)
+            description = try box.decodeIfPresent(String.self, forKey: .description)
+            if let nested = try? box.nestedContainer(keyedBy: Keys.self, forKey: .input) {
+                hint = try? nested.decodeIfPresent(String.self, forKey: .hint)
+            } else {
+                hint = try box.decodeIfPresent(String.self, forKey: .hint)
+            }
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var box = encoder.container(keyedBy: Keys.self)
+            try box.encode(name, forKey: .name)
+            try box.encodeIfPresent(description, forKey: .description)
+            try box.encodeIfPresent(hint, forKey: .hint)
         }
 
         /// The first sentence, which is as much as a row of a menu can hold.
@@ -405,6 +534,43 @@ public enum ACP {
 
         /// What goes in the field when you pick it.
         public var typed: String { "/\(name) " }
+    }
+
+    /// Completing a command as it is typed, in the field where you are already typing.
+    ///
+    /// T366 took completions off the add-a-task field and deleted the work types' own
+    /// list, on the argument that a row of words under a field is something to read and
+    /// dismiss on every task you add. That argument does not carry here and this is not a
+    /// quiet reversal of it. The seven work types are a fixed set learned once; an agent's
+    /// commands are per agent, change with the CLI, and nobody can be expected to know
+    /// them, which is why there is a menu of them at all. What T366 objected to was a list
+    /// appearing unbidden on every keystroke; this one appears only after a "/", which is
+    /// somebody asking for it, and goes the moment the word stops matching. (T494.)
+    public enum Slash {
+        /// What is being typed after a leading slash, or nil when the field is not asking
+        /// for a command: no slash at the front, or the word already finished with a space,
+        /// because a slash in the middle of a sentence is a slash.
+        public static func token(in text: String) -> String? {
+            guard text.hasPrefix("/") else { return nil }
+            let rest = text.dropFirst()
+            guard !rest.contains(" "), !rest.contains("\n") else { return nil }
+            return String(rest)
+        }
+
+        /// The commands to offer for what has been typed so far.
+        public static func matches(for text: String, in commands: [Command]) -> [Command] {
+            guard let token = token(in: text) else { return [] }
+            guard !token.isEmpty else { return commands }
+            return commands.filter { $0.name.lowercased().hasPrefix(token.lowercased()) }
+        }
+
+        /// The field after picking one: the command and a space, with anything already
+        /// typed after the word kept. Picking is not sending, because a command usually
+        /// wants something after it.
+        public static func picked(_ command: Command, in text: String) -> String {
+            guard token(in: text) != nil else { return text }
+            return command.typed
+        }
     }
 
     public struct PlanEntry: Codable, Sendable, Equatable, Identifiable {
@@ -766,6 +932,25 @@ public enum ACP {
                 self = Kind(rawValue: raw) ?? .other
             }
         }
+    }
+
+    /// Whether this line is a turn ending: the answer to `session/prompt`, which carries a
+    /// `stopReason` and nothing else we read.
+    ///
+    /// It is the one place in a log where nothing is half-said. Every tool call the agent
+    /// opened during that turn has had the update that names it, no message chunk is
+    /// mid-sentence, and the agent is about to be quiet. That is what makes it the place to
+    /// cut a log when a page opens at the end of one rather than at the beginning: a fold
+    /// starting just after a turn ended cannot meet an update for a call it never saw.
+    ///
+    /// Read off the line rather than decoded into a type, because the only thing being
+    /// asked is whether the field is there. A turn that ended for a reason we have never
+    /// heard of still ended. (T511.)
+    public static func endsATurn(line: String) -> Bool {
+        guard case .response(_, let result, _) = read(line: line), let result,
+              let object = try? JSONSerialization.jsonObject(with: result) as? [String: Any]
+        else { return false }
+        return object["stopReason"] != nil
     }
 
     /// Why a turn ended. `end_turn` is the ordinary one; the rest are worth showing.

@@ -43,6 +43,11 @@ final class AppModel: Deciding {
     static let refreshEvery: Duration = .seconds(2)
 
     @ObservationIgnored private var ticker: _Concurrency.Task<Void, Never>?
+    /// One refresh at a time, with a second one asked for while it runs remembered rather
+    /// than started beside it. The reading happens off this actor now, so without these
+    /// the ticker and a burst of edits would read the store over each other. (T521.)
+    @ObservationIgnored private var refreshing = false
+    @ObservationIgnored private var refreshAgain = false
 
     init() {
         hasSeenIntro = UserDefaults.standard.bool(forKey: Self.introKey)
@@ -116,17 +121,39 @@ final class AppModel: Deciding {
         }
     }
 
+    /// The tick. Everything it reads, it reads off this actor.
+    ///
+    /// It used to read the whole store here, on the main thread: nine hundred and forty
+    /// JSON files, measured at 33 ms in release and 66 ms on any tick that also wrote,
+    /// every two seconds, while the window drew. CLAUDE.md already forbids this for tmux
+    /// and for the daemon, in the same words and for the same reason; the store was the
+    /// one that got away, and it had become the slowest thing on this thread. A read is a
+    /// pure function of a folder, so it goes to a detached task and only the answer comes
+    /// back, which is the shape `Floor.refold` uses. (T521.)
+    ///
+    /// Calls coalesce. This is started from a two second ticker and from `persist`, so a
+    /// row of edits used to mean a row of reads; now a call arriving while one is in
+    /// flight sets a flag and the one running goes round once more. It stays synchronous
+    /// because every caller is telling it to go and look, not waiting to be told.
     func refresh() {
+        guard !refreshing else { refreshAgain = true; return }
+        refreshing = true
+        _Concurrency.Task { [weak self] in
+            guard let self else { return }
+            repeat {
+                refreshAgain = false
+                await refreshOnce()
+            } while refreshAgain
+            refreshing = false
+        }
+    }
+
+    private func refreshOnce() async {
         guard let store else { return }
         // What the floor looked like a moment ago, so a project that has just gone on
         // hold can be told from one that has been on hold all along. (T309.)
         let before = snapshot
-        do {
-            try loadState(from: store)
-            storeError = nil
-        } catch {
-            storeError = error.localizedDescription
-        }
+        await loadState(from: store)
         // On hold means the work on it stops, however the hold was set: the Active
         // toggle here, or project_set from an agent. Start picks each of them back up
         // when the project comes off hold. (T309.)
@@ -140,7 +167,7 @@ final class AppModel: Deciding {
                                             now: .now) {
             signalStop(agent)
         }
-        numberOldArtifacts()
+        await numberOldArtifacts()
         let gone = Sweep.stoppedAgents(in: snapshot, now: .now)
         let unblocked = Sweep.unblocked(in: snapshot, now: .now)
         // An agent working is silent, and silence says nothing about how it is going.
@@ -154,30 +181,37 @@ final class AppModel: Deciding {
                 for t in unblocked { try store.save(t) }
                 for a in wanted.agents { try store.save(a) }
                 for m in wanted.messages { try store.save(m) }
-                try loadState(from: store)
             } catch {
                 storeError = error.localizedDescription
             }
+            await loadState(from: store)
         }
         // Bells rung while nobody was attached to the agent's terminal. The live path
         // through SwiftTerm only hears a bell when this app is holding that session, and
         // most agents work with nobody looking at them, so tmux leaves a mark instead and
         // this is where it is read. (Alex, 15 Sep 2026.)
         for session in Tmux.bellsRung() { ring(session: session) }
-        dashboard = Dashboard.make(snapshot: snapshot)
-        throttle = store.throttle()
+        // The same guard as the snapshot's, and for the same reason: these are read by the
+        // sidebar, every card and Settings, and assigning them again is a redraw of all of
+        // it for nothing. `machine` is left alone because it is a live reading and never
+        // equal twice. (T523.)
+        let made = Dashboard.make(snapshot: snapshot)
+        if dashboard != made { dashboard = made }
+        let read = store.throttle()
+        if throttle != read { throttle = read }
         machine = MachineReading.sample()
-        isAtTheMac = Presence.isAtTheMac
+        let here = Presence.isAtTheMac
+        if isAtTheMac != here { isAtTheMac = here }
         notifier.notice(dashboard.openEscalations, projects: snapshot.projects)
         lastRefresh = .now
-        _Concurrency.Task { await sync() }
+        await sync()
     }
 
     /// Documents filed before reference numbers existed get one, oldest first, so R1 is
     /// the first thing ever written down here. One pass: after it there is nothing
     /// without a number, and the guard costs a scan of a list the app has just loaded.
     /// (T341.)
-    private func numberOldArtifacts() {
+    private func numberOldArtifacts() async {
         guard let store, snapshot.artifacts.contains(where: { $0.number == nil }) else { return }
         do {
             let every = (try? store.loadEveryArtifact()) ?? snapshot.artifacts
@@ -187,20 +221,37 @@ final class AppModel: Deciding {
                 next += 1
                 try store.save(artifact)
             }
-            try loadState(from: store)
         } catch {
             storeError = error.localizedDescription
         }
+        await loadState(from: store)
     }
 
-    private func loadState(from store: FileStore) throws {
-        let loaded = try store.load()
-        var loadedMessages: [UUID: [AgentMessage]] = [:]
-        for agent in loaded.agents {
-            loadedMessages[agent.id] = try store.messages(for: agent.id)
+    /// Reads the store and puts on the model whatever came back different. Answers
+    /// nothing: what it found is on `snapshot` and `messagesByAgent` by the time it
+    /// returns, and why it did not is on `storeError`.
+    ///
+    /// The read is the whole of the cost and none of it needs this actor, so it happens
+    /// on a detached task: `FileStore` is a path and nothing else, so it crosses with the
+    /// rest of it. (T521.)
+    ///
+    /// Assigning only what changed is not a micro-optimisation. Observation fires on set
+    /// rather than on change, so putting the same snapshot back invalidates every view
+    /// that reads it, and on a working floor most ticks bring nothing new. `Floor.refold`
+    /// has the same guard with the same sentence beside it. (T523.)
+    private func loadState(from store: FileStore) async {
+        let everything: FileStore.Everything
+        do {
+            everything = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                try store.loadEverything()
+            }.value
+            storeError = nil
+        } catch {
+            storeError = error.localizedDescription
+            return
         }
-        snapshot = loaded
-        messagesByAgent = loadedMessages
+        if snapshot != everything.snapshot { snapshot = everything.snapshot }
+        if messagesByAgent != everything.messages { messagesByAgent = everything.messages }
     }
 
     func askForNotifications() {
@@ -241,11 +292,12 @@ final class AppModel: Deciding {
                 try store.save(t)
             }
             for t in changedTasks { try store.save(t) }
-            try loadState(from: store)
-            dashboard = Dashboard.make(snapshot: snapshot)
         } catch {
             storeError = error.localizedDescription
         }
+        await loadState(from: store)
+        let made = Dashboard.make(snapshot: snapshot)
+        if dashboard != made { dashboard = made }
     }
 
     /// The Mac's verdict right now, for the dot beside Capacity and the page itself.
@@ -293,7 +345,7 @@ final class AppModel: Deciding {
     /// every done task. (T224.)
     func tasks(assignedTo agentID: UUID) -> [FactoryTask] {
         snapshot.tasks
-            .filter { $0.agentID == agentID && $0.removed == nil && $0.state != .done }
+            .filter { $0.agentID == agentID && $0.removed == nil && !$0.state.isFinished }
             .sorted { $0.updated > $1.updated }
     }
 
@@ -676,6 +728,22 @@ final class AppModel: Deciding {
         // a false answer in the history, on the strip and on the phone, to a question
         // nobody had read. It stays open instead. The agent is no longer sitting on it
         // either way, because the daemon declines it after the same ten minutes. (T421.)
+        // A question the agent has taken back, elicitation/complete. Nobody is waiting for
+        // an answer, so it stops being asked rather than sitting on the strip and the Lock
+        // Screen for somebody to answer into nothing. Different from one nobody answered in
+        // time, which stays open on purpose: there the agent gave up, here it changed its
+        // mind. (T493.)
+        for one in floor.held.values {
+            guard let taken = one.tookBack else { continue }
+            let reference = Self.questionReference(one.agent, taken)
+            guard var question = snapshot.escalations.first(where: { $0.reference == reference }),
+                  question.isOpen else { continue }
+            try? question.answer("The agent took the question back.", by: "the agent")
+            try? store.save(question)
+            notifier.withdraw(question.id)
+            wrote = true
+        }
+
         for var question in snapshot.escalations where question.isOpen {
             guard let reference = question.reference,
                   reference.hasPrefix(Self.permissionPrefix),
@@ -788,14 +856,13 @@ final class AppModel: Deciding {
         Backlog.visible(for: projectID, in: snapshot.tasks)
     }
 
-    func addTask(to projectID: String, title: String, at position: Backlog.Position = .bottom, note: String = "",
-                 work: FactoryTask.Work = .implement) {
+    func addTask(to projectID: String, title: String, at position: Backlog.Position = .bottom, note: String = "") {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
         ensureStored(projectID)
         var task = FactoryTask(
             projectID: projectID, title: title, state: Backlog.state(for: position),
-            rank: Backlog.rank(for: position, projectID: projectID, in: snapshot.tasks), note: note, work: work)
+            rank: Backlog.rank(for: position, projectID: projectID, in: snapshot.tasks), note: note)
         persist { store in
             task.number = Backlog.nextNumber(in: (try? store.loadEveryTask()) ?? snapshot.tasks)
             try store.save(task)
@@ -807,8 +874,7 @@ final class AppModel: Deciding {
     /// never on the backlog.
     func addTask(to projectID: String, from text: String, at position: Backlog.Position) async {
         let drafted = await TaskTitler.draft(from: text)
-        let parsed = FactoryTask.Work.reading(title: drafted.title)
-        addTask(to: projectID, title: parsed.title, at: position, note: drafted.note, work: parsed.work)
+        addTask(to: projectID, title: drafted.title, at: position, note: drafted.note)
     }
 
     /// The person parks and unparks. In progress and done are an agent's to say.
@@ -824,9 +890,8 @@ final class AppModel: Deciding {
         persist { try $0.save(moved) }
     }
 
-    func edit(_ task: FactoryTask, title: String, note: String, work: FactoryTask.Work? = nil) {
-        let parsed = FactoryTask.Work.reading(title: title)
-        let edited = Backlog.edit(task, title: parsed.title, note: note, work: work ?? parsed.work)
+    func edit(_ task: FactoryTask, title: String, note: String) {
+        let edited = Backlog.edit(task, title: title, note: note)
         guard edited != task else { return }
         persist { try $0.save(edited) }
     }

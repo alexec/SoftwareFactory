@@ -3,38 +3,48 @@ import Foundation
 /// The rules for a project's backlog. Pure functions over arrays so a view never decides.
 public enum Backlog {
     /// The tasks for one project, in the order they should be shown: blocked first (they
-    /// need someone), then in progress, then the backlog by rank, then parked by rank, then
-    /// done, newest first. (Alex, 12 September 2026: blocked above in progress.)
+    /// need someone), then failed, then in progress, then the backlog by rank, then parked
+    /// by rank, then what succeeded, newest first. (Alex, 12 September 2026: blocked above
+    /// in progress. Then 15 Sep 2026: failed above the backlog.)
     public static func tasks(for projectID: String, in all: [FactoryTask]) -> [FactoryTask] {
         all.filter { $0.projectID == projectID }.sorted(by: order)
     }
 
+    /// The sections of a project's list, in the order they are drawn. One place, because
+    /// two views and the sort each had their own copy of it and they have to agree: a
+    /// section order that disagrees with the sort draws a list whose rows jump between
+    /// headings. (T509.)
+    public static let sections: [FactoryTask.State] =
+        [.blocked, .failed, .inProgress, .backlog, .parked, .succeeded]
+
     public static func order(_ a: FactoryTask, _ b: FactoryTask) -> Bool {
         if a.state != b.state { return stateOrder(a.state) < stateOrder(b.state) }
-        if a.state == .done { return a.updated > b.updated }
+        // Finished sorts by when it finished, newest first, whichever way it went.
+        if a.state.isFinished { return a.updated > b.updated }
         if a.rank != b.rank { return a.rank < b.rank }
         return a.created < b.created
     }
 
     private static func stateOrder(_ s: FactoryTask.State) -> Int {
-        switch s {
-        case .blocked: 0
-        case .inProgress: 1
-        case .backlog: 2
-        case .parked: 3
-        case .done: 4
-        }
+        sections.firstIndex(of: s) ?? sections.count
     }
 
-    /// What the project view shows: everything in progress, blocked and on the backlog,
-    /// then at most `recentParked` parked and `recentDone` done, so a long-lived project's
-    /// list does not fill with what is set aside or finished. (Alex, 12 September 2026:
-    /// three done, ten parked.)
+    /// What the project view shows: everything in progress, blocked, failed and on the
+    /// backlog, then at most `recentParked` parked and `recentDone` succeeded, so a
+    /// long-lived project's list does not fill with what is set aside or finished.
+    /// (Alex, 12 September 2026: three done, ten parked.)
+    ///
+    /// **A failed task is always shown.** It used to count against the same three as the
+    /// ones that worked, so three tasks succeeding after a failure took the failure off the
+    /// page altogether, and the one task on the project that somebody has to decide
+    /// something about was the one the page had dropped. Finished is two states since T488
+    /// and this is the half of that which was still being treated as one. (T509, Alex, 15
+    /// Sep 2026: "make sure we show Failed tasks clearly. Above the backlog.")
     public static func visible(for projectID: String, in all: [FactoryTask], recentDone: Int = 3, recentParked: Int = 10) -> [FactoryTask] {
         var doneShown = 0, parkedShown = 0
         return tasks(for: projectID, in: all).filter { task in
             switch task.state {
-            case .done: doneShown += 1; return doneShown <= recentDone
+            case .succeeded: doneShown += 1; return doneShown <= recentDone
             case .parked: parkedShown += 1; return parkedShown <= recentParked
             default: return true
             }
@@ -43,8 +53,7 @@ public enum Backlog {
 
     /// The list, in blocks by state, in the order they are shown. Empty blocks are left out.
     public static func blocks(_ tasks: [FactoryTask]) -> [(state: FactoryTask.State, tasks: [FactoryTask])] {
-        let order: [FactoryTask.State] = [.blocked, .inProgress, .backlog, .parked, .done]
-        return order.compactMap { state in
+        sections.compactMap { state in
             let group = tasks.filter { $0.state == state }
             return group.isEmpty ? nil : (state, group)
         }
@@ -71,7 +80,7 @@ public enum Backlog {
 
     /// The rank that puts a new task first. Ranks may go negative; only their order matters.
     public static func topRank(for projectID: String, in all: [FactoryTask]) -> Int {
-        (all.filter { $0.projectID == projectID && $0.state != .done }.map(\.rank).min() ?? 1) - 1
+        (all.filter { $0.projectID == projectID && !$0.state.isFinished }.map(\.rank).min() ?? 1) - 1
     }
 
     public enum Position: String, Codable, Sendable {
@@ -179,18 +188,15 @@ public enum Backlog {
     /// Changes the person-owned details of a task without disturbing its state or the
     /// agent work recorded on it. An empty title is not a task, so it leaves it alone.
     public static func edit(
-        _ task: FactoryTask, title: String, note: String, work: FactoryTask.Work? = nil,
-        at date: Date = .now
+        _ task: FactoryTask, title: String, note: String, at date: Date = .now
     ) -> FactoryTask {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return task }
         let note = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        let work = work ?? task.work
-        guard task.title != title || task.note != note || task.work != work else { return task }
+        guard task.title != title || task.note != note else { return task }
         var task = task
         task.title = title
         task.note = note
-        task.work = work
         task.updated = date
         return task
     }
@@ -199,7 +205,7 @@ public enum Backlog {
     /// what has been put in its name and is waiting. Done and removed tasks are not:
     /// finished work is not something to be reminded of.
     public static func alreadyYours(_ agentID: UUID, in all: [FactoryTask]) -> [FactoryTask] {
-        all.filter { $0.agentID == agentID && $0.removed == nil && $0.state != .done }
+        all.filter { $0.agentID == agentID && $0.removed == nil && !$0.state.isFinished }
             .sorted(by: order)
     }
 

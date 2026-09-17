@@ -47,8 +47,6 @@ struct IntroSheet: View {
             .padding(.horizontal, 28)
             .padding(.bottom, 24)
         }
-        .background(Color(.paper))
-        .tint(Color(.mark))
         .frame(width: 440, height: 480)
     }
 
@@ -56,7 +54,7 @@ struct IntroSheet: View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: "arrow.turn.down.right")
                 .font(.caption)
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
             Text(text)
         }
     }

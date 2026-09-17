@@ -67,8 +67,13 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
 
 - `Packages/SoftwareFactoryKit` (Foundation only, `swift test`):
   - `Models`: `Project` (a name; no description or instructions, T167), `FactoryTask` (a task; named so because
-    `Task` is Swift's; work is design/plan/implement/fix/review/investigate/ship, default implement, shown as Code (T181); the first word of a title is the type; backlog/inProgress/done/parked/blocked with a
-    `Blocker` saying what on; rank), `Agent` (number, terminal `title` from OSC 0/2,
+    `Task` is Swift's; backlog/inProgress/succeeded/failed/parked/blocked with a
+    `Blocker` saying what on; rank. **Finished is two states** (T488): a task that failed is
+    as finished as one that worked, off the backlog, nobody on it, and what happened in its
+    note; "done" covered both and the only way to tell them apart was to read. Every rule
+    that meant finished asks `State.isFinished`; `State.parse` still takes "done" and gives
+    succeeded, and a record written before tonight decodes the same way, so every agent and
+    script written before it goes on working), `Agent` (number, terminal `title` from OSC 0/2,
     `bel` when it rang for a look,
     project, task, lastSeen, deregistered, `launchedWith` (which CLI the factory started
     it with, so a stopped one can be picked back up in the conversation that holds it),
@@ -224,6 +229,20 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     not the client. The daemon is. It is a far smaller thing than tmux and that is the
     argument for owning it: tmux is a terminal multiplexer, with ptys, ANSI, scrollback
     and resize, and under ACP there is a pipe with JSON going along it.
+    **A page opens at the end of the log, not the top** (T511). It opened at the top, which
+    on the busiest log on this Mac was 38 MB and 651 ms to draw the last few rows.
+    `FileStore.transcriptOpening` answers where it is safe to cut: the earliest turn
+    boundary in a one megabyte window with something after it, widening until there is one,
+    and `ACP.endsATurn` is what a boundary is. A turn ending is the one place in a log where
+    nothing is half-said, so a fold starting after one cannot meet an update for a tool call
+    it never saw, which is what would leave a row reading as a bare id. `ACPTranscript.opening`
+    is the whole of it, and `Shown.more` is how the first row says there is more above it
+    without a number, because the page did not read the rest and a count it made up would be
+    worse than none. 2 to 19 times faster on the five biggest logs, every row identical to
+    the end of the page a whole fold draws, and a shorter first page on the busiest ones,
+    which fills out as the agent works. The first fold starts from `Floor.watch` rather than
+    the next poll, so opening an agent does not sit blank for two seconds, and the page says
+    "Reading the log" while it does.
     **The stream is not on the socket.** Every line goes to `transcripts/<agent>.jsonl`
     under the store, beside `agents/` and `tasks/`, and the app folds that file the way it
     reads every other record; the socket carries commands and state, one request per
@@ -429,7 +448,14 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     `AgentActivityDot`, because the phone was drawing its own with two of the four colours
     in it.
   - `MCPServer`: JSON-RPC 2.0, `handle(_:)` is pure per request; `Tool.all` is the
-    table; `call(_:_:)` does the work. `escalation_await` polls the store.
+    table; `call(_:_:)` does the work. A tool that waits, `task_next` or `escalation_await`,
+    polls through `FileStore.stamp()` rather than by reading the store: the newest
+    modification date across every record and how many there are, 2.4 ms against 23.6 ms,
+    so the expensive look happens when something has changed rather than on a clock.
+    **Not the folders' own dates**, which is the obvious version and is wrong: a folder's
+    date moves when a file is added or removed and not when one is overwritten in place, and
+    a task changing state is an overwrite, so a tool waiting for exactly that would have
+    waited for ever. The count is in the stamp because a deletion moves no date. (R67, T524.)
     `agent_create` writes the agent down and sets `wantsLaunch`; the person's own cap,
     read off the throttle, is what refuses the one over it.
     `agent_nudge` writes a message whose words are the nudge line; the app types every
@@ -527,47 +553,71 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     break, so a whole plan arrived as one paragraph. (T208) A line indented under a
     bullet is the rest of that bullet: a hard-wrapped list used to come apart, half the
     sentence in the item and half underneath it as a paragraph. (T311)
-  - `Paper.Tone` and `Shared/PaperTone.swift`: the house theme. A warm near-white ground,
-    a warm near-black ink, and one rust mark. Seven colours and a measure, written down
-    once, with the stylesheet built from them: the documents are HTML in a web view and
-    the agent's conversation is SwiftUI, so two sources drift the first time either is
-    touched.
-    Three other palettes were tried on the way here, and this is the one Alex picked with
-    all of them in front of him: cool drafting paper read as technical rather than
-    readable, and buff manila came out too orange. It is close to what Claude itself is
-    set on, and that was raised, weighed and settled rather than overlooked, so leave it
-    alone. The tests guard what is worth guarding now: every tone is warm, the mark is a
-    colour rather than a second black, and dark is its own paper rather than a white page
-    dimmed.
-    **It goes under the whole app**: the window, the sidebar, Settings, the sheets, and
-    the rust is the app's tint so every control picks it up. Liquid Glass keeps its own
-    translucency and sits on the paper rather than replacing it, so the theme is what
-    shows through the glass instead of a second idea beside it. The sidebar and Settings
-    hide their own scroll backgrounds to let it through. (Alex, 16 Sep 2026: use it
-    everywhere. Asked for twice, taken away once in between, and this is the settled
-    answer.)
-  - An agent's conversation is set on paper: the warm ground, the same measure the documents
-    use so a line is one you can read to the end of, and no gloss anywhere. **Not a serif**
-    (T447, Alex, 15 Sep 2026): it was, and it read as a page of a book inside an app that is
-    not one, so the window held two type families with the seam wherever the conversation
-    started. The letters are the system's everywhere in both apps now. A document opens in
-    a serif still, because `ArtifactPaper` is a page being read rather than a screen being
-    used. A tool call is a block set into the page, like a quote
+  - **There is no house theme** (Alex, 16 Sep 2026: conventional Liquid Glass). There was:
+    `Paper.Tone`, nine warm colours and a rust mark, written down once and painted under
+    the window, the sidebar, Settings, the sheets, the agent's conversation and the
+    documents alike, with the scroll backgrounds hidden to let it through and the rust as
+    the app's tint. What that gave was Liquid Glass with nothing to do. Glass is a material
+    that samples what is behind it, and what was behind it was one flat colour this app had
+    chosen, so every sheet of it came out the same shade wherever it sat.
+    What is left: `Paper.Tone` and `Shared/PaperTone.swift` are deleted; the window, the
+    sidebar and the sheets draw themselves; the accent is the person's own, so
+    `ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME` is off both targets and the two
+    `AccentColor` colorsets are gone, which undoes T406. Where the app said `Color(.quiet)`,
+    `.faint`, `.rule` and `.block` it says `.secondary`, `.tertiary` and `.quaternary`;
+    `.ink` is `.primary` and `.alarm` is `Color.orange`. The documents went with it: the
+    stylesheet is `Canvas`, `CanvasText`, `LinkText` and everything quieter mixed out of
+    the ink with `color-mix`, so light and dark are one rule rather than two palettes that
+    can drift, and there is no `prefers-color-scheme` block any more. `PaperTests` guards
+    the absence: no hex colour anywhere in the stylesheet, and no serif.
+    The one thing kept is `Paper.measure`, because it is a measurement rather than a look.
+    Alex was asked whether the documents should keep their paper, with keeping it
+    recommended, and said no: one idea everywhere.
+  - **Glass is for the controls and the navigation layer, and content is not glass.**
+    Every card in both apps was `.glassEffect` and that is the one thing the convention
+    says not to do: on a floor of sixteen agents it is sixteen sheets of glass sampling
+    each other, and glass over glass is not twice as much glass, it is a grey rectangle.
+    `Shared/Surface.swift` is `cardSurface(cornerRadius:tint:)`, which is the system's
+    secondary ground with a hairline around it, and it is what a stat tile, an agent card,
+    a question, a capacity card, a status report and a permission primer are made of. The
+    tint is spent on the same thing the alarm is, a question waiting or a report gone
+    stale, and it sits over the ground rather than replacing it. What kept its glass is
+    what a person touches: the microphone, the field at the foot of a conversation, the
+    bar that starts an agent, the option you pick on a question, the banner that says a
+    write failed, and every `.buttonStyle(.glass)` and `.glassProminent` in both apps. A
+    `GlassEffectContainer` around views that are no longer glass went with them.
+    (Alex, 16 Sep 2026: conventional Liquid Glass.)
+  - An agent's conversation is the same ground as the rest of the app, at the same measure
+    the documents use so a line is one you can read to the end of, and no gloss anywhere.
+    **Not a serif** (T447, Alex, 15 Sep 2026): it was, and it read as a page of a book
+    inside an app that is not one, so the window held two type families with the seam
+    wherever the conversation started. The letters are the system's everywhere in both apps
+    now, and since 16 Sep so is the ground, in a document as much as here.
+    A tool call is a block set into the page, like a quote
     or a piece of code, rather than a card sitting on top of it. What the agent is doing
-    stays plain, because the paper is for the words.
+    stays plain, because the page is for the words.
   - `Paper` in the kit, and `App/Sources/ArtifactPaper.swift`: a document to read, as a
-    page. `Paper.html` turns the blocks into HTML and `Paper.page` puts it on paper: a
-    warm ground, a serif, a measure, light and dark. `ArtifactPaper` shows all three
+    page. `Paper.html` turns the blocks into HTML and `Paper.page` wraps it: the system's
+    ground, the system's letters, a measure, light and dark. `ArtifactPaper` shows all three
     kinds of document in one `WKWebView`: markdown this app rendered, an HTML file loaded
     from where it sits, a website as itself. Script is off for anything this app
     rendered and on for a website, and a link the person clicks opens in their browser
     rather than taking the pane somewhere else. Reading a file needs the sandbox off, so
     the store build says it could not read it rather than showing a blank page. (T311)
-  - `Shared/WorkField.swift`: the add and edit field. The first word is the work
-    (Design, Plan, Code, Fix, Review, Investigate, Ship). There is no picker and nothing
-    is offered while you type: a row of words under the field is something to read and
-    dismiss on every task you add, and the first word is either one of seven or it is
-    Code. `FactoryTask.Work.completions` went with it. (T181, then T366.)
+  - `Shared/TaskField.swift`: the add and edit field on both apps. A text field that grows
+    to a few lines, and nothing else now.
+    **There is no work on a task** (T417, Alex, 17 Sep 2026). There was: design, plan,
+    implement, fix, review, investigate, ship, with the first word of a title naming one
+    (T181), no picker and no completions offered while you typed (T366), and
+    `Work.instruction` putting "produce a brief, then stop" or "find out, change nothing"
+    into the words an agent started with. Alex asked for it to go and was asked again with
+    the numbers in front of him, because it was in use and rising: 76 of 586 tasks carried
+    one, almost all filed by agents for each other. He said remove it as asked. A task is a
+    title and a note, and what to produce is said in the note like anything else; the launch
+    words point an agent at the note rather than naming a kind of work. A record written
+    before this still decodes, and `work` on it is read and thrown away, the same as `kind`
+    before it; `/api/task` and `/api/task/edit` still accept the field so a phone built
+    before it goes on filing.
   - `software-factory` executable: `mcp` (the server over stdio), `status`, `tools`,
     `decide`, `quit` (ends the running Mac app by addressing the quit event to its
     process, which is the only way that works from an agent's terminal, T271).
@@ -656,9 +706,19 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     out for the moment, to be refined),
     `Notifier` (one banner per new question, options as actions; `Presence.isAtTheMac`),
     `EscalationCard`, `OpenFolder` and
-    `OpenFolderButton` (the project's folder in the Finder, from its own header where the
-    path itself opens it and Change sets it, and from the agent page beside the project
-    name, T300), `ProjectView` (backlog
+    `OpenFolder` and `FileBrowser` (T300, then Alex, 16 Sep 2026: **the folder icon shows
+    the folder in the app** rather than opening the Finder. It is the third of the small
+    icons above an agent's side column, beside what it has written and a shell, and all
+    three are ways into the same folder: two of them opened beside the agent and the third
+    sent you to another app to look at a repo you were watching an agent work in.
+    `FileBrowser` lists it, folders first, and **cannot go above the project's folder**,
+    because the root is what the icon is about: a look inside where an agent works, not a
+    file manager. The crumbs are built by walking down from the root rather than up from
+    here, so a path somehow outside it cannot put a way out on the bar. A file opens in
+    `PaperView`, the same web view a document is read in, so markdown comes out as a page
+    and a screenshot as a screenshot; anything else readable is text in the machine's own
+    face. The Finder is a button inside the browser, for what only it can do),
+    `ProjectView` (backlog
     with add, drag reorder, state menu, notes under rows, and the documents in a column of
     their own beside it: the same `ArtifactBrowser` the agent page uses, with a
     `ColumnGrip` between them whose width is remembered, which with the sidebar is three
@@ -744,6 +804,152 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
     change takes effect on the next question rather than the next restart. A call whose
     kind the agent did not say is treated as one that changes something, which is every
     call Grok makes. (T373.)
+  - **A question sits at the foot of the page that asked it, in place of the field**
+    (T530, Alex, 16 Sep 2026: "it must be shown at the end of the chat for the user. It
+    replaces the chat input"). A question raised through `escalation_raise` was on the
+    Needs you strip, in a banner, on the phone and on the Lock Screen, and not on the page
+    of the agent that asked it, which is the one place somebody watching that agent looks.
+    `AgentTranscriptView.foot` and `PhoneAgentView.foot` draw the newest open one as an
+    `EscalationCard` where the field would be, on both apps, because the phone is the Mac
+    seen from somewhere else and a question that replaced the field on one and not the
+    other is the same agent behaving two ways. It replaces rather than sits above: an agent
+    that has raised one is blocked on the decision until it lands, so the one useful thing
+    to do there is answer it, and a field to type something else into is a second door out
+    of a room with one. Answering unblocks the task, the agent carries on, and the field
+    comes back with it. **All three kinds, one rule** (Alex, 16 Sep 2026): an agent can ask
+    three ways, a permission request about a tool, its own question through the protocol,
+    and one raised through `escalation_raise`, and T481 put the first two in the
+    conversation with the field still under them while the third was not on the page at
+    all, so the page answered the same situation three ways depending on how the agent
+    happened to ask. The kind of question is the agent's business; what it means for the
+    person is the same. A permission request comes first when more than one is waiting,
+    because it is the hardest block: the turn itself is stopped mid-tool-call.
+  - `EscalationCard.Place` is how much of the card is needed where. **In a list** it is one
+    question among several on a page about something else, so it has its own edges, the
+    alarm tint, a line saying whose it is and when, and which task it is stopping. **At the
+    foot** of an agent's page all of that is already on screen: the conversation that led to
+    it is directly above, the sidebar says whose page this is and what it holds, it is the
+    only thing down there, and the field it replaced had no card. What was left was eight
+    nested boxes to ask one question in. The options are one ruled list either way rather
+    than a sheet of glass each, which was three materials deep to answer a yes or no.
+    (Alex, 16 Sep 2026: the card is complex looking.)
+  - **A conversation grows downwards from the bottom of the window**, `defaultScrollAnchor(.bottom)`,
+    the way every chat and every terminal does. It was anchored at the top, so a short one
+    sat up there with the rest of the window empty beneath it: the first things an agent
+    said appeared at the top and crept down, a queued message landed in the middle of the
+    page rather than above the field, and "scroll to the bottom" did nothing because there
+    was nothing to scroll. One cause, and it read as two bugs. Found by looking at an agent
+    three rows into its work rather than by reading the scroll code, which was right.
+    (Alex, 16 Sep 2026: the chat does not scroll to the bottom when a new message is sent,
+    and queued messages should appear at the bottom until they have been sent.)
+  - `ACPTranscript.revision` counts updates folded in, and it is what a page watches to
+    follow the end. It watched the last row's id and the count of rows, and an agent
+    mid-sentence moves neither, because a message chunk joins the entry before it: the page
+    stood still for the whole of a long answer and caught up at the end.
+  - **`Following` is whether a page follows the end, and it only changes when the person
+    moves the page.** This is the subtlest thing in either app and it is in the kit with a
+    test because of it. The obvious version asks the geometry "is the end on screen?" and
+    believes the answer, but content arriving *is* a geometry change: the content gets
+    taller, the offset does not move, so the end is off screen and the flag goes false a
+    hair before the code that wanted to scroll there reads it. The page stopped following at
+    the exact moment there was something to follow, and never started again, because nothing
+    afterwards moves the offset either. So only a change with the content the same height
+    counts as somebody moving the page. Content growing or shrinking is ignored.
+    The other half is `defaultScrollAnchor`, which has to be split: `.bottom` for
+    `.initialOffset` and `.alignment`, and **`.top` for `.sizeChanges`**. Anchoring size
+    changes to the bottom follows the end whatever the person is doing, and no flag of ours
+    can stop it, because SwiftUI has already moved the page. Both apps, and seen on screen
+    both ways: at the end it follows, scrolled up it does not move while the agent talks.
+    (Alex, 16 Sep 2026, twice: make sure the chat scrolls on new message, then work really
+    hard to get it correct.)
+  - **A question is in the chat, not over it** (Alex, 16 Sep 2026: "show in the chat.
+    Currently it is over the chat. You cannot see the relevant chat under it."). It floated
+    at the foot where the field floats, first with no material of its own, so the words
+    underneath read straight through it, and then on glass, which covered them instead. Both
+    were the same mistake: the field can float because it is two lines high and you read
+    round it, and a question is half the window, and the half it covers is the conversation
+    that led to it, which is what you need in order to answer. So it is the last thing in
+    the page, scrolling with everything else, and nothing floats while it is there: the
+    field is not drawn, and `inputHeight` goes to zero so there is no gap under it. The
+    empty-page notice is not drawn either, the same as it is not drawn while the agent is
+    working: a page with a question on it is not an empty page. `Asking` lost its tinted
+    card and its glass-per-option to match the raised question's, because two of the three
+    kinds looking one way and the third another is the drift that putting them all in one
+    place exists to stop. **An answer is a numbered button and not a radio** (Alex,
+    16 Sep 2026): a radio circle says pick one and then confirm, and there is nothing to
+    confirm with, because pressing one answers the question and the agent is told. The
+    number is what you call it by when you say "the second one" to somebody. The tick stays
+    on the one chosen, which is the only state left once a card is a record rather than a
+    question. The free-text answer sends with the arrow the prompt field uses rather than a
+    button reading "Answer with this": every other field in the app has an arrow, and the
+    longest thing on that row was the label on the control. And a queued message says
+    "Queued" rather than "Waiting for this turn to end", which explained a mechanism that is
+    ours rather than the person's. **The send arrow grows a clock when the words will
+    wait**, `arrow.up.circle.badge.clock` against `arrow.up.circle.fill`, on both apps: the
+    placeholder has said "Queue:" since T373 and the button went on promising to send. The
+    same arrow with one mark added rather than a different symbol, because it is the same
+    control doing the same thing a moment later, and a control that changes shape reads as a
+    different control. The phone reads `Agent.isPrompting` off the record for it, which is
+    the daemon's own answer written down for exactly this kind of question. (T540.)
+  - **An agent says how its session is set up, and we read it now** (T546, off R69).
+    `session/new` answers with a `configOptions` array: the model, the effort, fast mode,
+    each with a current value and its choices. `ACP.options(in:)` reads them, `Running.options`
+    carries them, and a menu beside the mode picker shows them, labelled with the values
+    rather than the word Options, because the values are the answer. Read, not set: nothing
+    in 44 transcripts ever sets one and the method for doing it is unconfirmed. The audit at
+    the top of `ACP.swift` used to say this was "newer than what we read", and measuring the
+    logs rather than believing the note is what found it: the adapter had been sending it
+    all along, and effort and fast mode were reachable nowhere in the factory. Nothing is
+    drawn for an agent that sends none, which is every CLI but Claude Code so far as anybody
+    has looked.
+  - A command carries `input.hint`, the arguments it takes, nested one level down. A quarter
+    of the eighty-four on this Mac have one and nothing drew it, so a list of commands said
+    what each was called and not how to use it. `ACP.Command` decodes the nested shape and
+    writes it back flat, because the daemon's socket is ours. (T546.)
+  - **Tab finishes a command being typed**, and the arrows move between the matches (T543).
+    The matches are a list down the page rather than a row of capsules across it (T546):
+    eighty-four names in a row are eighty-four words you have to already know, and down the
+    page each has room for what it does and what it takes. Return takes the highlighted one
+    too while the list is up, because nobody types a slash and two letters meaning to send
+    them.
+    T494 put an agent's own commands where you are already typing, after a slash at the
+    front of the field, and left the only way of taking one a click, which means leaving the
+    keyboard in the middle of a sentence. The one Tab will take is marked in the row, so it
+    is a list you are moving through rather than buttons that happen to be nearby. Every
+    other key is handed back `.ignored`, so Tab still moves focus and the arrows still move
+    the caret when there is nothing to complete.
+  - **Scrolling back is folding the log backwards, a window at a time** (T542). A page opens
+    at the end (T511) and said "Earlier turns are in the log", and that was where they
+    stayed. `FileStore.transcriptBefore` reads the stretch before what is folded, cut at the
+    same turn boundary; `ACPTranscript.earlier` folds it and `following(_:)` puts it in
+    front. **The join is only safe at a turn boundary**, and that is the whole argument:
+    folding is append-only everywhere else, because a tool call's opening line names it and
+    every update merges forwards into it, so two folds joined mid-turn would have a call in
+    one half and its name in the other. Both ends of every stretch are cut where
+    `ACP.endsATurn` says nothing was open, so the halves meet where nothing is unfinished.
+    Ids are handed out again over the joined page and `toolIndex` is rebuilt, or an update
+    arriving a second later opens a second row for a call already drawn.
+    Two places more conversation can come from, and the view tries them in order:
+    `pageLength` is a drawing budget rather than everything known, so growing `rows` usually
+    answers, and only when that runs out does `Floor.readEarlier` go to disk. Folding
+    earlier turns in while the page went on drawing the last sixty would have been pointless.
+    `scrollingAllTheWayBackIsTheWholeLog` is the claim: walk a log back in small windows and
+    the result is what folding it from the top gives, row for row.
+  - **Two or more waiting can be sent as one.** The queue sends one at a time because two
+    things said are two things said, but a person who thought of four more instructions
+    while an agent worked did not mean four turns: one at a time makes the agent do the
+    first and then be interrupted by the second, which is what the queue exists to avoid.
+    `AgentFloor.merge` and the daemon's `merge` op join what is waiting into a single
+    prompt, blank lines between them because they were typed as separate thoughts, files in
+    the order their words were. Offered rather than done: the queue stays one at a time and
+    the person says when a run of them is really one instruction. They still wait for the
+    turn to end, because the never-mid-turn rule is not what is being relaxed. (T541.)
+  - **The daemon can be older than the app talking to it.** It holds the agents, so it is
+    not restarted when the app is rebuilt, and restarting it stops every agent on the floor.
+    A new op therefore does nothing until the daemon next starts, and an older one cannot
+    decode the request at all: it answers `AgentDaemon.Reply.notARequest`, which is named so
+    the caller can say something a person can act on instead of repeating the wire's words.
+    Anything added to `Request.Op` wants that fallback. (T541.)
   - A permission request becomes an `Escalation`, and `AppModel.syncPermissions` is one
     funnel in both directions rather than a route per way of answering: the agent's page,
     the Needs you strip, a banner, the phone and the Lock Screen all land in the store,
@@ -804,15 +1010,16 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
       per target and would put the same one in every configuration.
     - The iPhone app is the same either way and archives from `Release`.
 - `Phone/Sources`: **the phone is the Mac seen from somewhere else**, so it is built to
-  the same measurements, set in the same paper and coloured the same way. Three things
+  the same measurements, made of the same surfaces and coloured the same way. Three things
   were drifting because each app drew its own: `Style` was in the Mac's sources so the
   phone had picked its own corner radii and paddings; `AgentActivityDot` was written twice
   and a stopped agent was grey on one and red on the other, which is the same agent being
   two colours depending on which screen you look at; and the phone's project row still had
   the dot and the blocked and in-progress counts the Mac dropped in T358. All three live in
-  `Shared` or match now. Secondary and tertiary text on both is `Paper.Tone.quiet` and
-  `.faint` rather than the system's greys, so the theme reaches the words and not only the
-  ground. (Alex, 16 Sep 2026: make the iPhone layout and colour the same.)
+  `Shared` or match now. Secondary and tertiary text on both is `.secondary` and
+  `.tertiary`, and a card on both is `cardSurface()`, so what is shared is the rule rather
+  than a colour either app could have picked for itself. (Alex, 16 Sep 2026: make the
+  iPhone layout and colour the same, then: conventional Liquid Glass.)
   `PhoneAgentView` is an agent's conversation on the phone, folded by the same
   `ACPTranscript` and drawn the same way, with a field on glass to say something to it.
   Thinking is not shown there: it is nine tenths of the words and there is no room on a
@@ -882,7 +1089,26 @@ same, and that is how a day of work went on talking to yesterday's binary. Build
   one and it is a case there, not a flag somewhere else.
 - Nothing in the app asks the daemon from the main thread, for the same reason nothing
   asks tmux from it: the answer takes as long as spawning a child takes.
+  **The store is the third one**, and it was the one that got away (T521). `AppModel` read
+  it here, on its two second tick: nine hundred and forty JSON files, 33 ms in release and
+  66 ms on any tick that also wrote, while the window drew. `AppModel.loadState` now reads
+  through `FileStore.loadEverything()` on a detached task and puts back only what came out
+  different, which is the shape `Floor.refold` uses; `refresh()` keeps its synchronous
+  signature because every caller is telling it to go and look rather than waiting to be
+  told, and calls coalesce rather than piling up. `loadEverything` is also the one pass
+  over `messages/`: `messages(for:)` reads the whole folder, and asking it once per agent
+  read that folder eighty-seven times for one answer (T522). 33 ms to 18 ms, and the 18 is
+  off this thread.
+- **Observation fires on set, not on change.** Putting the same value back redraws every
+  view that reads it, so `snapshot`, `messagesByAgent`, `dashboard` and `throttle` are
+  assigned only when they differ, and so is a folded transcript. On a floor that has been
+  still all night the tick now changes nothing and draws nothing. `CloudSync.push` asks
+  the same question before it encodes, because encoding the floor into CloudKit records to
+  discover it was unchanged cost 6.7 ms of every tick. (T523.)
 - Every string a person reads follows `alex-writing-voice`; no em dashes.
+- A card is `cardSurface()` from `Shared/Surface.swift`, and glass is for what a person
+  touches. A new `.glassEffect` on something that is not a control, or a card that builds
+  its own background, is a decision worth arguing for.
 - Measurements come from `Shared/Style.swift`: `card` 18, `panel` 12, `page` 24,
   `cardPadding` 16, `sheetPadding` 20, and a chip is a capsule. They were written where
   they were used and the same thing came out at four sizes (T343). A new corner names one

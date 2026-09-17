@@ -2,6 +2,43 @@ import Foundation
 import Testing
 @testable import SoftwareFactoryKit
 
+/// A page follows the bottom of the conversation, and what it watches has to move whenever
+/// anything happens. It watched the last row's id and the count of rows, and an agent
+/// mid-sentence moves neither: a message chunk joins the entry before it. So the page stood
+/// still for the whole of a long answer and caught up at the end.
+/// (Alex, 16 Sep 2026: make sure the chat transcript scrolls on new message.)
+@Suite struct TranscriptRevisionTests {
+    private func chunk(_ words: String) -> ACP.Update {
+        .message(.text(words))
+    }
+
+    @Test func everyUpdateMovesTheRevisionEvenWhenNoRowIsAdded() {
+        var transcript = ACPTranscript()
+        #expect(transcript.revision == 0)
+        transcript.apply(chunk("A sentence "))
+        let afterFirst = transcript.revision
+        #expect(afterFirst > 0)
+        #expect(transcript.entries.count == 1)
+        // The same entry grows. Neither the count nor the last id moves; the revision must.
+        let wasLast = transcript.entries.last?.id
+        transcript.apply(chunk("that keeps going "))
+        transcript.apply(chunk("and going."))
+        #expect(transcript.entries.count == 1)
+        #expect(transcript.entries.last?.id == wasLast)
+        #expect(transcript.revision > afterFirst)
+        #expect(transcript.lastSaid == "A sentence that keeps going and going.")
+    }
+
+    @Test func whatTheFactorySaysMovesItToo() {
+        var transcript = ACPTranscript()
+        transcript.weSaid("carry on")
+        #expect(transcript.revision == 1)
+        // Nothing to say is nothing said, so nothing moves.
+        transcript.weSaid("   ")
+        #expect(transcript.revision == 1)
+    }
+}
+
 /// The fold, against the same recording. The thing being tested is mostly that 88
 /// one-word chunks come out as two sentences: that is the whole difference between a
 /// page you can read and a wall of rows. (T373.)
@@ -287,18 +324,26 @@ struct ACPTranscriptPageTests {
         #expect(rows[0].entry.tool?.isFinished == false)
     }
 
+    /// Dropped before the grouping rather than after, or the thought in the middle would
+    /// make two runs of one out of a run of two.
     @Test func aThoughtBetweenTwoToolsDoesNotSplitTheRun() {
         var page = ACPTranscript()
         page.apply(tool("a", "Reading one"))
         page.apply(.thought(.text("Hmm.")))
         page.apply(tool("b", "Reading two"))
-        // Thinking hidden, which is the default: one run of two.
         #expect(page.page().count == 1)
         #expect(page.page()[0].before == 1)
-        // Thinking shown: the thought is a row, so it is two runs of one.
-        let withThinking = page.page(thinking: true)
-        #expect(withThinking.count == 3)
-        #expect(withThinking.map(\.before) == [0, 0, 0])
+    }
+
+    /// Thinking is never a row, and there is no argument that brings it back. It is still
+    /// folded and still in the log: the page is what stops drawing it. (T496.)
+    @Test func thinkingIsFoldedAndNeverDrawn() {
+        var page = ACPTranscript()
+        page.apply(.thought(.text("Hmm.")))
+        page.apply(.message(.text("Editing Models.swift")))
+        #expect(page.entries.count == 2)
+        #expect(page.page().count == 1)
+        #expect(page.page()[0].entry.text == "Editing Models.swift")
     }
 
     @Test func oneOnItsOwnSaysNothingAboutStepsBefore() {

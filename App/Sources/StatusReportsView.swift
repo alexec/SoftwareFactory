@@ -77,7 +77,7 @@ private struct ReportRow: View {
                          open: openProject) {
                     Text(row.projectName ?? "No project")
                         .font(.callout)
-                        .foregroundStyle(Color(.quiet))
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
@@ -87,7 +87,7 @@ private struct ReportRow: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
+        .cardSurface()
     }
 
     /// When it last said something, and whether that still stands. An old report is not
@@ -97,7 +97,7 @@ private struct ReportRow: View {
         if let said = row.said {
             Text(said, format: .relative(presentation: .named))
                 .font(.caption)
-                .foregroundStyle(row.isFresh ? Color.secondary : Color(.alarm))
+                .foregroundStyle(row.isFresh ? Color.secondary : Color.orange)
                 .help(row.isFresh
                       ? "Filed within the hour"
                       : "Older than an hour. The factory has asked for another.")
@@ -122,15 +122,15 @@ private struct ReportRow: View {
             // same line the card and the sidebar show. (T373.)
             Text(doing)
                 .font(.callout)
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
                 .lineLimit(2)
             Text("Nothing filed. The factory can see this one work, so it is not asked.")
                 .font(.caption)
-                .foregroundStyle(Color(.faint))
+                .foregroundStyle(.tertiary)
         } else {
             Text("Nothing filed yet.")
                 .font(.callout)
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
         }
     }
 }

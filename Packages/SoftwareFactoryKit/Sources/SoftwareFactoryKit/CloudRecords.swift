@@ -105,19 +105,18 @@ public enum CloudRecords {
     }
 
     /// Person-made changes on another device: the cloud record is newer. Title, note,
-    /// work, rank, parking, and removal come across. In progress and done never do:
+    /// rank, parking, and removal come across. In progress and done never do:
     /// those are an agent's to say. A done task stays done. (T172, 13 Sep 2026.)
     public static func taskChangesToAdopt(local: [FactoryTask], cloud: [FactoryTask]) -> [FactoryTask] {
         let byID = Dictionary(uniqueKeysWithValues: local.map { ($0.id, $0) })
         return cloud.compactMap { theirs in
             guard let mine = byID[theirs.id], theirs.updated > mine.updated else { return nil }
-            if Backlog.personMaySet.contains(theirs.state), mine.state != .done, mine.removed == nil {
+            if Backlog.personMaySet.contains(theirs.state), mine.state.isFinished == false, mine.removed == nil {
                 return theirs
             }
             var adopted = mine
             adopted.title = theirs.title
             adopted.note = theirs.note
-            adopted.work = theirs.work
             adopted.rank = theirs.rank
             // A removal travels, and never travels backwards. Nothing on either device
             // brings a deleted task back, so a cloud record with no removal on it is one

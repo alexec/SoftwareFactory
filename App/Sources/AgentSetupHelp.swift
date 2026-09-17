@@ -36,7 +36,7 @@ struct AgentSetupHelp: View {
                     Text("ACP says what a message looks like and almost nothing about the behaviour behind it. All four of these are conformant and all four disagree, so the factory keeps its own notes from driving each one rather than from reading its documentation. Not tried means exactly that, and is not the same as no.")
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Two ways an agent runs")
@@ -46,13 +46,11 @@ struct AgentSetupHelp: View {
                     Text("Grok and Cursor do not speak it yet, so they run in a terminal on their page, which you can also type into by hand. Both kinds work the same way everywhere else: the same backlog, the same questions, the same messages.")
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
             }
             .padding(Style.page)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color(.paper))
-        .tint(Color(.mark))
         .frame(minWidth: 460, idealWidth: 560, minHeight: 420, idealHeight: 620)
     }
 }
@@ -66,7 +64,7 @@ private struct AgentSetup: View {
             Text(agent.title)
                 .font(.headline)
             Text(agent.explanation)
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if let installURL = agent.installURL {
                 Link(destination: installURL) {
@@ -81,7 +79,7 @@ private struct AgentSetup: View {
             if let caveat = agent.profile.caveat {
                 Label(caveat, systemImage: "exclamationmark.triangle")
                     .font(.callout)
-                    .foregroundStyle(Color(.quiet))
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -111,7 +109,7 @@ private struct WhatItDoes: View {
 
     private func row(_ what: String, _ answer: String) -> some View {
         GridRow {
-            Text(what).foregroundStyle(Color(.quiet))
+            Text(what).foregroundStyle(.secondary)
             Text(answer)
         }
     }

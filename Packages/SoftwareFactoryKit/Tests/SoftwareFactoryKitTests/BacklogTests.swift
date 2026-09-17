@@ -13,10 +13,10 @@ import Testing
 
     @Test func orderIsInProgressThenBacklogThenParkedThenDoneNewestFirst() {
         let all = [
-            task("done old", rank: 0, state: .done, updated: 10),
+            task("done old", rank: 0, state: .succeeded, updated: 10),
             task("second", rank: 2),
             task("parked", rank: 0, state: .parked),
-            task("done new", rank: 1, state: .done, updated: 20),
+            task("done new", rank: 1, state: .succeeded, updated: 20),
             task("first", rank: 1),
             task("now", rank: 5, state: .inProgress),
             FactoryTask(projectID: "/other", title: "elsewhere", rank: 0),
@@ -73,24 +73,44 @@ import Testing
 
     @Test func visibleKeepsThreeDoneAndTenParkedInBlocks() {
         var all = [task("open", rank: 0), task("now", rank: 1, state: .inProgress)]
-        for n in 0..<8 { all.append(task("done \(n)", rank: 9, state: .done, updated: TimeInterval(n))) }
+        for n in 0..<8 { all.append(task("done \(n)", rank: 9, state: .succeeded, updated: TimeInterval(n))) }
         for n in 0..<12 { all.append(task("parked \(n)", rank: n, state: .parked)) }
         let shown = Backlog.visible(for: p, in: all)
-        #expect(shown.filter { $0.state == .done }.map(\.title) == ["done 7", "done 6", "done 5"])
+        #expect(shown.filter { $0.state == .succeeded }.map(\.title) == ["done 7", "done 6", "done 5"])
         #expect(shown.filter { $0.state == .parked }.count == 10)
         #expect(shown.filter { $0.state == .parked }.first?.title == "parked 0")
         let blocks = Backlog.blocks(shown)
-        #expect(blocks.map(\.state) == [.inProgress, .backlog, .parked, .done])
+        #expect(blocks.map(\.state) == [.inProgress, .backlog, .parked, .succeeded])
         #expect(blocks[0].tasks.map(\.title) == ["now"])
         #expect(Backlog.blocks([Backlog.block(task("b", rank: 0), on: .init(kind: .other, why: "x")), task("now", rank: 1, state: .inProgress)]).map(\.state) == [.blocked, .inProgress])
         #expect(Backlog.blocks([]).isEmpty)
+    }
+
+    /// A failure is not capped like a success. Three tasks succeeding after one failed used
+    /// to take the failure off the page, which is the page dropping the one task on the
+    /// project that somebody has to decide something about. (T509.)
+    @Test func aFailedTaskIsAlwaysShownAndSitsAboveTheBacklog() {
+        var all = [task("open", rank: 0), task("went wrong", rank: 1, state: .failed, updated: 0)]
+        for n in 0..<8 { all.append(task("done \(n)", rank: 9, state: .succeeded, updated: TimeInterval(n + 1))) }
+        let shown = Backlog.visible(for: p, in: all)
+        #expect(shown.filter { $0.state == .failed }.map(\.title) == ["went wrong"])
+        #expect(shown.filter { $0.state == .succeeded }.count == 3)
+        #expect(Backlog.blocks(shown).map(\.state) == [.failed, .backlog, .succeeded])
+    }
+
+    /// Several failures are all of them: there is no reading of "the three most recent" that
+    /// makes sense for work that went wrong.
+    @Test func everyFailedTaskIsShown() {
+        var all: [FactoryTask] = []
+        for n in 0..<6 { all.append(task("went wrong \(n)", rank: n, state: .failed, updated: TimeInterval(n))) }
+        #expect(Backlog.visible(for: p, in: all).count == 6)
     }
 
     @Test func blockedIsNotNextAndClearsOnItsOwn() throws {
         var e = Escalation(projectID: p, question: "?", options: [.init(title: "A"), .init(title: "B")])
         let waiting = Backlog.block(task("waiting", rank: 0), on: .init(kind: .decision, id: e.id, why: "which one"))
         let other = task("other", rank: 1)
-        let prerequisite = task("first do this", rank: 2, state: .done, updated: 5)
+        let prerequisite = task("first do this", rank: 2, state: .succeeded, updated: 5)
         let after = Backlog.block(task("after", rank: 3), on: .init(kind: .task, id: prerequisite.id, why: "needs the first"))
         let onAlex = Backlog.block(task("on alex", rank: 4), on: .init(kind: .person, why: "register the container"))
         let all = [waiting, other, prerequisite, after, onAlex]
@@ -185,10 +205,8 @@ import Testing
         """
         let t = try FileStore.decoder.decode(FactoryTask.self, from: Data(json.utf8))
         #expect(t.blockers.map(\.why) == ["alex"])
-        #expect(t.work == .implement)
         let again = try FileStore.decoder.decode(FactoryTask.self, from: FileStore.encoder.encode(t))
         #expect(again.blockers == t.blockers)
-        #expect(again.work == .implement)
     }
 
     @Test func nextRankFollowsTheProject() {
@@ -198,7 +216,7 @@ import Testing
     }
 
     @Test func topRankGoesFirstAndDoneDoesNotCount() {
-        let all = [task("a", rank: 2), task("b", rank: 5), task("old", rank: -9, state: .done)]
+        let all = [task("a", rank: 2), task("b", rank: 5), task("old", rank: -9, state: .succeeded)]
         #expect(Backlog.topRank(for: p, in: all) == 1)
         #expect(Backlog.topRank(for: "/new", in: all) == 0)
         #expect(Backlog.rank(for: .top, projectID: p, in: all) == 1)
@@ -214,7 +232,7 @@ import Testing
     }
 
     @Test func moveRenumbersOnlyWhatChanged() {
-        let all = [task("a", rank: 0), task("b", rank: 1), task("c", rank: 2), task("done", rank: 3, state: .done)]
+        let all = [task("a", rank: 0), task("b", rank: 1), task("c", rank: 2), task("done", rank: 3, state: .succeeded)]
         let changed = Backlog.move(in: all, from: IndexSet(integer: 2), to: 0)
         #expect(changed.map(\.title) == ["c", "a", "b"])
         #expect(changed.map(\.rank) == [0, 1, 2])
@@ -300,7 +318,6 @@ import Testing
         // The current task is on the backlog, not next to the project's name. (T168)
         #expect(d.projects[0].doing == nil)
         #expect(d.projects[0].backlogCount == 1)
-        #expect(d.projects[0].openEscalations == 1)
         // Its agent has said nothing for fifteen minutes: nothing is moving.
         #expect(d.projects[1].activity == .finished)
         #expect(d.projects[1].doing == nil)
@@ -396,7 +413,10 @@ import Testing
         #expect(h.activity == .finished)
         #expect(h.doing == nil)
         #expect(h.inProgressCount == 0 && h.blockedCount == 0 && h.backlogCount == 0 && h.doneCount == 0)
-        #expect(h.openEscalations == 1)
+        // Its question is still a question: the project says nothing about it, and the
+        // dashboard's own list, which is what the Needs you strip, the banner, the phone
+        // and the Lock Screen all read, still has it. (T507.)
+        #expect(d.openEscalations.map(\.id) == [question.id])
         #expect(d.inProgress == 1)
         // The agent is still registered; it is the project that is quiet.
         #expect(d.agents.map(\.agent.label) == ["A1"])
@@ -424,10 +444,8 @@ import Testing
         #expect(edited.state == .inProgress && edited.agentID == task.agentID && edited.blockers == task.blockers)
         #expect(edited.updated == day)
         #expect(Backlog.edit(edited, title: " ", note: "ignored").title == "after")
-        #expect(edited.work == .implement)
-        let designed = Backlog.edit(edited, title: "after", note: "new note", work: .design, at: day)
-        #expect(designed.work == .design && designed.updated == day)
-        #expect(Backlog.edit(designed, title: "after", note: "new note", work: .design) == designed)
+        // Nothing to change means nothing changed, so the date does not move either.
+        #expect(Backlog.edit(edited, title: "after", note: "new note") == edited)
     }
 
     /// The four states behind an agent's dot: working, blocked, waiting, idle.
@@ -556,7 +574,7 @@ import Testing
 
     @Test func finishedAndDeletedWorkIsNotSomethingToBeRemindedOf() {
         let me = UUID()
-        let done = task("finished", 1, .done, for: me)
+        let done = task("finished", 1, .succeeded, for: me)
         let deleted = Backlog.remove(task("deleted", 2, .inProgress, for: me), why: "by Alex")
         #expect(Backlog.reminder(for: me, in: [done, deleted]) == nil)
     }
@@ -628,8 +646,26 @@ import Testing
         #expect(d.projects.map(\.project.name) == ["Beta", "Aardvark"])
     }
 
-    /// An agent that has stopped is not somebody on it: the work is not moving.
+    /// An agent that has stopped is not somebody on it: the work is not moving, so it sits
+    /// below every project that has somebody on it.
     @Test func aStoppedAgentDoesNotCountAsSomebodyOnIt() {
+        var dead = Agent(number: 1, projectID: "/z")
+        dead.lastSeen = now
+        dead.pid = 0x7FFF_FFFE
+        dead.pidStartedAt = now
+        var live = Agent(number: 2, projectID: "/a")
+        live.lastSeen = now
+        let d = Dashboard.make(snapshot: Snapshot(projects: [Project(name: "Zebra", id: "/z"),
+                                                             Project(name: "Apple", id: "/a")],
+                                                  agents: [dead, live]), now: now)
+        #expect(d.projects.map(\.project.name) == ["Apple", "Zebra"])
+    }
+
+    /// And above every project that has nobody on it at all. A stopped agent is work that
+    /// was going and is not, which is something to pick back up; a project with no agents
+    /// has not been started. They used to be one band, sorted by name, so which came first
+    /// was an accident of spelling. (T499, Alex, 15 Sep 2026.)
+    @Test func aStoppedAgentStillComesAboveNoAgentAtAll() {
         var dead = Agent(number: 1, projectID: "/z")
         dead.lastSeen = now
         dead.pid = 0x7FFF_FFFE
@@ -637,6 +673,100 @@ import Testing
         let d = Dashboard.make(snapshot: Snapshot(projects: [Project(name: "Zebra", id: "/z"),
                                                              Project(name: "Apple", id: "/a")],
                                                   agents: [dead]), now: now)
-        #expect(d.projects.map(\.project.name) == ["Apple", "Zebra"])
+        #expect(d.projects.map(\.project.name) == ["Zebra", "Apple"])
+    }
+
+    /// The whole order in one go: working, then an agent there but idle, then a stopped
+    /// one, then nobody, then on hold.
+    ///
+    /// Five rows and four bands, which is the point of T513. Working and Idle are the same
+    /// band now, and Working still comes first because the sort falls through to the
+    /// activity rank inside a band. The order did not change; what changed is that it is
+    /// said once instead of twice. (T513, Alex, 15 Sep 2026.)
+    @Test func theOrderInOneGo() {
+        var working = Agent(number: 1, projectID: "/w")
+        working.lastSeen = now
+        working.isPrompting = true
+        working.runtime = .acp
+        // There, not gone, and not mid-turn: the daemon is holding it and says so.
+        var idle = Agent(number: 2, projectID: "/i")
+        idle.lastSeen = now
+        idle.runtime = .acp
+        idle.isPrompting = false
+        var dead = Agent(number: 3, projectID: "/s")
+        dead.lastSeen = now
+        dead.pid = 0x7FFF_FFFE
+        dead.pidStartedAt = now
+        var held = Project(name: "Held", id: "/h")
+        held.onHold = true
+        var busy = Agent(number: 4, projectID: "/h")
+        busy.lastSeen = now
+        busy.isPrompting = true
+        busy.runtime = .acp
+        let d = Dashboard.make(snapshot: Snapshot(
+            projects: [held, Project(name: "Nobody", id: "/n"), Project(name: "Stopped", id: "/s"),
+                       Project(name: "Idle", id: "/i"), Project(name: "Working", id: "/w")],
+            agents: [working, idle, dead, busy]), now: now)
+        #expect(d.projects.map(\.project.name) == ["Working", "Idle", "Stopped", "Nobody", "Held"])
+        // Four bands over five rows, and the two at the top share one.
+        let bands = d.projects.map(Dashboard.band)
+        #expect(bands == [0, 0, 1, 2, 3])
+        #expect(Set(bands).count == 4)
+    }
+
+    /// The band that went. A project whose agent has finished and one whose agent is working
+    /// are both projects with somebody on them, and the activity rank is what separates
+    /// them: it already put working above finished, so saying it again as a band was one
+    /// rule repeating another, which is a rule that can disagree with it. (T513.)
+    @Test func anAgentThatHasFinishedIsStillSomebodyOnIt() {
+        var finished = Agent(number: 1, projectID: "/f")
+        finished.lastSeen = now
+        finished.runtime = .acp
+        finished.isPrompting = false
+        var dead = Agent(number: 2, projectID: "/s")
+        dead.lastSeen = now
+        dead.pid = 0x7FFF_FFFE
+        dead.pidStartedAt = now
+        let d = Dashboard.make(snapshot: Snapshot(
+            projects: [Project(name: "Stopped", id: "/s"), Project(name: "Finished", id: "/f")],
+            agents: [finished, dead]), now: now)
+        // Same band as a working one would be, and above the one whose agent has gone.
+        #expect(d.projects.map(Dashboard.band) == [0, 1])
+        #expect(d.projects.map(\.project.name) == ["Finished", "Stopped"])
+    }
+}
+
+/// Finished is two things now, and both of them are finished. (T488, Alex, 15 Sep 2026.)
+@Suite struct FinishedTwoWaysTests {
+    @Test func aRecordWrittenBeforeTonightReadsAsSucceeded() throws {
+        let old = #"{"version":2,"id":"\#(UUID().uuidString)","projectID":"/p","title":"An old one","state":"done","rank":1,"note":"","created":0,"updated":0}"#
+        let read = try JSONDecoder().decode(FactoryTask.self, from: Data(old.utf8))
+        #expect(read.state == .succeeded)
+        #expect(read.state.isFinished)
+    }
+
+    /// Every agent and every script written before tonight says "done", and still works.
+    @Test func doneIsStillAWordACallerMayUse() {
+        #expect(FactoryTask.State.parse("done") == .succeeded)
+        #expect(FactoryTask.State.parse("succeeded") == .succeeded)
+        #expect(FactoryTask.State.parse("failed") == .failed)
+        #expect(FactoryTask.State.parse("nonsense") == nil)
+    }
+
+    @Test func bothAreOffTheBacklogAndOutOfAnAgentsName() {
+        let project = "/p"
+        let me = UUID()
+        func task(_ title: String, _ state: FactoryTask.State) -> FactoryTask {
+            var t = FactoryTask(projectID: project, title: title, state: state, rank: 1)
+            t.agentID = me
+            return t
+        }
+        let all = [task("worked", .succeeded), task("did not", .failed), task("still on it", .inProgress)]
+        #expect(Backlog.alreadyYours(me, in: all).map(\.title) == ["still on it"])
+        // They sort to opposite ends of the list now. What worked goes to the foot, after
+        // what is parked; what failed goes above the backlog, because it is the half of
+        // finished that somebody still has to do something about. (T488, then T509.)
+        let order = Backlog.blocks(all.sorted(by: Backlog.order)).map(\.state)
+        #expect(order == [.failed, .inProgress, .succeeded])
     }
 }

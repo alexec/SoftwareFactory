@@ -83,6 +83,8 @@ public final class ACPConnection: @unchecked Sendable {
     /// The agent asking the person a question. Blocked on it the same way, and put in
     /// front of a person the same way. (T373.)
     public var onQuestion: (@Sendable (Int, ACP.Elicitation) -> Void)?
+    /// The agent has taken its question back, `elicitation/complete`. (T493.)
+    public var onWithdrawn: (@Sendable (Int?) -> Void)?
     /// The child has gone.
     public var onExit: (@Sendable (Int32) -> Void)?
     /// Every line, after it has been written down. The daemon keeps the last one so its
@@ -236,11 +238,23 @@ public final class ACPConnection: @unchecked Sendable {
             onPermission?(id, ask)
         case .question(let id, let asked):
             onQuestion?(id, asked)
-        case .request(let id, _):
-            // A method we have not written. Answered empty rather than left hanging: an
-            // agent waiting on a client that will never reply is an agent that has
-            // stopped, and it is not its fault.
-            write(["jsonrpc": "2.0", "id": id, "result": [:]])
+        case .withdrawn(let id):
+            onWithdrawn?(id)
+        case .request(let id, let method):
+            // A method we have not written. Answered rather than left hanging, because an
+            // agent waiting on a client that will never reply is an agent that has stopped
+            // and it is not its fault; answered with an error rather than an empty success,
+            // because an empty success to fs/read_text_file says "here is the file" and
+            // hands over nothing, and the agent carries on with what it thinks it read.
+            // -32601 is the protocol's own word for it and it names the method.
+            //
+            // Worth seeing when it happens: we declare no filesystem and no terminal, so a
+            // call for one of those is an agent ignoring what we said we can do, and it
+            // goes to the complaints file where the reason a start failed already goes.
+            // (T491.)
+            try? grumbles?.write(contentsOf: Data("Refused \(method): this client does not answer it.\n".utf8))
+            write(["jsonrpc": "2.0", "id": id,
+                   "error": ["code": -32601, "message": "Method not found: \(method)"]])
         case .update, .notification, .unrecognised:
             break
         }

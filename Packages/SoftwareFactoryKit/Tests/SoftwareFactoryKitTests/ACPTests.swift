@@ -778,4 +778,138 @@ struct AgentDecidesTests {
         #expect(listed[0].brief == "Ship an Xcode app end to end")
         #expect(listed[1].brief == nil)
     }
+
+    /// The arguments a command takes arrive nested, as `input: { hint: … }`, and three
+    /// quarters of the commands on this Mac send `input: null`. Both shapes are off a real
+    /// line. A name on its own says what a command is called and not how to use it. (T546.)
+    @Test func aCommandSaysWhatItTakesAfterIt() throws {
+        let line = #"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"loop","description":"Run a prompt on an interval.","input":{"hint":"[interval] [prompt]"}},{"name":"init","description":"Start here.","input":null}]}}}"#
+        guard case .update(_, let update) = ACP.read(line: line), case .commands(let listed) = update else {
+            Issue.record("not commands"); return
+        }
+        #expect(listed[0].hint == "[interval] [prompt]")
+        #expect(listed[1].hint == nil, "input: null is no hint rather than a broken record")
+        // And it survives the daemon's own socket, which is where the app reads it from.
+        let there = try JSONDecoder().decode([ACP.Command].self,
+                                             from: JSONEncoder().encode(listed))
+        #expect(there == listed)
+    }
+}
+
+/// How an agent says its session is set up. Off a real `session/new` answer: the adapter on
+/// this Mac has been sending `configOptions` on every session and nothing read it, so effort
+/// and fast mode were reachable nowhere in the factory. The audit in ACP.swift called it
+/// "newer than what we read", which measuring 44 transcripts disproved. (R69, T546.)
+@Suite struct SessionOptionTests {
+    private var answered: [String: Any] {
+        [
+            "sessionId": "s1",
+            "configOptions": [
+                ["id": "model", "name": "Model", "description": "AI model to use",
+                 "category": "model", "type": "select", "currentValue": "sonnet",
+                 "options": [["value": "default", "name": "Default"],
+                             ["value": "sonnet", "name": "Sonnet"],
+                             ["value": "haiku", "name": "Haiku"]]],
+                ["id": "effort", "name": "Effort", "description": "Available effort levels",
+                 "category": "thought_level", "type": "select", "currentValue": "high",
+                 "options": [["value": "low", "name": "Low"], ["value": "high", "name": "High"]]],
+            ],
+        ]
+    }
+
+    @Test func theCurrentValueIsReadInTheAgentsOwnWords() {
+        let options = ACP.options(in: answered)
+        #expect(options.map(\.id) == ["model", "effort"])
+        // The name of the chosen option, not its id: "Sonnet" is what a person reads and
+        // "sonnet" is what the wire carries.
+        #expect(options[0].value == "Sonnet")
+        #expect(options[1].value == "High")
+        #expect(options[0].choices == ["Default", "Sonnet", "Haiku"])
+        #expect(options[0].detail == "AI model to use")
+    }
+
+    /// Three of the four CLIs have never been asked, and ACP lets an agent send none. An
+    /// answer without them is an agent that said nothing, not a broken one.
+    @Test func anAgentThatSaysNothingIsNotAnError() {
+        #expect(ACP.options(in: ["sessionId": "s1"]).isEmpty)
+        #expect(ACP.options(in: ["configOptions": "not a list"]).isEmpty)
+        // A value with no matching option falls back to the raw value rather than nothing.
+        let odd = ACP.options(in: ["configOptions": [["id": "x", "name": "X", "currentValue": "7"]]])
+        #expect(odd.first?.value == "7")
+    }
+}
+
+/// What an agent gets for a method this client has not written. (T491.)
+@Suite struct UnwrittenMethodTests {
+    @Test func aRequestWeDoNotAnswerIsReadAsOneRatherThanIgnored() {
+        let line = #"{"jsonrpc":"2.0","id":9,"method":"fs/read_text_file","params":{"path":"/tmp/x"}}"#
+        guard case .request(let id, let method) = ACP.read(line: line) else {
+            Issue.record("A method with an id is a request."); return
+        }
+        #expect(id == 9)
+        // The name comes with it, because the answer names the method it is refusing: an
+        // empty success to this one says "here is the file" and hands over nothing.
+        #expect(method == "fs/read_text_file")
+    }
+
+    /// The two we declare we cannot do. A call for either is an agent ignoring the
+    /// handshake, which is worth seeing in the complaints file rather than silently
+    /// answering.
+    @Test func weDeclareNoFilesystemAndNoTerminal() throws {
+        let caps = ACP.clientCapabilities
+        let fs = try #require(caps["fs"] as? [String: Any])
+        #expect(fs["readTextFile"] as? Bool == false)
+        #expect(fs["writeTextFile"] as? Bool == false)
+        #expect(caps["terminal"] as? Bool == false)
+    }
+}
+
+/// An agent taking its question back. (T493.)
+@Suite struct WithdrawnQuestionTests {
+    @Test func aCompleteIsReadAsAWithdrawalRatherThanANotification() {
+        let line = #"{"jsonrpc":"2.0","method":"elicitation/complete","params":{"id":4}}"#
+        guard case .withdrawn(let id) = ACP.read(line: line) else {
+            Issue.record("elicitation/complete is a withdrawal."); return
+        }
+        #expect(id == 4)
+    }
+
+    /// It can only be blocked on one question, so one that does not say which means that
+    /// one. Nothing is left hanging either way.
+    @Test func oneWithNoIdIsStillAWithdrawal() {
+        guard case .withdrawn(let id) = ACP.read(
+            line: #"{"jsonrpc":"2.0","method":"elicitation/complete","params":{}}"#
+        ) else {
+            Issue.record("Still a withdrawal."); return
+        }
+        #expect(id == nil)
+    }
+}
+
+/// Completing a command where the person is already typing. (T494.)
+@Suite struct SlashTests {
+    private let commands = [ACP.Command(name: "ship-it", description: "Ship it."),
+                            ACP.Command(name: "simplify"),
+                            ACP.Command(name: "init")]
+
+    @Test func aSlashAtTheFrontAsksForTheList() {
+        #expect(ACP.Slash.matches(for: "/", in: commands).map(\.name) == ["ship-it", "simplify", "init"])
+        #expect(ACP.Slash.matches(for: "/s", in: commands).map(\.name) == ["ship-it", "simplify"])
+        #expect(ACP.Slash.matches(for: "/shi", in: commands).map(\.name) == ["ship-it"])
+        #expect(ACP.Slash.matches(for: "/zzz", in: commands).isEmpty)
+    }
+
+    /// A slash in the middle of a sentence is a slash, and a finished word is not a
+    /// question: both leave the field alone.
+    @Test func anythingElseOffersNothing() {
+        #expect(ACP.Slash.matches(for: "look in App/Sources", in: commands).isEmpty)
+        #expect(ACP.Slash.matches(for: "/ship-it now please", in: commands).isEmpty)
+        #expect(ACP.Slash.matches(for: "", in: commands).isEmpty)
+    }
+
+    @Test func pickingOneLeavesTheCaretAfterIt() {
+        #expect(ACP.Slash.picked(commands[0], in: "/shi") == "/ship-it ")
+        // Not while it is not asking: nothing is rewritten under the person.
+        #expect(ACP.Slash.picked(commands[0], in: "read App/Sources") == "read App/Sources")
+    }
 }

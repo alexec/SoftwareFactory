@@ -29,8 +29,6 @@ struct PhoneRootView: View {
                 .padding(Style.cardPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .scrollContentBackground(.hidden)
-            .background(Color(.paper))
             .navigationTitle("Needs you")
             .navigationDestination(for: Project.self) { project in
                 PhoneBacklogView(project: project)
@@ -46,10 +44,10 @@ struct PhoneRootView: View {
                 }
             }
         }
-        // The same paper and the same tint as the Mac. The two apps are one thing seen
+        // Nothing painted under it, the same as the Mac. The two apps are one thing seen
         // from two places, so a card is the same corner and the ground is the same
-        // ground. (Alex, 16 Sep 2026: harmonize the iPhone interface.)
-        .tint(Color(.mark))
+        // ground, which is the system's on both. (Alex, 16 Sep 2026: harmonize the
+        // iPhone interface, then: conventional Liquid Glass.)
         .sheet(isPresented: $showingSettings) { PhoneSettingsView() }
         .sheet(isPresented: Binding(get: { !model.hasSeenIntro }, set: { model.hasSeenIntro = !$0 })) {
             PhoneIntroSheet()
@@ -61,20 +59,20 @@ struct PhoneRootView: View {
         switch model.link {
         case .notYetAsked, .looking:
             Label("Looking for the factory on this network.", systemImage: "antenna.radiowaves.left.and.right")
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
                 .font(.callout)
         case .connected(let name):
             Label("Connected to \(name).", systemImage: "checkmark.circle")
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
                 .font(.callout)
         case .lost:
             if model.source == .cloud {
                 Label("Away from the factory. Reading through iCloud.", systemImage: "icloud")
-                    .foregroundStyle(Color(.quiet))
+                    .foregroundStyle(.secondary)
                     .font(.callout)
             } else {
                 Label("Lost the factory. It answers again when the Mac is awake and on this network, or through iCloud.", systemImage: "wifi.slash")
-                    .foregroundStyle(Color(.quiet))
+                    .foregroundStyle(.secondary)
                     .font(.callout)
             }
         }
@@ -85,7 +83,7 @@ struct PhoneRootView: View {
         let open = model.dashboard.openEscalations
         if open.isEmpty {
             Label("Nothing needs you.", systemImage: "checkmark.circle")
-                .foregroundStyle(Color(.quiet))
+                .foregroundStyle(.secondary)
                 .padding(.vertical, 8)
         } else {
             ForEach(open) { escalation in
@@ -103,41 +101,39 @@ struct PhoneRootView: View {
                     .font(.title2.weight(.semibold))
                 ForEach(projects) { status in
                     NavigationLink(value: status.project) {
-                        // The same row the Mac's sidebar draws: the name, how much is
-                        // waiting on the backlog in grey, and a question waiting in
-                        // orange. The dot and the counts of blocked and in progress came
-                        // off the Mac in T358, because a row that reports on the work
-                        // makes you read a dozen small numbers to find the one project you
-                        // were looking for, and they should not have stayed here.
-                        // (Alex, 16 Sep 2026.)
+                        // The same row the Mac's sidebar draws: the name, and how much is
+                        // waiting on the backlog in grey. The dot and the counts of
+                        // blocked and in progress came off the Mac in T358, because a row
+                        // that reports on the work makes you read a dozen small numbers to
+                        // find the one project you were looking for, and they should not
+                        // have stayed here. (Alex, 16 Sep 2026.)
+                        //
+                        // The orange count of open questions came off both in T507. It was
+                        // asked for on the Mac, and the phone has the same three places to
+                        // answer a question that the Mac has: Needs you at the top of this
+                        // screen, a banner, and the Lock Screen. Leaving it on one of them
+                        // would be the same row meaning two different things depending on
+                        // which screen you read it from, which is the drift "the phone is
+                        // the Mac seen from somewhere else" exists to stop.
                         HStack(spacing: 8) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(status.project.name)
                                     .font(.headline)
-                                    .foregroundStyle(status.project.onHold ? Color(.quiet) : Color(.ink))
+                                    .foregroundStyle(status.project.onHold ? Color.secondary : Color.primary)
                                 if status.project.onHold {
-                                    Text("On hold").font(Style.Text.row).foregroundStyle(Color(.quiet))
+                                    Text("On hold").font(Style.Text.row).foregroundStyle(.secondary)
                                 }
                             }
                             Spacer(minLength: 4)
                             if status.backlogCount > 0 {
                                 Text(status.backlogCount, format: .number)
                                     .font(Style.Text.row)
-                                    .foregroundStyle(Color(.quiet))
+                                    .foregroundStyle(.secondary)
                                     .monospacedDigit()
-                            }
-                            if status.openEscalations > 0 {
-                                Text(status.openEscalations, format: .number)
-                                    .font(.caption.weight(.semibold))
-                                    .monospacedDigit()
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .foregroundStyle(Color(.paper))
-                                    .background(Color(.alarm), in: .capsule)
                             }
                             Image(systemName: "chevron.right")
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(Color(.faint))
+                                .foregroundStyle(.tertiary)
                         }
                         .frame(minHeight: 44)
                         .contentShape(.rect)
@@ -177,10 +173,10 @@ struct PhoneRootView: View {
                             HStack(spacing: 6) {
                                 Text(status.agent.label).font(.headline)
                                 if status.agent.bel {
-                                    Image(systemName: "bell.fill").foregroundStyle(Color(.alarm))
+                                    Image(systemName: "bell.fill").foregroundStyle(Color.orange)
                                 }
                                 if let project = status.project {
-                                    Text(project.name).font(.caption).foregroundStyle(Color(.quiet))
+                                    Text(project.name).font(.caption).foregroundStyle(.secondary)
                                 }
                             }
                             // The same lines the Mac's sidebar shows: every task in its
@@ -193,11 +189,11 @@ struct PhoneRootView: View {
                                     if let number = line.number {
                                         Text(number)
                                             .font(.caption.monospaced())
-                                            .foregroundStyle(Color(.faint))
+                                            .foregroundStyle(.tertiary)
                                     }
                                     Text(line.words)
                                         .font(Style.Text.row)
-                                        .foregroundStyle(Color(.quiet))
+                                        .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                         .truncationMode(.tail)
                                 }
@@ -206,7 +202,7 @@ struct PhoneRootView: View {
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.caption)
-                            .foregroundStyle(Color(.faint))
+                            .foregroundStyle(.tertiary)
                     }
                     .padding(.vertical, 4)
                     .contentShape(.rect)
@@ -232,7 +228,7 @@ struct NotificationPrimer: View {
             .buttonStyle(.glassProminent)
         }
         .padding(Style.cardPadding)
-        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
+        .cardSurface()
     }
 }
 
@@ -250,6 +246,6 @@ struct NetworkPrimer: View {
             .buttonStyle(.glassProminent)
         }
         .padding(Style.cardPadding)
-        .glassEffect(.regular, in: .rect(cornerRadius: Style.card))
+        .cardSurface()
     }
 }
